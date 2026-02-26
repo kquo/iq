@@ -1,0 +1,92 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/queone/utl"
+	"github.com/spf13/cobra"
+)
+
+const (
+	program_name    = "iq"
+	program_version = "0.2.7"
+)
+
+func printRootHelp() {
+	n := program_name
+	fmt.Printf("%s v%s\n", n, program_version)
+	fmt.Printf("Work with IQ from the command line.\n\n")
+	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("  %s <command> <subcommand> [flags]\n\n", n)
+	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("  %-15s %s\n", "cfg", "Work with IQ configuration")
+	fmt.Printf("  %-15s %s\n", "svc", "Work with IQ service daemon")
+	fmt.Printf("  %-15s %s\n", "lm", "Work with IQ language models")
+	fmt.Printf("  %-15s %s\n", "prompt", "Work with IQ prompt")
+	fmt.Printf("  %-15s %s\n", "role", "Work with IQ roles")
+	fmt.Printf("  %-15s %s\n", "probe", "Send a raw message directly to a model sidecar")
+	fmt.Printf("  %-15s %s\n\n", "version", "Show the current IQ version")
+	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
+	fmt.Printf("  %-30s %s\n", "-h, --help", "Show this help output or the help for a specified subcommand.")
+	fmt.Printf("  %-30s %s\n\n", "-v, --version", "An alias for the \"version\" subcommand.")
+}
+
+func newVersionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "version",
+		Aliases: []string{"ver"},
+		Short:   "Show the current IQ version",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("%s v%s\n", program_name, program_version)
+		},
+	}
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		fmt.Printf("%s v%s\n", program_name, program_version)
+	})
+	return cmd
+}
+
+func runCLI() {
+	// Rewrite "iq -h <cmd>" → "iq <cmd> -h" so cobra routes correctly.
+	if len(os.Args) == 3 && (os.Args[1] == "-h" || os.Args[1] == "--help") {
+		os.Args = []string{os.Args[0], os.Args[2], "-h"}
+	}
+
+	root := &cobra.Command{
+		Use:          program_name,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if v, _ := cmd.Flags().GetBool("version"); v {
+				fmt.Printf("%s v%s\n", program_name, program_version)
+				return nil
+			}
+			printRootHelp()
+			return nil
+		},
+	}
+
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		printRootHelp()
+	})
+	root.CompletionOptions.DisableDefaultCmd = true
+	root.Flags().BoolP("version", "v", false, "An alias for the \"version\" subcommand.")
+
+	root.AddCommand(
+		newVersionCmd(),
+		newCfgCmd(),
+		newSvcCmd(),
+		newLmCmd(),
+		newPromptCmd(),
+		newRoleCmd(),
+		newProbeCmd(),
+	)
+
+	if err := root.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func main() {
+	runCLI()
+}
