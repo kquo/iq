@@ -10,7 +10,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.2.7"
+	program_version = "0.2.8"
 )
 
 func printRootHelp() {
@@ -24,7 +24,7 @@ func printRootHelp() {
 	fmt.Printf("  %-15s %s\n", "svc", "Work with IQ service daemon")
 	fmt.Printf("  %-15s %s\n", "lm", "Work with IQ language models")
 	fmt.Printf("  %-15s %s\n", "prompt", "Work with IQ prompt")
-	fmt.Printf("  %-15s %s\n", "role", "Work with IQ roles")
+	fmt.Printf("  %-15s %s\n", "cue", "Work with IQ cues")
 	fmt.Printf("  %-15s %s\n", "probe", "Send a raw message directly to a model sidecar")
 	fmt.Printf("  %-15s %s\n\n", "version", "Show the current IQ version")
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
@@ -78,7 +78,7 @@ func runCLI() {
 		newSvcCmd(),
 		newLmCmd(),
 		newPromptCmd(),
-		newRoleCmd(),
+		newCueCmd(),
 		newProbeCmd(),
 	)
 

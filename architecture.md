@@ -2,7 +2,7 @@
 
 ## Overview
 
-IQ is a local LLM orchestration tool for Apple Silicon. It manages the full lifecycle of MLX-format language models — discovery, download, tier assignment, role management, runtime serving, and intelligent prompt routing — through a unified CLI. All inference runs locally with no cloud dependency.
+IQ is a local LLM orchestration tool for Apple Silicon. It manages the full lifecycle of MLX-format language models — discovery, download, tier assignment, cue management, runtime serving, and intelligent prompt routing — through a unified CLI. All inference runs locally with no cloud dependency.
 
 ---
 
@@ -12,7 +12,7 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                              iq CLI (Go)                                 │
 │                                                                          │
-│  iq lm     iq cfg     iq role    iq svc     iq prompt    iq probe        │
+│  iq lm     iq cfg     iq cue    iq svc     iq prompt    iq probe        │
 │  (models)  (config)   (roles)    (service)  (infer/REPL) (raw debug)     │
 └────┬───────────┬───────────┬─────────┬──────────┬────────────┬───────────┘
      │           │           │         │          │            │
@@ -23,7 +23,7 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 │         │ │         │ │        │ │                     │ │            │
 │~/.cache/│ │tiers:   │ │name    │ │ fast pool :27001+   │ │ id         │
 │hugging  │ │  fast:  │ │category│ │ slow pool :27001+   │ │ name       │
-│face/hub/│ │  - m1   │ │desc    │ │                     │ │ role/tier  │
+│face/hub/│ │  - m1   │ │desc    │ │                     │ │ cue/tier   │
 │models-- │ │  - m2   │ │prompt  │ │ dynamic ports,      │ │ messages[] │
 │org--repo│ │  slow:  │ │tier    │ │ one state file per  │ │            │
 │/snapshot│ │  - m3   │ │hint    │ │ running model       │ └────────────┘
@@ -64,16 +64,16 @@ Commands: `cfg show` (path + model table), `cfg tier show`, `cfg tier add <tier>
 
 Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold.
 
-### `iq role` — Role Definitions
+### `iq cue` — Cue Definitions
 
-Manages `~/.config/iq/roles.yaml`, seeded from an embedded default set of 55 roles across 10 categories:
+Manages `~/.config/iq/cues.yaml`, seeded from an embedded default set of 55 cues across 10 categories:
 
 ```
 language_tasks  generation  reasoning  code       retrieval
 summarization   dialogue    safety     domain     ml_ops
 ```
 
-Each role carries a `name`, `category`, `description`, `system_prompt`, `suggested_tier`, and an optional direct `model` override (kept for power users, not actively promoted in routing).
+Each cue carries a `name`, `category`, `description`, `system_prompt`, `suggested_tier`, and an optional direct `model` override (kept for power users, not actively promoted in routing).
 
 Role management: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `sync`.
 
@@ -101,11 +101,11 @@ Start sequence:
 
 Routes user prompts through a five-step pipeline:
 
-**1. Classify** — the input is sent to the smallest live fast-tier sidecar with a compact role list. The model returns a role name, cleaned and matched exactly or via Levenshtein fuzzy match (threshold: distance ≤ 8). Falls back to `general_reasoning_basic` on failure.
+**1. Classify** — the input is sent to the smallest live fast-tier sidecar with a compact cue list. This is a short non-streaming call capped at 30 `max_tokens` (cue names are at most 5–7 tokens; the cap keeps classification fast). The model returns a cue name, cleaned and matched exactly or via Levenshtein fuzzy match (threshold: distance ≤ 8). Falls back to `initial` on failure. Every prompt therefore makes two sidecar calls: one cheap classification call, then the full inference call with the resolved cue's system prompt.
 
-**2. Route** — resolves sidecar from the role. Priority: role direct model override → role `suggested_tier` → fast fallback → cross-tier fallback → error.
+**2. Route** — resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
 
-**3. Build** — assembles the message array: system prompt from the role, session history (if any), new user message.
+**3. Build** — assembles the message array: system prompt from the cue, session history (if any), new user message.
 
 **4. Infer** — sends to the target sidecar via `POST /v1/chat/completions`. Streams tokens to stdout by default.
 
@@ -113,9 +113,9 @@ Routes user prompts through a five-step pipeline:
 
 **Flags:**
 ```
--r, --role <n>      Skip classification, use this role directly
+-r, --cue <n>      Skip classification, use this cue directly
 -c, --category <n>  Restrict auto-classification to one category
-    --tier <n>      Override tier directly, bypass role system
+    --tier <n>      Override tier directly, bypass cue system
 -s, --session <id>  Load/continue a named session
 -n, --dry-run       Trace steps 1–3, skip inference
 -d, --debug         Trace all steps including inference
@@ -124,7 +124,7 @@ Routes user prompts through a five-step pipeline:
 
 `--dry-run` and `--debug` print a step-by-step trace to stderr showing exactly which sidecar handled classification, how the route was resolved, the full effective prompt, and elapsed time per step.
 
-**REPL mode** — entered when no message arg and stdin is a terminal. Supports `/role`, `/session`, `/clear`, `/dry-run`, `/debug`, `/help`, `/quit`. Pipe-friendly: `echo "..." | iq prompt` takes the stdin path.
+**REPL mode** — entered when no message arg and stdin is a terminal. Supports `/cue`, `/session`, `/clear`, `/dry-run`, `/debug`, `/help`, `/quit`. Pipe-friendly: `echo "..." | iq prompt` takes the stdin path.
 
 ### `iq probe` — Raw Sidecar Access
 
@@ -147,7 +147,7 @@ Accepts a tier name (routes to any live sidecar in that pool) or a specific mode
 ~/.config/iq/
 ├── config.yaml              # tier pool assignments
 ├── models.json              # manifest of downloaded models
-├── roles.yaml               # role definitions (seeded from embedded defaults)
+├── cues.yaml               # cue definitions (seeded from embedded defaults)
 ├── run/
 │   ├── mlx-community--SmolLM2-135M-Instruct-8bit.json   # sidecar state
 │   ├── mlx-community--SmolLM2-135M-Instruct-8bit.log
@@ -173,26 +173,26 @@ Accepts a tier name (routes to any live sidecar in that pool) or a specific mode
 ```
 User input
     │
-    ├── --role given? ─────────────────────────────────────┐
+    ├── --cue given? ─────────────────────────────────────┐
     │                                                      │
     ▼  (auto-classify)                                     ▼ (skip classify)
-POST /v1/chat/completions                           resolve role directly
+POST /v1/chat/completions                           resolve cue directly
   smallest fast-tier sidecar                               │
-  system: role classifier prompt                           │
+  system: cue classifier prompt                           │
   user:   input                                            │
     │                                                      │
     ▼                                                      │
-  role name (exact or fuzzy match) ◄────────────────────-─┘
+  cue name (exact or fuzzy match) ◄────────────────────-─┘
     │
     ▼
 resolveRoute()
-  role.model override  →  pickSidecar(tier, false)
-  role.suggested_tier  →  pickSidecar(tier, false)
+  cue.model override  →  pickSidecar(tier, false)
+  cue.suggested_tier  →  pickSidecar(tier, false)
   fallback             →  pickSidecar("fast", false)
     │
     ▼
 build messages[]
-  system:    role.system_prompt
+  system:    cue.system_prompt
   ...        session history (if -s)
   user:      input
     │

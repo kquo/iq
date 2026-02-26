@@ -18,7 +18,8 @@ func printProbeHelp() {
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s probe <model|tier> [flags] <message>\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
-	fmt.Printf("  %-30s %s\n", "-s, --system <text>", "Optional system prompt")
+	fmt.Printf("  %-30s %s\n", "-c, --cue <name>", "Use a cue's system prompt")
+	fmt.Printf("  %-30s %s\n", "-s, --system <text>", "Use a literal system prompt")
 	fmt.Printf("  %-30s %s\n\n", "-S, --no-stream", "Collect full response before printing")
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
@@ -26,12 +27,14 @@ func printProbeHelp() {
 	fmt.Printf("  $ %s probe fast \"what is 2+2?\"\n", n)
 	fmt.Printf("  $ %s probe slow \"explain gradient descent\"\n", n)
 	fmt.Printf("  $ %s probe mlx-community/SmolLM2-135M-Instruct-8bit \"hello\"\n", n)
-	fmt.Printf("  $ %s probe fast \"respond in pirate speak\" -s \"You are a pirate.\"\n\n", n)
+	fmt.Printf("  $ %s probe fast \"respond in pirate speak\" -s \"You are a pirate.\"\n", n)
+	fmt.Printf("  $ %s probe fast \"solve x^2 + 3x - 4\" -c math_reasoning\n\n", n)
 }
 
 // ── Command ───────────────────────────────────────────────────────────────────
 
 func newProbeCmd() *cobra.Command {
+	var cueName string
 	var system string
 	var noStream bool
 
@@ -41,8 +44,26 @@ func newProbeCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cueName != "" && system != "" {
+				return fmt.Errorf("--cue and --system are mutually exclusive — use one or the other")
+			}
+
 			target := args[0]
 			message := strings.Join(args[1:], " ")
+
+			// Resolve system prompt — from cue or literal.
+			systemPrompt := system
+			if cueName != "" {
+				cues, err := loadCues()
+				if err != nil {
+					return err
+				}
+				_, cue := findCue(cues, cueName)
+				if cue == nil {
+					return fmt.Errorf("cue %q not found", cueName)
+				}
+				systemPrompt = cue.SystemPrompt
+			}
 
 			// Resolve sidecar — tier name or specific model ID.
 			var sidecar *svcState
@@ -64,14 +85,18 @@ func newProbeCmd() *cobra.Command {
 			}
 
 			// Print routing header in gray.
+			cueTag := ""
+			if cueName != "" {
+				cueTag = "  cue:" + cueName
+			}
 			fmt.Fprintf(os.Stderr, "%s\n",
-				utl.Gra(fmt.Sprintf("[%s  %s  :%d]",
-					sidecar.Tier, sidecar.Model, sidecar.Port)))
+				utl.Gra(fmt.Sprintf("[%s  %s  :%d%s]",
+					sidecar.Tier, sidecar.Model, sidecar.Port, cueTag)))
 
 			// Build messages.
 			var messages []chatMessage
-			if system != "" {
-				messages = append(messages, chatMessage{Role: "system", Content: system})
+			if systemPrompt != "" {
+				messages = append(messages, chatMessage{Role: "system", Content: systemPrompt})
 			}
 			messages = append(messages, chatMessage{Role: "user", Content: message})
 
@@ -100,7 +125,8 @@ func newProbeCmd() *cobra.Command {
 		printProbeHelp()
 	})
 
-	cmd.Flags().StringVarP(&system, "system", "s", "", "Optional system prompt")
+	cmd.Flags().StringVarP(&cueName, "cue", "c", "", "Use a cue's system prompt")
+	cmd.Flags().StringVarP(&system, "system", "s", "", "Use a literal system prompt")
 	cmd.Flags().BoolVarP(&noStream, "no-stream", "S", false, "Collect full response before printing")
 
 	return cmd

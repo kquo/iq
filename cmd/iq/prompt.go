@@ -47,7 +47,7 @@ type session struct {
 	ID          string        `yaml:"id"`
 	Name        string        `yaml:"name"`
 	Description string        `yaml:"description"`
-	Role        string        `yaml:"role"`
+	Cue         string        `yaml:"cue"`
 	Tier        string        `yaml:"tier"`
 	Created     string        `yaml:"created"`
 	Updated     string        `yaml:"updated"`
@@ -103,11 +103,11 @@ func saveSession(s *session) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func newSession(roleN, tierN string) *session {
+func newSession(cueN, tierN string) *session {
 	id := shortID()
 	return &session{
 		ID:      id,
-		Role:    roleN,
+		Cue:     cueN,
 		Tier:    tierN,
 		Created: time.Now().UTC().Format(time.RFC3339),
 		Updated: time.Now().UTC().Format(time.RFC3339),
@@ -134,23 +134,23 @@ type classifyTrace struct {
 }
 
 // classifyPrompt sends the user input to the tiny tier and returns the best
-// matching role name plus a trace of what happened.
-func classifyPrompt(input string, roles []Role) (string, *classifyTrace, error) {
+// matching cue name plus a trace of what happened.
+func classifyPrompt(input string, cues []Cue) (string, *classifyTrace, error) {
 	var lines []string
-	for _, r := range roles {
+	for _, r := range cues {
 		lines = append(lines, r.Name+": "+r.Description)
 	}
-	roleList := strings.Join(lines, "\n")
+	cueList := strings.Join(lines, "\n")
 
-	systemPrompt := `You are a task classifier. Given a user input, return exactly one role name from the list below that best matches the task. Return only the role name with no punctuation, explanation, or extra text.
+	systemPrompt := `You are a task classifier. Given a user input, return exactly one cue name from the list below that best matches the task. Return only the cue name with no punctuation, explanation, or extra text.
 
-Roles:
-` + roleList
+Cues:
+` + cueList
 
 	// Use the smallest live fast-tier sidecar for classification to minimise latency.
 	sidecar, err := pickSidecar("fast", true)
 	if err != nil {
-		return "general_reasoning_basic", nil, fmt.Errorf("classify: %w", err)
+		return "initial", nil, fmt.Errorf("classify: %w", err)
 	}
 
 	trace := &classifyTrace{
@@ -164,12 +164,12 @@ Roles:
 	response, err := callSidecar(sidecar.Port, []chatMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: input},
-	}, false, 20)
+	}, false, 30)
 	trace.Elapsed = time.Since(t0)
 	if err != nil {
 		trace.MatchType = "fallback"
-		trace.Resolved = "general_reasoning_basic"
-		return "general_reasoning_basic", trace, err
+		trace.Resolved = "initial"
+		return "initial", trace, err
 	}
 
 	trace.RawResponse = strings.TrimSpace(response)
@@ -183,7 +183,7 @@ Roles:
 	}, raw)
 
 	// Exact match first.
-	for _, r := range roles {
+	for _, r := range cues {
 		if r.Name == raw {
 			trace.MatchType = "exact"
 			trace.Resolved = r.Name
@@ -191,10 +191,10 @@ Roles:
 		}
 	}
 
-	// Fuzzy: find closest role name by edit distance.
-	best := "general_reasoning_basic"
+	// Fuzzy: find closest cue name by edit distance.
+	best := "initial"
 	bestDist := 999
-	for _, r := range roles {
+	for _, r := range cues {
 		d := levenshtein(raw, r.Name)
 		if d < bestDist {
 			bestDist = d
@@ -203,8 +203,8 @@ Roles:
 	}
 	if bestDist > 8 {
 		trace.MatchType = "fallback"
-		trace.Resolved = "general_reasoning_basic"
-		return "general_reasoning_basic", trace, nil
+		trace.Resolved = "initial"
+		return "initial", trace, nil
 	}
 	trace.MatchType = "fuzzy"
 	trace.FuzzyDist = bestDist
@@ -252,47 +252,47 @@ func min3(a, b, c int) int {
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 type routeResult struct {
-	RoleName      string
+	CueName       string
 	Category      string
 	SuggestedTier string
 	SystemPrompt  string
 	Tier          string
 	Port          int
 	ModelID       string
-	TierSource    string // "role_override", "suggested_tier", "fallback"
+	TierSource    string // "cue_override", "suggested_tier", "fallback"
 }
 
-func resolveRoute(roleName string, roles []Role) (*routeResult, error) {
-	_, role := findRole(roles, roleName)
-	if role == nil {
-		return nil, fmt.Errorf("role %q not found", roleName)
+func resolveRoute(cueName string, cues []Cue) (*routeResult, error) {
+	_, cue := findCue(cues, cueName)
+	if cue == nil {
+		return nil, fmt.Errorf("cue %q not found", cueName)
 	}
 
-	// Direct model override on the role — kept for power users but not
+	// Direct model override on the cue — kept for power users but not
 	// actively promoted. Find which tier it belongs to and pick its sidecar.
-	if role.Model != "" {
-		tier := tierForModel(role.Model)
+	if cue.Model != "" {
+		tier := tierForModel(cue.Model)
 		if tier == "" {
-			return nil, fmt.Errorf("role %q has model %q but it is not in any tier pool", roleName, role.Model)
+			return nil, fmt.Errorf("cue %q has model %q but it is not in any tier pool", cueName, cue.Model)
 		}
 		sidecar, err := pickSidecar(tier, false)
 		if err != nil {
-			return nil, fmt.Errorf("role model override: %w", err)
+			return nil, fmt.Errorf("cue model override: %w", err)
 		}
 		return &routeResult{
-			RoleName:      roleName,
-			Category:      role.Category,
-			SuggestedTier: role.SuggestedTier,
-			SystemPrompt:  role.SystemPrompt,
+			CueName:       cueName,
+			Category:      cue.Category,
+			SuggestedTier: cue.SuggestedTier,
+			SystemPrompt:  cue.SystemPrompt,
 			Tier:          tier,
 			Port:          sidecar.Port,
 			ModelID:       sidecar.Model,
-			TierSource:    "role_override",
+			TierSource:    "cue_override",
 		}, nil
 	}
 
 	// Use suggested_tier, fall back to "fast".
-	tier := role.SuggestedTier
+	tier := cue.SuggestedTier
 	tierSource := "suggested_tier"
 	if tier != "fast" && tier != "slow" {
 		tier = "fast"
@@ -314,10 +314,10 @@ func resolveRoute(roleName string, roles []Role) (*routeResult, error) {
 	}
 
 	return &routeResult{
-		RoleName:      roleName,
-		Category:      role.Category,
-		SuggestedTier: role.SuggestedTier,
-		SystemPrompt:  role.SystemPrompt,
+		CueName:       cueName,
+		Category:      cue.Category,
+		SuggestedTier: cue.SuggestedTier,
+		SystemPrompt:  cue.SystemPrompt,
 		Tier:          tier,
 		Port:          sidecar.Port,
 		ModelID:       sidecar.Model,
@@ -408,7 +408,7 @@ func printStep1Classify(t *classifyTrace, elapsed time.Duration) {
 // printStep2Route prints the routing decision.
 func printStep2Route(route *routeResult, elapsed time.Duration) {
 	traceStep(2, "RESOLVE ROLE", "Go code")
-	traceField("role", route.RoleName)
+	traceField("cue", route.CueName)
 	traceField("category", route.Category)
 	traceField("suggested", route.SuggestedTier)
 	traceField("tier", fmt.Sprintf("%s  (source: %s)", route.Tier, route.TierSource))
@@ -575,7 +575,7 @@ func truncate(s string, n int) string {
 // ── Core prompt execution ─────────────────────────────────────────────────────
 
 type promptOpts struct {
-	roleName  string
+	cueName   string
 	category  string
 	tier      string
 	sessionID string
@@ -586,34 +586,34 @@ type promptOpts struct {
 
 func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
 	trace := opts.dryRun || opts.debug
-	roles, err := loadRoles()
+	cues, err := loadCues()
 	if err != nil {
 		return sess, err
 	}
 
 	// ── Step 1: Classify ──
-	roleName := opts.roleName
+	cueName := opts.cueName
 	var ct *classifyTrace
-	if roleName == "" && opts.tier == "" {
-		candidates := roles
+	if cueName == "" && opts.tier == "" {
+		candidates := cues
 		if opts.category != "" {
 			candidates = nil
-			for _, r := range roles {
+			for _, r := range cues {
 				if r.Category == opts.category {
 					candidates = append(candidates, r)
 				}
 			}
 			if len(candidates) == 0 {
-				return sess, fmt.Errorf("no roles in category %q", opts.category)
+				return sess, fmt.Errorf("no cues in category %q", opts.category)
 			}
 		}
-		roleName, ct, err = classifyPrompt(input, candidates)
+		cueName, ct, err = classifyPrompt(input, candidates)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("classification error: "+err.Error()+", falling back to general_reasoning_basic"))
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("classification error: "+err.Error()+", falling back to initial"))
 		}
 	}
-	if roleName == "" {
-		roleName = "general_reasoning_basic"
+	if cueName == "" {
+		cueName = "initial"
 	}
 	if trace && ct != nil {
 		printStep1Classify(ct, ct.Elapsed)
@@ -628,7 +628,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			return sess, fmt.Errorf("--tier %s: %w", opts.tier, sErr)
 		}
 		route = &routeResult{
-			RoleName:     "none",
+			CueName:      "none",
 			TierSource:   "flag_override",
 			SystemPrompt: "",
 			Tier:         opts.tier,
@@ -636,7 +636,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			ModelID:      sidecar.Model,
 		}
 	} else {
-		route, err = resolveRoute(roleName, roles)
+		route, err = resolveRoute(cueName, cues)
 		if err != nil {
 			return sess, err
 		}
@@ -692,7 +692,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	// ── Step 5: Persist session ──
 	if opts.sessionID != "" || sess != nil {
 		if sess == nil {
-			sess = newSession(route.RoleName, route.Tier)
+			sess = newSession(route.CueName, route.Tier)
 			if opts.sessionID != "" {
 				sess.ID = opts.sessionID
 			}
@@ -723,7 +723,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 // ── REPL ──────────────────────────────────────────────────────────────────────
 
 var replCommands = map[string]string{
-	"/role":    "show or set current role  (e.g. /role math_reasoning)",
+	"/cue":     "show or set current cue  (e.g. /cue math_reasoning)",
 	"/session": "show current session info",
 	"/clear":   "clear session history (start fresh)",
 	"/dry-run": "toggle dry-run mode",
@@ -774,7 +774,7 @@ func runREPL(opts promptOpts) error {
 				fmt.Printf("id:          %s\n", sess.ID)
 				fmt.Printf("name:        %s\n", sess.Name)
 				fmt.Printf("description: %s\n", sess.Description)
-				fmt.Printf("role:        %s\n", sess.Role)
+				fmt.Printf("cue:         %s\n", sess.Cue)
 				fmt.Printf("tier:        %s\n", sess.Tier)
 				fmt.Printf("turns:       %d\n", len(sess.Messages))
 			}
@@ -782,7 +782,7 @@ func runREPL(opts promptOpts) error {
 		case "/clear":
 			sess = nil
 			if opts.sessionID != "" {
-				sess = newSession(opts.roleName, opts.tier)
+				sess = newSession(opts.cueName, opts.tier)
 				sess.ID = opts.sessionID
 			}
 			fmt.Println(utl.Gra("session cleared"))
@@ -807,13 +807,13 @@ func runREPL(opts promptOpts) error {
 			continue
 		}
 
-		if strings.HasPrefix(input, "/role") {
+		if strings.HasPrefix(input, "/cue") {
 			parts := strings.Fields(input)
 			if len(parts) == 1 {
-				fmt.Printf("current role: %s\n", utl.Gre(opts.roleName))
+				fmt.Printf("current cue:  %s\n", utl.Gre(opts.cueName))
 			} else {
-				opts.roleName = parts[1]
-				fmt.Printf("role set to: %s\n", utl.Gre(opts.roleName))
+				opts.cueName = parts[1]
+				fmt.Printf("cue set to:  %s\n", utl.Gre(opts.cueName))
 			}
 			continue
 		}
@@ -837,9 +837,9 @@ func printPromptHelp() {
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s prompt [flags] [message]\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
-	fmt.Printf("  %-32s %s\n", "-r, --role <n>", "Skip classification, use this role")
+	fmt.Printf("  %-32s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-32s %s\n", "-c, --category <n>", "Classify within a category only")
-	fmt.Printf("  %-32s %s\n", "    --tier <n>", "Override tier directly, bypass role system")
+	fmt.Printf("  %-32s %s\n", "    --tier <n>", "Override tier directly, bypass cue system")
 	fmt.Printf("  %-32s %s\n", "-s, --session <id>", "Load/continue a session by ID")
 	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–3, skip inference")
 	fmt.Printf("  %-32s %s\n", "-d, --debug", "Trace all steps including inference")
@@ -850,7 +850,7 @@ func printPromptHelp() {
 	fmt.Printf("  $ %s prompt \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s prompt -n \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s prompt -d \"explain transformers\"\n", n)
-	fmt.Printf("  $ %s prompt --role math_reasoning \"solve x^2 + 3x - 4\"\n", n)
+	fmt.Printf("  $ %s prompt --cue math_reasoning \"solve x^2 + 3x - 4\"\n", n)
 	fmt.Printf("  $ %s prompt --category code \"write a binary search in Go\"\n", n)
 	fmt.Printf("  $ %s prompt --session abc123 \"continue from before\"\n", n)
 	fmt.Printf("  $ %s prompt\n", n)
@@ -904,7 +904,7 @@ func newPromptCmd() *cobra.Command {
 		printPromptHelp()
 	})
 
-	cmd.Flags().StringVarP(&opts.roleName, "role", "r", "", "Skip classification, use this role")
+	cmd.Flags().StringVarP(&opts.cueName, "cue", "r", "", "Skip classification, use this cue")
 	cmd.Flags().StringVarP(&opts.category, "category", "c", "", "Classify within a category only")
 	cmd.Flags().StringVar(&opts.tier, "tier", "", "Override tier directly")
 	cmd.Flags().StringVarP(&opts.sessionID, "session", "s", "", "Load/continue a session by ID")
