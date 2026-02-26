@@ -475,10 +475,19 @@ func newSvcStatusCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("%-6s  %-50s  %-28s  %-7s  %-8s  %8s\n",
-				"TIER", "MODEL", "ENDPOINT", "PID", "UPTIME", "MEM")
+			type statusRow struct {
+				tier     string
+				model    string
+				endpoint string
+				pid      int
+				uptime   string
+				mem      string
+				running  bool
+			}
 
+			var rows []statusRow
 			var totalKB int64
+
 			for _, tier := range tierOrder {
 				for _, model := range cfg.Tiers[tier] {
 					state, _ := readState(model)
@@ -487,23 +496,55 @@ func newSvcStatusCmd() *cobra.Command {
 						endpoint = sidecarEndpoint(state.Port)
 					}
 					if state == nil || !pidAlive(state.PID) {
-						fmt.Printf("%-6s  %-50s  %-28s  %-7s  %-8s  %8s\n",
-							tier, model, endpoint, "—", utl.Gra("stopped"), "—")
+						rows = append(rows, statusRow{tier, model, endpoint, 0, utl.Gra("stopped"), "—", false})
 						continue
 					}
-					endpoint = sidecarEndpoint(state.Port)
 					rss := processRSSKB(state.PID)
 					totalKB += rss
 					mem := formatMB(rss * 1024)
 					if rss == 0 {
 						mem = "?"
 					}
-					fmt.Printf("%-6s  %-50s  %-28s  %-7d  %-8s  %8s\n",
-						tier, model, endpoint,
-						state.PID,
-						formatUptime(state.Started),
-						mem,
-					)
+					rows = append(rows, statusRow{tier, model, endpoint, state.PID, formatUptime(state.Started), mem, true})
+				}
+			}
+
+			// embed sidecar row
+			embedState, _ := readEmbedState()
+			if embedState != nil {
+				embedEndpoint := fmt.Sprintf("http://localhost:%d", embedState.Port)
+				if !pidAlive(embedState.PID) {
+					rows = append(rows, statusRow{"embed", embedState.Model, embedEndpoint, 0, utl.Gra("stopped"), "—", false})
+				} else {
+					rss := processRSSKB(embedState.PID)
+					totalKB += rss
+					mem := formatMB(rss * 1024)
+					if rss == 0 {
+						mem = "?"
+					}
+					rows = append(rows, statusRow{"embed", embedState.Model, embedEndpoint, embedState.PID, formatUptime(embedState.Started), mem, true})
+				}
+			}
+
+			// Compute MODEL column width.
+			modelW := len("MODEL")
+			for _, r := range rows {
+				if len(r.model) > modelW {
+					modelW = len(r.model)
+				}
+			}
+			modelW += 2
+
+			fmt.Printf("%-6s  %-*s  %-28s  %-7s  %-8s  %8s\n",
+				"TIER", modelW, "MODEL", "ENDPOINT", "PID", "UPTIME", "MEM")
+
+			for _, r := range rows {
+				if !r.running {
+					fmt.Printf("%-6s  %-*s  %-28s  %-7s  %-8s  %8s\n",
+						r.tier, modelW, r.model, r.endpoint, "—", r.uptime, r.mem)
+				} else {
+					fmt.Printf("%-6s  %-*s  %-28s  %-7d  %-8s  %8s\n",
+						r.tier, modelW, r.model, r.endpoint, r.pid, r.uptime, r.mem)
 				}
 			}
 
@@ -545,6 +586,23 @@ func newSvcStartCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  error starting %s: %s\n", modelID, err.Error())
 				}
 			}
+			// Start embed sidecar alongside generative sidecars (start all or fast/slow).
+			if arg == "" || arg == "fast" || arg == "slow" {
+				if !embedSidecarRunning() {
+					cfg2, cfgErr := loadConfig()
+					if cfgErr == nil {
+						if err := startEmbedSidecar(embedModel(cfg2)); err != nil {
+							fmt.Fprintf(os.Stderr, "  error starting embed sidecar: %s\n", err.Error())
+						}
+					}
+				} else {
+					es, _ := readEmbedState()
+					if es != nil {
+						fmt.Printf("  embed  pid %-7d  http://localhost:%d  %s\n",
+							es.PID, es.Port, utl.Gra("already running"))
+					}
+				}
+			}
 			return nil
 		},
 	}
@@ -570,6 +628,12 @@ func newSvcStopCmd() *cobra.Command {
 			for _, modelID := range models {
 				if err := stopSidecar(modelID); err != nil {
 					fmt.Fprintf(os.Stderr, "  error stopping %s: %s\n", modelID, err.Error())
+				}
+			}
+			// Stop embed sidecar alongside generative sidecars.
+			if arg == "" || arg == "fast" || arg == "slow" {
+				if err := stopEmbedSidecar(); err != nil {
+					fmt.Fprintf(os.Stderr, "  error stopping embed sidecar: %s\n", err.Error())
 				}
 			}
 			return nil
@@ -672,24 +736,62 @@ func newSvcDocCmd() *cobra.Command {
 			}
 			for _, t := range tierOrder {
 				for _, model := range cfg.Tiers[t] {
-					label := fmt.Sprintf("%-6s %s", t, model)
 					cacheDir := hfCacheDir(model)
 					_, statErr := os.Stat(cacheDir)
 					modelOK := statErr == nil
 					if modelOK {
-						detail = utl.Gra(cacheDir)
+						// Highlight the model name portion in white, path in gray.
+						parent := filepath.Dir(cacheDir)
+						detail = utl.Gra(parent+"/") + utl.Whi(filepath.Base(cacheDir))
 					} else {
 						detail = utl.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", model))
 					}
-					checks = append(checks, runDocCheck(label, detail, modelOK, false))
+					checks = append(checks, runDocCheck(t, detail, modelOK, false))
 				}
 			}
 			if len(cfg.Tiers["fast"]) == 0 && len(cfg.Tiers["slow"]) == 0 {
 				checks = append(checks, runDocCheck("tier models", utl.Gra("no models assigned"), true, true))
 			}
 
+			// ── embed model ──
+			em := embedModel(cfg)
+			emCacheDir := hfCacheDir(em)
+			_, emStatErr := os.Stat(emCacheDir)
+			emOK := emStatErr == nil
+			var emDetail string
+			if emOK {
+				parent := filepath.Dir(emCacheDir)
+				emDetail = utl.Gra(parent+"/") + utl.Whi(filepath.Base(emCacheDir))
+			} else {
+				emDetail = utl.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", em))
+			}
+			checks = append(checks, runDocCheck("embed", emDetail, emOK, false))
+
+			// ── mlx-embeddings Python package ──
+			embPkgOK := false
+			embPkgDetail := utl.Gra("not found — run: pipx inject mlx-lm mlx-embeddings")
+			venvPy, venvErr := mlxVenvPython()
+			if venvErr != nil {
+				embPkgDetail = utl.Gra(venvErr.Error())
+			} else {
+				out, err2 := exec.Command(venvPy, "-c", "import mlx_embeddings").CombinedOutput()
+				embPkgOK = err2 == nil && len(out) == 0
+				if embPkgOK {
+					embPkgDetail = utl.Gra(fmt.Sprintf("importable (%s)", venvPy))
+				}
+			}
+			checks = append(checks, runDocCheck("mlx-embeddings pkg", embPkgDetail, embPkgOK, false))
+
 			// ── print results ──
-			fmt.Printf("%-36s  %-6s  %s\n", "CHECK", "STATUS", "DETAIL")
+			// Compute column width from longest label.
+			colW := len("CHECK")
+			for _, c := range checks {
+				if len(c.label) > colW {
+					colW = len(c.label)
+				}
+			}
+			colW += 2 // padding
+			fmt.Printf("%-*s  %-6s  %s\n", colW, "CHECK", "STATUS", "DETAIL")
 			for _, c := range checks {
 				var statusRaw, status string
 				switch {
@@ -704,7 +806,7 @@ func newSvcDocCmd() *cobra.Command {
 					status = utl.Gra(fmt.Sprintf("%-6s", statusRaw))
 					allOK = false
 				}
-				fmt.Printf("%-36s  %s  %s\n", c.label, status, c.detail)
+				fmt.Printf("%-*s  %s  %s\n", colW, c.label, status, c.detail)
 			}
 
 			if !allOK {

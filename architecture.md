@@ -54,11 +54,12 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 Manages `~/.config/iq/config.yaml`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
 
 ```
-fast    sub-2GB models — used for classification and quick tasks
+fast    sub-2GB models — used for quick inference tasks
 slow    2GB+ models    — used for quality inference
+embed   embedding model — used for cue classification (fixed port 27000)
 ```
 
-Commands: `cfg show` (path + model table), `cfg tier show`, `cfg tier add <tier> <model>`, `cfg tier rm <tier> <model>`.
+Commands: `cfg show` (path + model table), `cfg tier show`, `cfg tier add <tier> <model>`, `cfg tier rm <tier> <model>`, `cfg embed show/set/rm` (embedding model for classification).
 
 `cfg show` renders the same model table as `lm list`, scoped to assigned models only.
 
@@ -91,9 +92,11 @@ Start sequence:
 
 `iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models).
 
-**Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true` (used by the classifier), it returns the model with the smallest disk footprint to minimise classification latency.
+**Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
 
-`iq svc doc` runs preflight checks: `python3` on PATH, `mlx_lm.server` found, `--model` flag present, all assigned model cache dirs exist.
+`iq svc doc` runs preflight checks: `python3` on PATH, `mlx_lm.server` found, `--model` flag present, all assigned model cache dirs exist, embed model cache present, `mlx_embeddings` Python package importable.
+
+**Embedding sidecar** — a separate Python HTTP process (`embed_server.py`, embedded in the IQ binary) that runs `bge-small-en-v1.5-mlx` (or a user-configured model via `iq cfg embed set`). Fixed port: 27000. Started and stopped alongside generative sidecars via `iq svc start/stop`. Serves `POST /embed` (accepts a list of texts, returns L2-normalised float32 vectors) and `GET /health`. State file: `~/.config/iq/run/embed.json`. Requires `pipx install mlx-embeddings`.
 
 `iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models, plus IQ process memory and combined total.
 
@@ -101,7 +104,11 @@ Start sequence:
 
 Routes user prompts through a five-step pipeline:
 
-**1. Classify** — the input is sent to the smallest live fast-tier sidecar with a compact cue list. This is a short non-streaming call capped at 30 `max_tokens` (cue names are at most 5–7 tokens; the cap keeps classification fast). The model returns a cue name, cleaned and matched exactly or via Levenshtein fuzzy match (threshold: distance ≤ 8). Falls back to `initial` on failure. Every prompt therefore makes two sidecar calls: one cheap classification call, then the full inference call with the resolved cue's system prompt.
+**1. Classify** — the user input is embedded by the embedding sidecar (see below) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. This replaces the previous LLM-based classifier — no generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running. Every prompt therefore makes two calls: one cheap embedding call (~10ms), then the full inference call with the resolved cue's system prompt.
+
+> **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space, which is what makes similarity search possible: "explain a transformer model" and "describe how attention works" will produce vectors that point in nearly the same direction, even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, each cue description is embedded once and cached; at query time the user input is embedded and the closest cue is selected in microseconds via cosine similarity — no token generation, no instruction-following uncertainty.
+
+The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first use and refreshed automatically when cues change (add/edit/rm/reset/sync). The cache stores a 384-float L2-normalised vector per cue, keyed by cue name, along with the embed model ID and generation timestamp.
 
 **2. Route** — resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
 
@@ -147,8 +154,11 @@ Accepts a tier name (routes to any live sidecar in that pool) or a specific mode
 ~/.config/iq/
 ├── config.yaml              # tier pool assignments
 ├── models.json              # manifest of downloaded models
-├── cues.yaml               # cue definitions (seeded from embedded defaults)
+├── cues.yaml                    # cue definitions (seeded from embedded defaults)
+├── cue_embeddings.json          # cosine similarity cache (auto-built, invalidated on cue changes)
 ├── run/
+│   ├── embed.json                                        # embed sidecar state
+│   ├── embed.log
 │   ├── mlx-community--SmolLM2-135M-Instruct-8bit.json   # sidecar state
 │   ├── mlx-community--SmolLM2-135M-Instruct-8bit.log
 │   ├── mlx-community--Phi-4-mini-reasoning-4bit.json
@@ -212,3 +222,5 @@ append turn to session YAML
 | Version | Summary |
 |---------|---------|
 | 0.2.7 | Initial public release |
+| 0.2.8 | rename role→cue, add initial fallback cue, probe --cue flag |
+| 0.2.9 | embedding-based classification, normalise suggested_tier values |

@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
@@ -119,135 +118,8 @@ func shortID() string {
 }
 
 // ── Classification ────────────────────────────────────────────────────────────
-
-// classifyTrace carries the details of a classification call for trace output.
-type classifyTrace struct {
-	Port         int
-	Model        string
-	SystemPrompt string
-	UserInput    string
-	RawResponse  string
-	MatchType    string // "exact", "fuzzy", or "fallback"
-	FuzzyDist    int    // only set when MatchType == "fuzzy"
-	Resolved     string
-	Elapsed      time.Duration
-}
-
-// classifyPrompt sends the user input to the tiny tier and returns the best
-// matching cue name plus a trace of what happened.
-func classifyPrompt(input string, cues []Cue) (string, *classifyTrace, error) {
-	var lines []string
-	for _, r := range cues {
-		lines = append(lines, r.Name+": "+r.Description)
-	}
-	cueList := strings.Join(lines, "\n")
-
-	systemPrompt := `You are a task classifier. Given a user input, return exactly one cue name from the list below that best matches the task. Return only the cue name with no punctuation, explanation, or extra text.
-
-Cues:
-` + cueList
-
-	// Use the smallest live fast-tier sidecar for classification to minimise latency.
-	sidecar, err := pickSidecar("fast", true)
-	if err != nil {
-		return "initial", nil, fmt.Errorf("classify: %w", err)
-	}
-
-	trace := &classifyTrace{
-		Port:         sidecar.Port,
-		Model:        sidecar.Model,
-		SystemPrompt: systemPrompt,
-		UserInput:    input,
-	}
-
-	t0 := time.Now()
-	response, err := callSidecar(sidecar.Port, []chatMessage{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: input},
-	}, false, 30)
-	trace.Elapsed = time.Since(t0)
-	if err != nil {
-		trace.MatchType = "fallback"
-		trace.Resolved = "initial"
-		return "initial", trace, err
-	}
-
-	trace.RawResponse = strings.TrimSpace(response)
-
-	raw := strings.ToLower(trace.RawResponse)
-	raw = strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || r == '_' {
-			return r
-		}
-		return -1
-	}, raw)
-
-	// Exact match first.
-	for _, r := range cues {
-		if r.Name == raw {
-			trace.MatchType = "exact"
-			trace.Resolved = r.Name
-			return r.Name, trace, nil
-		}
-	}
-
-	// Fuzzy: find closest cue name by edit distance.
-	best := "initial"
-	bestDist := 999
-	for _, r := range cues {
-		d := levenshtein(raw, r.Name)
-		if d < bestDist {
-			bestDist = d
-			best = r.Name
-		}
-	}
-	if bestDist > 8 {
-		trace.MatchType = "fallback"
-		trace.Resolved = "initial"
-		return "initial", trace, nil
-	}
-	trace.MatchType = "fuzzy"
-	trace.FuzzyDist = bestDist
-	trace.Resolved = best
-	return best, trace, nil
-}
-
-// levenshtein computes edit distance between two strings.
-func levenshtein(a, b string) int {
-	ra, rb := []rune(a), []rune(b)
-	la, lb := len(ra), len(rb)
-	dp := make([][]int, la+1)
-	for i := range dp {
-		dp[i] = make([]int, lb+1)
-		dp[i][0] = i
-	}
-	for j := 0; j <= lb; j++ {
-		dp[0][j] = j
-	}
-	for i := 1; i <= la; i++ {
-		for j := 1; j <= lb; j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			dp[i][j] = min3(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1]+cost)
-		}
-	}
-	return dp[la][lb]
-}
-
-func min3(a, b, c int) int {
-	if a < b {
-		if a < c {
-			return a
-		}
-		return c
-	}
-	if b < c {
-		return b
-	}
-	return c
-}
+// Embedding-based classification is implemented in embed.go (embedClassify).
+// This section is intentionally empty.
 
 // ── Routing ───────────────────────────────────────────────────────────────────
 
@@ -390,19 +262,18 @@ func traceBlock(role, content string, highlightUser bool) {
 	}
 }
 
-// printStep1Classify prints the classification trace.
-func printStep1Classify(t *classifyTrace, elapsed time.Duration) {
-	traceStep(1, "CLASSIFY", fmt.Sprintf("tiny :%d", t.Port))
+// printStep1Classify prints the embedding classification trace.
+func printStep1Classify(t *embedClassifyTrace) {
+	cacheStr := "rebuilt"
+	if t.CacheHit {
+		cacheStr = "hit"
+	}
+	traceStep(1, "CLASSIFY", fmt.Sprintf("embed :%d", embedPortFixed))
 	traceField("model", t.Model)
 	traceField("resolved", t.Resolved)
-	traceBlock("system", t.SystemPrompt, false)
-	traceBlock("user", t.UserInput, true)
-	match := fmt.Sprintf("%q  (%s)", t.RawResponse, t.MatchType)
-	if t.MatchType == "fuzzy" {
-		match = fmt.Sprintf("%q  (fuzzy → %s, distance %d)", t.RawResponse, t.Resolved, t.FuzzyDist)
-	}
-	traceBlock("response", match, false)
-	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
+	traceField("score", fmt.Sprintf("%.4f", t.Score))
+	traceField("cache", cacheStr)
+	traceField("elapsed", fmt.Sprintf("%dms", t.Elapsed.Milliseconds()))
 }
 
 // printStep2Route prints the routing decision.
@@ -593,7 +464,8 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 1: Classify ──
 	cueName := opts.cueName
-	var ct *classifyTrace
+	var et *embedClassifyTrace
+
 	if cueName == "" && opts.tier == "" {
 		candidates := cues
 		if opts.category != "" {
@@ -607,16 +479,27 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				return sess, fmt.Errorf("no cues in category %q", opts.category)
 			}
 		}
-		cueName, ct, err = classifyPrompt(input, candidates)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("classification error: "+err.Error()+", falling back to initial"))
+		if !embedSidecarRunning() {
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial (run 'iq svc start')"))
+			cueName = "initial"
+		} else {
+			cfg2, cfgErr := loadConfig()
+			em := defaultEmbedModel
+			if cfgErr == nil {
+				em = embedModel(cfg2)
+			}
+			cueName, et, err = embedClassify(input, candidates, em)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("classification error: "+err.Error()+", falling back to initial"))
+				cueName = "initial"
+			}
 		}
 	}
 	if cueName == "" {
 		cueName = "initial"
 	}
-	if trace && ct != nil {
-		printStep1Classify(ct, ct.Elapsed)
+	if trace && et != nil {
+		printStep1Classify(et)
 	}
 
 	// ── Step 2: Resolve route ──

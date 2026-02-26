@@ -354,6 +354,7 @@ system_prompt: |
 			if err := saveCues(cues); err != nil {
 				return err
 			}
+			invalidateCueEmbeddings()
 			fmt.Printf("Added cue %q\n", newCue.Name)
 			return nil
 		},
@@ -427,6 +428,7 @@ func newCueEditCmd() *cobra.Command {
 			if err := saveCues(cues); err != nil {
 				return err
 			}
+			invalidateCueEmbeddings()
 			fmt.Printf("Updated cue %q\n", updatedCue.Name)
 			return nil
 		},
@@ -460,6 +462,7 @@ func newCueRmCmd() *cobra.Command {
 			if err := saveCues(cues); err != nil {
 				return err
 			}
+			invalidateCueEmbeddings()
 			fmt.Printf("Removed cue %q\n", args[0])
 			return nil
 		},
@@ -500,6 +503,7 @@ func newCueAssignCmd() *cobra.Command {
 			if err := saveCues(cues); err != nil {
 				return err
 			}
+			invalidateCueEmbeddings()
 			fmt.Printf("Assigned %s → %s\n", modelID, cueName)
 			return nil
 		},
@@ -586,6 +590,7 @@ func newCueResetCmd() *cobra.Command {
 				if err := saveCues(cues); err != nil {
 					return err
 				}
+				invalidateCueEmbeddings()
 				fmt.Printf("Reset cue %q to factory default.\n", name)
 				return nil
 			}
@@ -646,7 +651,8 @@ func newCueResetCmd() *cobra.Command {
 			if err := saveCuesRaw([]byte(defaultCuesYAML), path); err != nil {
 				return fmt.Errorf("failed to write defaults: %w", err)
 			}
-			fmt.Println("Roles reset to factory defaults.")
+			invalidateCueEmbeddings()
+			fmt.Println("Cues reset to factory defaults.")
 			return nil
 		},
 	}
@@ -690,6 +696,7 @@ func newCueSyncCmd() *cobra.Command {
 			if err := saveCues(cues); err != nil {
 				return err
 			}
+			invalidateCueEmbeddings()
 			fmt.Printf("Added %d new cue(s):\n", len(added))
 			for _, name := range added {
 				fmt.Printf("  %s\n", name)

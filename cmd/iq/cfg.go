@@ -17,10 +17,21 @@ import (
 // Config stores pools of models per tier.
 // Stored as tiers: { "fast": ["model-a", "model-b"], "slow": ["model-c"] }
 type Config struct {
-	Tiers map[string][]string `yaml:"tiers"`
+	Tiers      map[string][]string `yaml:"tiers"`
+	EmbedModel string              `yaml:"embed_model,omitempty"`
 }
 
 var tierOrder = []string{"fast", "slow"}
+
+const defaultEmbedModel = "mlx-community/bge-small-en-v1.5-4bit"
+
+// embedModel returns the configured embed model ID, falling back to the default.
+func embedModel(cfg *Config) string {
+	if cfg.EmbedModel != "" {
+		return cfg.EmbedModel
+	}
+	return defaultEmbedModel
+}
 
 func configPath() (string, error) {
 	dir, err := iqConfigDir()
@@ -238,7 +249,7 @@ func newCfgCmd() *cobra.Command {
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		printCfgHelp()
 	})
-	cmd.AddCommand(newCfgShowCmd(), newCfgTierCmd())
+	cmd.AddCommand(newCfgShowCmd(), newCfgTierCmd(), newCfgEmbedCmd())
 	return cmd
 }
 
@@ -391,6 +402,103 @@ func newCfgTierRmCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("removed %s from %s tier\n", modelID, tier)
+			return nil
+		},
+	}
+}
+
+// ── cfg embed ─────────────────────────────────────────────────────────────────
+
+func printCfgEmbedHelp() {
+	n := program_name
+	fmt.Printf("Set the embedding model used for cue classification.\n\n")
+	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("  %s cfg embed <command>\n\n", n)
+	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("  %-10s %s\n", "show", "Show current embed model")
+	fmt.Printf("  %-10s %s\n", "set", "Set the embed model")
+	fmt.Printf("  %-10s %s\n\n", "rm", "Clear the embed model (revert to default)")
+	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("  $ %s cfg embed show\n", n)
+	fmt.Printf("  $ %s cfg embed set mlx-community/bge-small-en-v1.5-mlx\n\n", n)
+}
+
+func newCfgEmbedCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "embed",
+		Short:        "Set the embedding model for cue classification",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			printCfgEmbedHelp()
+			return nil
+		},
+	}
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		printCfgEmbedHelp()
+	})
+	cmd.AddCommand(newCfgEmbedShowCmd(), newCfgEmbedSetCmd(), newCfgEmbedRmCmd())
+	return cmd
+}
+
+func newCfgEmbedShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "show",
+		Short:        "Show current embed model",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			model := embedModel(cfg)
+			suffix := ""
+			if cfg.EmbedModel == "" {
+				suffix = utl.Gra("  (default)")
+			}
+			fmt.Printf("embed_model  %s%s\n", utl.Gre(model), suffix)
+			return nil
+		},
+	}
+}
+
+func newCfgEmbedSetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "set <model>",
+		Short:        "Set the embed model",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			cfg.EmbedModel = args[0]
+			if err := saveConfig(cfg); err != nil {
+				return err
+			}
+			invalidateCueEmbeddings()
+			fmt.Printf("embed_model  %s\n", utl.Gre(args[0]))
+			return nil
+		},
+	}
+}
+
+func newCfgEmbedRmCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "rm",
+		Short:        "Clear embed model (revert to default)",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			cfg.EmbedModel = ""
+			if err := saveConfig(cfg); err != nil {
+				return err
+			}
+			invalidateCueEmbeddings()
+			fmt.Printf("embed_model  %s\n", utl.Gra("(default) "+defaultEmbedModel))
 			return nil
 		},
 	}

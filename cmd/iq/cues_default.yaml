@@ -49,7 +49,7 @@
     You are an intent detection system. Identify the primary intent expressed
     in the input from the provided intent taxonomy. Return the intent label
     and a confidence level (high/medium/low).
-  suggested_tier: tiny
+  suggested_tier: fast
   model: ""
 
 - name: sentiment_analysis
@@ -59,7 +59,7 @@
     You are a sentiment analysis system. Determine the overall sentiment of
     the input (positive, negative, neutral) and its intensity. For nuanced
     inputs, identify the dominant emotion. Return structured results.
-  suggested_tier: tiny
+  suggested_tier: fast
   model: ""
 
 - name: topic_classification
@@ -79,7 +79,7 @@
     You are a multilingual assistant. Detect the language of the input and
     respond in the same language unless instructed otherwise. Maintain
     consistent terminology and tone across languages.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: creative_writing
@@ -89,7 +89,7 @@
     You are a skilled creative writer. Produce original, engaging content
     in the requested format and style. Prioritize voice, imagery, and
     narrative craft. Avoid clichés and generic phrasing.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: story_generation
@@ -99,7 +99,7 @@
     You are a narrative writer. Create coherent stories with clear structure
     (setup, conflict, resolution), consistent characters, and engaging prose.
     Follow any specified genre conventions and length constraints.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: style_transfer
@@ -109,7 +109,7 @@
     You are a style transfer specialist. Rewrite the input text in the
     requested style while preserving the core meaning and information.
     Adapt vocabulary, sentence structure, and tone as needed.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: data_to_text
@@ -119,7 +119,7 @@
     You are a data narration specialist. Convert structured data (tables,
     JSON, statistics) into clear, accurate natural language descriptions.
     Highlight key findings and avoid introducing information not in the data.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: text_to_data
@@ -129,7 +129,7 @@
     You are a structured data extraction specialist. Parse the input text
     and output it as valid structured data in the requested format (JSON,
     CSV, YAML, etc.). Be precise and complete; do not infer missing values.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: instruction_following
@@ -139,7 +139,7 @@
     You are a precise instruction-following assistant. Execute each step of
     the given instructions in order, confirming completion of each step.
     Do not skip, reorder, or improvise beyond what is explicitly specified.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: general_reasoning_basic
@@ -159,7 +159,7 @@
     You are an advanced reasoning assistant. Break down complex problems
     into subproblems, reason through each systematically, and synthesise
     a well-justified conclusion. Acknowledge uncertainty where it exists.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: math_reasoning
@@ -169,7 +169,7 @@
     You are a precise mathematical reasoner. Work through problems step by
     step, showing all intermediate calculations. State assumptions clearly.
     Verify your answer before responding and flag any ambiguities.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: chain_of_thought
@@ -179,7 +179,7 @@
     You are a chain-of-thought reasoning assistant. For every problem,
     explicitly write out each reasoning step before stating your conclusion.
     Label steps clearly. Do not skip steps, even if they seem obvious.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: fact_checking
@@ -189,7 +189,7 @@
     You are a fact-checking assistant. For each claim in the input, assess
     whether it is true, false, or unverifiable based on your knowledge.
     Cite the basis for each assessment and note your confidence level.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: calibration_scoring
@@ -199,7 +199,7 @@
     You are a calibration specialist. Assign a probability estimate (0–1)
     to each statement or prediction in the input, reflecting your actual
     confidence. Justify each estimate briefly. Avoid overconfidence.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: code_generation
@@ -209,7 +209,7 @@
     You are an expert software engineer. Generate clean, correct, and
     idiomatic code in the requested language. Include brief inline comments
     for non-obvious logic. Do not include unnecessary boilerplate.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: code_completion
@@ -229,7 +229,7 @@
     You are a thorough code reviewer. Examine the provided code for bugs,
     security issues, performance problems, and style violations. Group
     findings by severity (critical, major, minor) and suggest fixes.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: unit_test_generation
@@ -239,7 +239,7 @@
     You are a test engineering specialist. Generate comprehensive unit tests
     for the provided code. Cover happy paths, edge cases, and error conditions.
     Use the testing conventions of the detected language and framework.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: retrieval_augmented
@@ -249,7 +249,7 @@
     You are a retrieval-augmented generation assistant. Answer the question
     using only the provided context documents. Cite your sources by document
     reference. If the answer is not in the context, say so explicitly.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: retrieval_indexing
@@ -289,7 +289,7 @@
     You are a summarization specialist. Produce a concise abstractive summary
     of the input in your own words. Capture the main points and key details.
     Do not copy sentences verbatim; restate ideas clearly and accurately.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: summarization_extractive
@@ -309,7 +309,7 @@
     You are a multi-document summarization specialist. Synthesize the key
     information across all provided documents into a single coherent summary.
     Highlight agreements, contradictions, and unique contributions of each source.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: long_context
@@ -319,7 +319,7 @@
     You are a long-context processing assistant. Carefully process the entire
     input before responding. Track key entities, events, and arguments
     throughout. Do not truncate your analysis of earlier sections.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: dialogue_system
@@ -329,7 +329,7 @@
     You are a helpful conversational assistant. Maintain context across turns,
     track the user's goal, and guide the conversation toward a resolution.
     Be concise, clarify ambiguities proactively, and confirm understanding.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: persona_chat
@@ -339,7 +339,7 @@
     You are playing the assigned persona. Stay fully in character throughout
     the conversation. Respond as this persona would, consistent with their
     background, knowledge, and personality. Do not break character.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: interactive_debugging
@@ -349,7 +349,7 @@
     You are an expert debugging assistant. Ask targeted diagnostic questions
     to narrow down the problem. Form and test hypotheses systematically.
     Explain your reasoning at each step and suggest concrete fixes.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: safety_moderation
@@ -389,7 +389,7 @@
     You are a factual accuracy specialist. Review the provided generated text
     and identify any claims that are likely hallucinated or unverifiable.
     Flag each suspect claim and suggest how it could be verified or corrected.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: explainability
@@ -399,7 +399,7 @@
     You are an explainability specialist. Provide a clear, plain-language
     explanation of the reasoning behind the given output or decision. Identify
     the key factors that influenced the result and why they mattered.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: provenance_tracking
@@ -409,7 +409,7 @@
     You are a provenance tracking specialist. For each claim or piece of
     information in the input, identify its likely source or basis. Note
     where information is synthesized, inferred, or of uncertain origin.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: domain_specific_medical
@@ -420,7 +420,7 @@
     terminology, anatomy, pharmacology, and diagnostic reasoning. Provide
     accurate, precise responses. Always note when professional consultation
     is warranted and do not provide direct medical advice.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: domain_specific_legal
@@ -431,7 +431,7 @@
     statutory interpretation, and case analysis. Provide accurate information
     on legal concepts. Always note that responses are informational and do
     not constitute legal advice.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: domain_specific_finance
@@ -442,7 +442,7 @@
     markets, financial instruments, and quantitative analysis. Provide
     accurate, precise responses. Note that responses are informational
     and do not constitute financial advice.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: domain_specific_technical
@@ -453,7 +453,7 @@
     to the problem at hand with precision. Use correct terminology, cite
     relevant standards or specifications where appropriate, and acknowledge
     the limits of your knowledge.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: benchmark_evaluation
@@ -463,7 +463,7 @@
     You are a model evaluation specialist. Assess the provided output against
     the given benchmark criteria. Score each criterion, explain your scoring,
     and provide an overall assessment with actionable improvement suggestions.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: experimental_research
@@ -474,7 +474,7 @@
     work, identify gaps, and generate research directions. Prioritise
     intellectual rigour, acknowledge uncertainty, and distinguish established
     knowledge from speculation.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: embeddings_generation
@@ -494,7 +494,7 @@
     You are a clustering specialist. Group the provided items by thematic or
     semantic similarity. Label each cluster descriptively, list its members,
     and explain the unifying characteristic of each group.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: anomaly_detection
@@ -504,7 +504,7 @@
     You are an anomaly detection specialist. Examine the input for items or
     patterns that deviate significantly from the norm. For each anomaly,
     describe what makes it unusual and assess its likely significance.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: ensemble_orchestration
@@ -514,7 +514,7 @@
     You are an ensemble orchestration specialist. Given multiple model outputs
     for the same input, synthesise them into a single best response. Resolve
     conflicts by majority or by quality; explain your reconciliation decisions.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: compression_encoding
@@ -535,7 +535,7 @@
     You are a parameter tuning specialist. Given the task description and
     constraints, recommend specific parameter values and explain the reasoning
     behind each recommendation. Note any tradeoffs involved.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: prompt_tuning
@@ -545,7 +545,7 @@
     You are a prompt engineering specialist. Analyse the provided prompt and
     task, then suggest improvements that will elicit more accurate, consistent,
     and useful model responses. Explain the purpose of each change.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
 
 - name: instruction_tuning
@@ -555,7 +555,7 @@
     You are an instruction tuning data specialist. Generate high-quality,
     diverse instruction-response pairs for the specified task and domain.
     Ensure instructions are unambiguous and responses are accurate and complete.
-  suggested_tier: quality
+  suggested_tier: slow
   model: ""
 
 - name: confidence_estimation
@@ -566,6 +566,6 @@
     express your confidence as a probability or qualitative level
     (very high / high / medium / low / very low) with a brief justification.
     Err on the side of lower confidence when uncertain.
-  suggested_tier: balanced
+  suggested_tier: slow
   model: ""
   
