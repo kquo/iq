@@ -1,6 +1,6 @@
 # IQ
 
-IQ is a command-line tool for running and orchestrating local LLMs on Apple Silicon. It manages model downloads, runs inference sidecars via `mlx_lm`, and routes prompts through a classification layer that selects the right model and cue for each task. All inference runs locally — no cloud dependency, no data leaving your machine.
+IQ is a command-line tool for running and orchestrating **local** LLMs on Apple Silicon. It manages model downloads, runs inference sidecars via `mlx_lm`, and routes prompts through a classification layer that selects the right model and cue for each task. All inference runs **locally** — no cloud dependency, no data leaving your machine.
 
 For a detailed technical overview, see [architecture.md](architecture.md).
 
