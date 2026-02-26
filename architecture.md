@@ -12,7 +12,7 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                              iq CLI (Go)                                 │
 │                                                                          │
-│  iq lm     iq cfg     iq cue    iq svc     iq prompt    iq probe        │
+│  iq lm     iq cfg     iq cue    iq svc     iq prompt    iq probe         │
 │  (models)  (config)   (roles)    (service)  (infer/REPL) (raw debug)     │
 └────┬───────────┬───────────┬─────────┬──────────┬────────────┬───────────┘
      │           │           │         │          │            │
@@ -184,15 +184,15 @@ Accepts a tier name (routes to any live sidecar in that pool) or a specific mode
 User input
     │
     ├── --cue given? ─────────────────────────────────────┐
-    │                                                      │
-    ▼  (auto-classify)                                     ▼ (skip classify)
-POST /v1/chat/completions                           resolve cue directly
-  smallest fast-tier sidecar                               │
+    │                                                     │
+    ▼  (auto-classify)                                    ▼ (skip classify)
+POST /v1/chat/completions                          resolve cue directly
+  smallest fast-tier sidecar                              │
   system: cue classifier prompt                           │
-  user:   input                                            │
-    │                                                      │
-    ▼                                                      │
-  cue name (exact or fuzzy match) ◄────────────────────-─┘
+  user:   input                                           │
+    │                                                     │
+    ▼                                                     │
+  cue name (exact or fuzzy match) ◄───────────────────────┘
     │
     ▼
 resolveRoute()

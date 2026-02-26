@@ -23,7 +23,7 @@ type Config struct {
 
 var tierOrder = []string{"fast", "slow"}
 
-const defaultEmbedModel = "mlx-community/bge-small-en-v1.5-4bit"
+const defaultEmbedModel = "mlx-community/bge-small-en-v1.5-bf16"
 
 // embedModel returns the configured embed model ID, falling back to the default.
 func embedModel(cfg *Config) string {

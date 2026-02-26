@@ -460,5 +460,5 @@ func mlxVenvPython() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no python3/python found in mlx_lm venv (%s) — run: pipx inject mlx-lm mlx-embeddings", binDir)
+	return "", fmt.Errorf("no python3/python found in mlx_lm venv (%s) — run: pipx inject mlx-lm mlx-embedding-models", binDir)
 }

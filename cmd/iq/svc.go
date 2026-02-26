@@ -769,12 +769,12 @@ func newSvcDocCmd() *cobra.Command {
 
 			// ── mlx-embeddings Python package ──
 			embPkgOK := false
-			embPkgDetail := utl.Gra("not found — run: pipx inject mlx-lm mlx-embeddings")
+			embPkgDetail := utl.Gra("not found — run: pipx inject mlx-lm mlx-embedding-models")
 			venvPy, venvErr := mlxVenvPython()
 			if venvErr != nil {
 				embPkgDetail = utl.Gra(venvErr.Error())
 			} else {
-				out, err2 := exec.Command(venvPy, "-c", "import mlx_embeddings").CombinedOutput()
+				out, err2 := exec.Command(venvPy, "-c", "import mlx_embedding_models").CombinedOutput()
 				embPkgOK = err2 == nil && len(out) == 0
 				if embPkgOK {
 					embPkgDetail = utl.Gra(fmt.Sprintf("importable (%s)", venvPy))

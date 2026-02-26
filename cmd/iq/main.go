@@ -10,7 +10,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.2.9"
+	program_version = "0.2.10"
 )
 
 func printRootHelp() {
