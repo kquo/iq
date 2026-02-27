@@ -224,3 +224,4 @@ append turn to session YAML
 | 0.2.7 | Initial public release |
 | 0.2.8 | rename role→cue, add initial fallback cue, probe --cue flag |
 | 0.2.9 | embedding-based classification, normalise suggested_tier values |
+| 0.2.10 | switch embed library to mlx-embedding-models |
