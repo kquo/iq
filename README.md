@@ -14,6 +14,7 @@ A personal tool for experimenting with LLM orchestration directly from the Mac t
 - Go (for building)
 - Python 3 with `mlx-lm` installed (`pipx install mlx-lm`)
 - `hf` CLI (`pipx install huggingface_hub`)
+- Ollama (`brew install ollama`) — used for embeddings (classification + RAG)
 
 ## Getting Started
 
@@ -38,9 +39,9 @@ iq lm get mlx-community/Qwen2.5-0.5B-Instruct-4bit
 iq lm get mlx-community/Phi-4-mini-reasoning-4bit
 
 # Assign to tiers (< 2GB → fast, >= 2GB → slow)
-iq cfg tier add fast mlx-community/SmolLM2-135M-Instruct-8bit
-iq cfg tier add fast mlx-community/Qwen2.5-0.5B-Instruct-4bit
-iq cfg tier add slow mlx-community/Phi-4-mini-reasoning-4bit
+iq svc tier add fast mlx-community/SmolLM2-135M-Instruct-8bit
+iq svc tier add fast mlx-community/Qwen2.5-0.5B-Instruct-4bit
+iq svc tier add slow mlx-community/Phi-4-mini-reasoning-4bit
 
 # Start inference sidecars
 iq svc start
@@ -64,10 +65,11 @@ iq probe slow "explain attention" -s "You are a terse assistant."
 | Command | Description |
 |---------|-------------|
 | `iq lm` | Search, download, list, and manage local models |
-| `iq cfg` | Manage tier pool assignments and view configuration |
-| `iq svc` | Start, stop, and monitor inference sidecars |
+| `iq svc` | Start, stop, monitor sidecars; manage tier and embed config |
 | `iq prompt` | Route prompts through classification and cue system |
 | `iq probe` | Send raw messages directly to a model sidecar |
 | `iq cue` | Manage the cue library |
+| `iq kb` | Manage the knowledge base for RAG retrieval |
+| `iq status` | Show running sidecar status (alias: `iq st`) |
 
 Run `iq <command> --help` for details on any command.

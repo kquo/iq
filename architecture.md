@@ -12,8 +12,8 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                               iq CLI (Go)                                   │
 │                                                                             │
-│  iq lm    iq cfg    iq cue    iq svc    iq kb    iq prompt    iq probe      │
-│  (models) (config)  (cues)   (service) (RAG)    (infer/REPL) (raw debug)   │
+│  iq lm    iq svc    iq cue    iq kb    iq prompt    iq probe    iq status    │
+│  (models) (service) (cues)   (RAG)    (infer/REPL) (raw debug) (alias: st) │
 └────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬──────────┘
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
@@ -23,12 +23,12 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 │         │ │      │ │        │ │                      │ │                  │
 │~/.cache/│ │tiers:│ │name    │ │ fast pool :27001+    │ │ kb.json          │
 │hugging  │ │ fast │ │category│ │ slow pool :27001+    │ │ (vector index)   │
-│face/hub/│ │ slow │ │desc    │ │ embed sidecar :27000 │ │                  │
-│models-- │ │      │ │prompt  │ │                      │ └──────────────────┘
-│org--repo│ │      │ │tier    │ │ OpenAI-compatible    │
-│/snapshot│ └──────┘ └────────┘ │ HTTP API             │
-│  /hash/ │                     └──────────────────────┘
-└─────────┘
+│face/hub/│ │ slow │ │desc    │ │                      │ │                  │
+│models-- │ │      │ │prompt  │ │ OpenAI-compatible    │ └──────────────────┘
+│org--repo│ │      │ │tier    │ │ HTTP API             │ ┌──────────────────┐
+│/snapshot│ └──────┘ └────────┘ └──────────────────────┘ │ Ollama :11434    │
+│  /hash/ │                                               │ (embeddings)    │
+└─────────┘                                               └──────────────────┘
 ```
 
 ---
@@ -43,23 +43,22 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 `iq lm search` queries the HF API, enriches results in parallel (one goroutine per model) to populate DISK and EST MEM, and displays DISK / PARAMS / EST MEM / DOWNLOADS. Accepts an optional query string or a numeric count (e.g. `iq lm search 100`).
 
-`iq lm get` infers a suggested tier from disk size (< 2GB → fast, else slow) and prints the `iq cfg tier add` command to assign it.
+`iq lm get` infers a suggested tier from disk size (< 2GB → fast, else slow) and prints the `iq svc tier add` command to assign it.
 
 `iq lm rm` refuses to remove a model assigned to a tier or whose sidecar is running.
 
-### `iq cfg` — Configuration
+### Configuration
 
-Manages `~/.config/iq/config.yaml`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
+Manages `~/.config/iq/config.yaml`. Configuration commands live under `iq svc` — there is no separate `iq cfg` command. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
 
 ```
 fast    sub-2GB models — used for quick inference tasks
 slow    2GB+ models    — used for quality inference
-embed   embedding model — used for cue classification and KB retrieval (fixed port 27000)
 ```
 
-Commands: `cfg show` (path + model table), `cfg tier show`, `cfg tier add <tier> <model>`, `cfg tier rm <tier> <model>`, `cfg embed show/set/rm` (embedding model for classification and RAG retrieval).
+Tier commands: `iq svc tier show`, `iq svc tier add <tier> <model>`, `iq svc tier rm <tier> <model>`.
 
-`cfg show` renders the same model table as `lm list`, scoped to assigned models only.
+Embed model commands: `iq svc embed show`, `iq svc embed set <cue|kb> <model>`, `iq svc embed rm <cue|kb>`.
 
 Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold.
 
@@ -88,15 +87,15 @@ Start sequence:
 5. Poll `GET /v1/models` until 200 OK or 120s timeout
 6. On failure: print last 10 log lines + path
 
-`iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models). Starting with no argument or a tier name also starts the embedding sidecar.
+`iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models).
 
 **Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
 
-`iq svc doc` runs preflight checks: `python3` on PATH, `mlx_lm.server` found, `--model` flag present, all assigned model cache dirs exist, embed model cache present, `mlx-embedding-models` Python package importable in the mlx-lm pipx venv.
+`iq svc doc` runs preflight checks: `mlx_lm.server` found and `--model` flag supported, Ollama installed and running, configured cue and KB embed models present in Ollama, all assigned model HuggingFace cache dirs exist.
 
-**Embedding sidecar** — a separate Python HTTP process (`embed_server.py`, embedded in the IQ binary) that runs `bge-small-en-v1.5-bf16` (or a user-configured model via `iq cfg embed set`). Fixed port: 27000. The Python interpreter is derived from the `mlx_lm.server` binary path — both live in the same pipx venv. Serves `POST /embed` (accepts a list of texts, returns L2-normalised float32 vectors) and `GET /health`. State file: `~/.config/iq/run/embed.json`. Requires `pipx inject mlx-lm mlx-embedding-models`.
+**Embeddings** — handled entirely by Ollama (`ollama serve`, default `http://localhost:11434`). Two separate models are used: one for cue classification (`cue_model`, default `nomic-embed-text`) and one for KB indexing/retrieval (`kb_model`, default `mxbai-embed-large:335m`). Configure both via `iq svc embed`.
 
-`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar, IQ process memory, and combined total.
+`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus both Ollama embed model rows, IQ process memory, and combined total.
 
 ### `iq kb` — Knowledge Base
 
@@ -112,7 +111,7 @@ iq kb ingest ~/projects/myapp
     ├── walk directory (skips .git, node_modules, vendor, __pycache__, hidden dirs)
     ├── read each text file (.go, .md, .py, .txt, .yaml, ...)
     ├── split into overlapping line-based chunks (40 lines, 5-line overlap)
-    ├── embed each chunk via embed sidecar (batches of 20)
+    ├── embed each chunk via Ollama kb_model (batches of 20)
     └── store chunk text + 384-float vector in kb.json
 
 iq prompt "how does the auth middleware work?"
@@ -129,7 +128,7 @@ iq prompt "how does the auth middleware work?"
     └── inference proceeds as normal — model sees your actual code
 ```
 
-KB retrieval is **always-on** when `kb.json` exists and the embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
+KB retrieval is **always-on** when `kb.json` exists and Ollama is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
 
 Commands: `ingest` (alias: `in`), `list`, `search`, `rm`, `clear`.
 
@@ -148,7 +147,7 @@ iq kb clear             # wipe entire kb.json
 
 Routes user prompts through a pipeline:
 
-**1. Classify** — the user input is embedded by the embedding sidecar and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
+**1. Classify** — the user input is embedded via Ollama (cue_model) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if Ollama is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
 
 > **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space: "explain a transformer model" and "describe how attention works" will produce vectors pointing in nearly the same direction even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, embeddings serve double duty: classifying prompts to cues, and retrieving relevant knowledge base chunks for RAG.
 
@@ -156,7 +155,7 @@ The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first u
 
 **2. Route** — resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
 
-**3. KB Retrieve** — if `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved and appended to the cue's system prompt as plain text context. Skipped silently if kb is empty or unavailable.
+**3. KB Retrieve** — if `kb.json` exists and Ollama is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved and appended to the cue's system prompt as plain text context. Skipped silently if kb is empty or unavailable.
 
 **4. Build** — assembles the message array: system prompt (cue + KB context if any), session history (if any), new user message.
 
@@ -205,9 +204,7 @@ Accepts a tier name or specific model ID. Prints routing info in gray before the
 ├── cue_embeddings.json          # cosine similarity cache (auto-built, invalidated on cue changes)
 ├── kb.json                      # knowledge base: chunk text + 384-float vectors (RAG)
 ├── run/
-│   ├── embed.json               # embed sidecar state (PID, port, model)
-│   ├── embed.log
-│   ├── <model-slug>.json        # generative sidecar state
+│   ├── <model-slug>.json        # generative sidecar state (PID, port, tier, model)
 │   └── <model-slug>.log
 └── sessions/
     └── <id>.yaml                # conversation history per session
@@ -232,7 +229,7 @@ User input
     ├── --cue given? ──────────────────────────────────────────┐
     │                                                          │
     ▼  (auto-classify)                                         ▼ (skip classify)
-POST /embed  →  embed sidecar :27000                    resolve cue directly
+POST /api/embed  →  Ollama :11434 (cue_model)           resolve cue directly
   input text  →  384-float vector                              │
     │                                                          │
     ▼                                                          │
@@ -248,8 +245,8 @@ resolveRoute()
   fallback            →  pickSidecar("fast", false)
     │
     ▼
-KB retrieve  (if kb.json exists && embed sidecar running && !--no-kb)
-  POST /embed → query vector
+KB retrieve  (if kb.json exists && Ollama running && !--no-kb)
+  POST /api/embed → query vector (kb_model)
   cosine_similarity(query_vec, all_chunk_vecs[]) — Go, in-memory
   top-5 chunks → plain text context block
     │
