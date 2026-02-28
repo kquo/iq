@@ -10,7 +10,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.2.10"
+	program_version = "0.3.1"
 )
 
 func printRootHelp() {
@@ -20,12 +20,13 @@ func printRootHelp() {
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s <command> <subcommand> [flags]\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
-	fmt.Printf("  %-15s %s\n", "cfg", "Work with IQ configuration")
 	fmt.Printf("  %-15s %s\n", "svc", "Work with IQ service daemon")
 	fmt.Printf("  %-15s %s\n", "lm", "Work with IQ language models")
 	fmt.Printf("  %-15s %s\n", "prompt", "Work with IQ prompt")
 	fmt.Printf("  %-15s %s\n", "cue", "Work with IQ cues")
+	fmt.Printf("  %-15s %s\n", "kb", "Work with IQ knowledge base")
 	fmt.Printf("  %-15s %s\n", "probe", "Send a raw message directly to a model sidecar")
+	fmt.Printf("  %-15s %s\n", "status", "Show running sidecar status (alias: st)")
 	fmt.Printf("  %-15s %s\n\n", "version", "Show the current IQ version")
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
 	fmt.Printf("  %-30s %s\n", "-h, --help", "Show this help output or the help for a specified subcommand.")
@@ -45,6 +46,20 @@ func newVersionCmd() *cobra.Command {
 		fmt.Printf("%s v%s\n", program_name, program_version)
 	})
 	return cmd
+}
+
+// newStatusCmd returns a top-level `iq status` / `iq st` command that delegates
+// to the same printStatus() logic as `iq svc status`.
+func newStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "status",
+		Aliases:      []string{"st"},
+		Short:        "Show running sidecar status (shortcut for 'iq svc status')",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return printStatus()
+		},
+	}
 }
 
 func runCLI() {
@@ -74,12 +89,13 @@ func runCLI() {
 
 	root.AddCommand(
 		newVersionCmd(),
-		newCfgCmd(),
 		newSvcCmd(),
 		newLmCmd(),
 		newPromptCmd(),
 		newCueCmd(),
+		newKbCmd(),
 		newProbeCmd(),
+		newStatusCmd(),
 	)
 
 	if err := root.Execute(); err != nil {

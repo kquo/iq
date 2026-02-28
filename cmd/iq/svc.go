@@ -2,17 +2,20 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	ollamaapi "github.com/ollama/ollama/api"
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 )
@@ -394,7 +397,7 @@ func resolveModels(arg string) ([]string, error) {
 	if arg == "" {
 		all := allAssignedModels()
 		if len(all) == 0 {
-			return nil, fmt.Errorf("no models assigned — run 'iq cfg tier add <tier> <model>' first")
+			return nil, fmt.Errorf("no models assigned — run 'iq svc tier add <tier> <model>' first")
 		}
 		return all, nil
 	}
@@ -419,6 +422,132 @@ func resolveModels(arg string) ([]string, error) {
 	return nil, fmt.Errorf("%q is not a recognised tier or assigned model", arg)
 }
 
+// ── Status (shared logic) ─────────────────────────────────────────────────────
+
+func printStatus() error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	type statusRow struct {
+		tier     string
+		model    string
+		endpoint string
+		pid      int
+		uptime   string
+		running  bool
+		mem      string
+	}
+
+	var rows []statusRow
+	var totalKB int64
+
+	for _, tier := range tierOrder {
+		for _, model := range cfg.Tiers[tier] {
+			state, _ := readState(model)
+			endpoint := ""
+			if state != nil {
+				endpoint = sidecarEndpoint(state.Port)
+			}
+			if state == nil || !pidAlive(state.PID) {
+				rows = append(rows, statusRow{tier, model, endpoint, 0, "—", false, "—"})
+				continue
+			}
+			rss := processRSSKB(state.PID)
+			totalKB += rss
+			mem := formatMB(rss * 1024)
+			if rss == 0 {
+				mem = "?"
+			}
+			rows = append(rows, statusRow{tier, model, endpoint, state.PID, formatUptime(state.Started), true, mem})
+		}
+	}
+
+	// Embed rows — Ollama-managed, no PID/uptime. One row per role.
+	embedUp := ollamaRunning()
+	rows = append(rows,
+		statusRow{
+			tier:     "cue_model",
+			model:    cueModel(cfg),
+			endpoint: ollamaHost,
+			uptime:   "—",
+			running:  embedUp,
+			mem:      "—",
+		},
+		statusRow{
+			tier:     "kb_model",
+			model:    kbModel(cfg),
+			endpoint: ollamaHost,
+			uptime:   "—",
+			running:  embedUp,
+			mem:      "—",
+		},
+	)
+	// Compute TIER column width dynamically (longest tier name).
+	tierW := len("TIER")
+	for _, r := range rows {
+		if len(r.tier) > tierW {
+			tierW = len(r.tier)
+		}
+	}
+	tierW += 2
+
+	// Compute MODEL column width.
+	modelW := len("MODEL")
+	for _, r := range rows {
+		if len(r.model) > modelW {
+			modelW = len(r.model)
+		}
+	}
+	modelW += 2
+
+	// CONFIG line aligned with MODEL column.
+	cfgPath, _ := configPath()
+	fmt.Printf("%-*s  %-*s\n", tierW, "CONFIG", modelW, cfgPath)
+
+	// Header.
+	fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %-7s  %8s\n",
+		tierW, "TIER", modelW, "MODEL", "ENDPOINT", "PID", "UPTIME", "RUNNING", "MEM")
+
+	for _, r := range rows {
+		// Pad the raw string to fixed width BEFORE colorizing — ANSI escape codes
+		// added by utl.Gre/Gra inflate len() and break %-Ns alignment.
+		runRaw := fmt.Sprintf("%-7s", "no")
+		runDisplay := utl.Gra(runRaw)
+		if r.running {
+			runDisplay = utl.Gre(fmt.Sprintf("%-7s", "yes"))
+		}
+		if r.tier == "cue_model" || r.tier == "kb_model" {
+			// Ollama row: no PID or uptime.
+			fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %s  %8s\n",
+				tierW, r.tier, modelW, r.model, r.endpoint, "—", "—", runDisplay, r.mem)
+		} else if !r.running {
+			fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %s  %8s\n",
+				tierW, r.tier, modelW, r.model, r.endpoint, "—", r.uptime, runDisplay, r.mem)
+		} else {
+			fmt.Printf("%-*s  %-*s  %-28s  %-7d  %-8s  %s  %8s\n",
+				tierW, r.tier, modelW, r.model, r.endpoint, r.pid, r.uptime, runDisplay, r.mem)
+		}
+	}
+
+	iqRSS := processRSSKB(os.Getpid())
+	totalKB += iqRSS
+	// Last line: IQ mem left-aligned, total mem right-aligned to MEM column.
+	// Column positions: 6+2 + modelW+2 + 28+2 + 7+2 + 8+2 + 7+2 + 8 = left of MEM column
+	lineW := tierW + 2 + modelW + 2 + 28 + 2 + 7 + 2 + 8 + 2 + 7 + 2 + 8
+	iqLabel := "IQ process mem:"
+	iqVal := formatMB(iqRSS * 1024)
+	totLabel := "Total mem:"
+	totVal := formatMB(totalKB * 1024)
+	// Build the line: left part + right part padded to lineW.
+	left := fmt.Sprintf("%-20s %s", iqLabel, iqVal)
+	right := fmt.Sprintf("%s  %8s", totLabel, totVal)
+	gap := max(lineW-len(left)-len(right), 2)
+	fmt.Printf("%s%s%s\n", left, strings.Repeat(" ", gap), right)
+	return nil
+}
+
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printSvcHelp() {
@@ -427,19 +556,25 @@ func printSvcHelp() {
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s svc <command> [tier|model]\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
-	fmt.Printf("  %-10s %s\n", "status", "Show running sidecar status and memory usage")
+	fmt.Printf("  %-10s %s\n", "status", "Show running sidecar status and memory usage (alias: st)")
 	fmt.Printf("  %-10s %s\n", "start", "Start sidecars for all, a tier pool, or a specific model")
 	fmt.Printf("  %-10s %s\n", "stop", "Stop sidecars for all, a tier pool, or a specific model")
+	fmt.Printf("  %-10s %s\n", "tier", "Manage model tier pool assignments")
+	fmt.Printf("  %-10s %s\n", "embed", "Manage the Ollama embed model")
 	fmt.Printf("  %-10s %s\n\n", "doc", "Check runtime dependencies and model readiness")
+	fmt.Printf("%s\n", utl.Whi2("NOTES"))
+	fmt.Printf("  Embeddings are handled by Ollama (https://ollama.com), which must be\n")
+	fmt.Printf("  installed and running separately. Install: brew install ollama\n")
+	fmt.Printf("  Start:   ollama serve\n\n")
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s svc status\n", n)
 	fmt.Printf("  $ %s svc start\n", n)
 	fmt.Printf("  $ %s svc start fast\n", n)
-	fmt.Printf("  $ %s svc start mlx-community/gemma-3-1b-it-4bit\n", n)
 	fmt.Printf("  $ %s svc stop\n", n)
-	fmt.Printf("  $ %s svc stop slow\n", n)
+	fmt.Printf("  $ %s svc tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
+	fmt.Printf("  $ %s svc embed set nomic-embed-text\n", n)
 	fmt.Printf("  $ %s svc doc\n\n", n)
 }
 
@@ -458,7 +593,14 @@ func newSvcCmd() *cobra.Command {
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		printSvcHelp()
 	})
-	cmd.AddCommand(newSvcStatusCmd(), newSvcStartCmd(), newSvcStopCmd(), newSvcDocCmd())
+	cmd.AddCommand(
+		newSvcStatusCmd(),
+		newSvcStartCmd(),
+		newSvcStopCmd(),
+		newSvcTierCmd(),
+		newSvcEmbedCmd(),
+		newSvcDocCmd(),
+	)
 	return cmd
 }
 
@@ -467,92 +609,11 @@ func newSvcCmd() *cobra.Command {
 func newSvcStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "status",
+		Aliases:      []string{"st"},
 		Short:        "Show running sidecar status and memory usage",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
-			type statusRow struct {
-				tier     string
-				model    string
-				endpoint string
-				pid      int
-				uptime   string
-				mem      string
-				running  bool
-			}
-
-			var rows []statusRow
-			var totalKB int64
-
-			for _, tier := range tierOrder {
-				for _, model := range cfg.Tiers[tier] {
-					state, _ := readState(model)
-					endpoint := ""
-					if state != nil {
-						endpoint = sidecarEndpoint(state.Port)
-					}
-					if state == nil || !pidAlive(state.PID) {
-						rows = append(rows, statusRow{tier, model, endpoint, 0, utl.Gra("stopped"), "—", false})
-						continue
-					}
-					rss := processRSSKB(state.PID)
-					totalKB += rss
-					mem := formatMB(rss * 1024)
-					if rss == 0 {
-						mem = "?"
-					}
-					rows = append(rows, statusRow{tier, model, endpoint, state.PID, formatUptime(state.Started), mem, true})
-				}
-			}
-
-			// embed sidecar row
-			embedState, _ := readEmbedState()
-			if embedState != nil {
-				embedEndpoint := fmt.Sprintf("http://localhost:%d", embedState.Port)
-				if !pidAlive(embedState.PID) {
-					rows = append(rows, statusRow{"embed", embedState.Model, embedEndpoint, 0, utl.Gra("stopped"), "—", false})
-				} else {
-					rss := processRSSKB(embedState.PID)
-					totalKB += rss
-					mem := formatMB(rss * 1024)
-					if rss == 0 {
-						mem = "?"
-					}
-					rows = append(rows, statusRow{"embed", embedState.Model, embedEndpoint, embedState.PID, formatUptime(embedState.Started), mem, true})
-				}
-			}
-
-			// Compute MODEL column width.
-			modelW := len("MODEL")
-			for _, r := range rows {
-				if len(r.model) > modelW {
-					modelW = len(r.model)
-				}
-			}
-			modelW += 2
-
-			fmt.Printf("%-6s  %-*s  %-28s  %-7s  %-8s  %8s\n",
-				"TIER", modelW, "MODEL", "ENDPOINT", "PID", "UPTIME", "MEM")
-
-			for _, r := range rows {
-				if !r.running {
-					fmt.Printf("%-6s  %-*s  %-28s  %-7s  %-8s  %8s\n",
-						r.tier, modelW, r.model, r.endpoint, "—", r.uptime, r.mem)
-				} else {
-					fmt.Printf("%-6s  %-*s  %-28s  %-7d  %-8s  %8s\n",
-						r.tier, modelW, r.model, r.endpoint, r.pid, r.uptime, r.mem)
-				}
-			}
-
-			iqRSS := processRSSKB(os.Getpid())
-			totalKB += iqRSS
-			fmt.Printf("%-20s %s\n", "IQ process mem:", formatMB(iqRSS*1024))
-			fmt.Printf("%-20s %s\n", "Total mem:", formatMB(totalKB*1024))
-			return nil
+			return printStatus()
 		},
 	}
 }
@@ -566,6 +627,9 @@ func newSvcStartCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !ollamaRunning() {
+				return fmt.Errorf("ollama is not running — start it with: ollama serve")
+			}
 			arg := ""
 			if len(args) > 0 {
 				arg = args[0]
@@ -586,25 +650,46 @@ func newSvcStartCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  error starting %s: %s\n", modelID, err.Error())
 				}
 			}
-			// Start embed sidecar alongside generative sidecars (start all or fast/slow).
-			if arg == "" || arg == "fast" || arg == "slow" {
-				if !embedSidecarRunning() {
-					cfg2, cfgErr := loadConfig()
-					if cfgErr == nil {
-						if err := startEmbedSidecar(embedModel(cfg2)); err != nil {
-							fmt.Fprintf(os.Stderr, "  error starting embed sidecar: %s\n", err.Error())
-						}
-					}
-				} else {
-					es, _ := readEmbedState()
-					if es != nil {
-						fmt.Printf("  embed  pid %-7d  http://localhost:%d  %s\n",
-							es.PID, es.Port, utl.Gra("already running"))
-					}
-				}
-			}
 			return nil
 		},
+	}
+}
+
+// killOrphanSidecars scans for any mlx_lm.server or legacy iq_embed_server.py
+// processes on iq ports and kills them regardless of whether they have a state file.
+// This catches processes started during manual testing or left behind by
+// interrupted starts where no state file was written.
+func killOrphanSidecars() {
+	patterns := []string{"mlx_lm.server", "iq_embed_server.py"}
+	for _, pattern := range patterns {
+		out, err := exec.Command("pgrep", "-f", pattern).Output()
+		if err != nil {
+			continue // no matching processes
+		}
+		for pidStr := range strings.FieldsSeq(string(out)) {
+			pid, err := strconv.Atoi(pidStr)
+			if err != nil {
+				continue
+			}
+			// Confirm this process is on an iq-managed port range (270xx).
+			psOut, err := exec.Command("ps", "-p", pidStr, "-o", "command=").Output()
+			if err != nil {
+				continue
+			}
+			if !strings.Contains(string(psOut), "--port 270") {
+				continue
+			}
+			proc, err := os.FindProcess(pid)
+			if err != nil {
+				continue
+			}
+			proc.Signal(syscall.SIGTERM)
+			time.Sleep(300 * time.Millisecond)
+			if pidAlive(pid) {
+				proc.Signal(syscall.SIGKILL)
+			}
+			fmt.Printf("  pid %-7d  %s\n", pid, utl.Gra("orphan killed"))
+		}
 	}
 }
 
@@ -630,10 +715,328 @@ func newSvcStopCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  error stopping %s: %s\n", modelID, err.Error())
 				}
 			}
-			// Stop embed sidecar alongside generative sidecars.
-			if arg == "" || arg == "fast" || arg == "slow" {
-				if err := stopEmbedSidecar(); err != nil {
-					fmt.Fprintf(os.Stderr, "  error stopping embed sidecar: %s\n", err.Error())
+			// Always sweep for orphans when stopping all (no specific target).
+			if arg == "" {
+				killOrphanSidecars()
+			}
+			return nil
+		},
+	}
+}
+
+// ── tier ──────────────────────────────────────────────────────────────────────
+
+func printSvcTierHelp() {
+	n := program_name
+	fmt.Printf("Manage model tier pool assignments.\n\n")
+	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("  %s svc tier <command> [flags]\n\n", n)
+	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("  %-10s %s\n", "show", "Show current tier assignments")
+	fmt.Printf("  %-10s %s\n", "add", "Add a model to a tier pool")
+	fmt.Printf("  %-10s %s\n\n", "rm", "Remove a model from a tier pool")
+	fmt.Printf("%s\n", utl.Whi2("TIERS"))
+	fmt.Printf("  %-8s %s\n", "fast", "Sub-2GB models — used for classification and quick tasks")
+	fmt.Printf("  %-8s %s\n\n", "slow", "2GB+ models — used for quality inference")
+	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("  $ %s svc tier show\n", n)
+	fmt.Printf("  $ %s svc tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
+	fmt.Printf("  $ %s svc tier add slow mlx-community/Phi-4-mini-reasoning-4bit\n", n)
+	fmt.Printf("  $ %s svc tier rm fast mlx-community/SmolLM2-135M-Instruct-8bit\n\n", n)
+}
+
+func newSvcTierCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "tier",
+		Short:        "Manage model tier pool assignments",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			printSvcTierHelp()
+			return nil
+		},
+	}
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		printSvcTierHelp()
+	})
+	cmd.AddCommand(newSvcTierShowCmd(), newSvcTierAddCmd(), newSvcTierRmCmd())
+	return cmd
+}
+
+func newSvcTierShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "show",
+		Short:        "Show current tier assignments",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			for _, t := range tierOrder {
+				models := cfg.Tiers[t]
+				if len(models) == 0 {
+					fmt.Printf("%-6s  %s\n", t, utl.Gra("<empty>"))
+				} else {
+					for _, m := range models {
+						fmt.Printf("%-6s  %s\n", t, utl.Gre(m))
+					}
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func newSvcTierAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "add <tier> <model>",
+		Short:        "Add a model to a tier pool",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			tier, modelID := args[0], args[1]
+			if tier != "fast" && tier != "slow" {
+				return fmt.Errorf("unknown tier %q — valid tiers: fast, slow", tier)
+			}
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			if slices.Contains(cfg.Tiers[tier], modelID) {
+				fmt.Printf("%s is already in the %s tier\n", modelID, tier)
+				return nil
+			}
+			other := "slow"
+			if tier == "slow" {
+				other = "fast"
+			}
+			for i, m := range cfg.Tiers[other] {
+				if m == modelID {
+					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(
+						fmt.Sprintf("warning: %s moved from %s to %s", modelID, other, tier)))
+					cfg.Tiers[other] = append(cfg.Tiers[other][:i], cfg.Tiers[other][i+1:]...)
+					break
+				}
+			}
+			cfg.Tiers[tier] = append(cfg.Tiers[tier], modelID)
+			if err := saveConfig(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("%-6s  %s\n", tier, utl.Gre(modelID))
+			return nil
+		},
+	}
+}
+
+func newSvcTierRmCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "rm <tier> <model>",
+		Short:        "Remove a model from a tier pool",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			tier, modelID := args[0], args[1]
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			found := false
+			for i, m := range cfg.Tiers[tier] {
+				if m == modelID {
+					cfg.Tiers[tier] = append(cfg.Tiers[tier][:i], cfg.Tiers[tier][i+1:]...)
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("%s is not in the %s tier", modelID, tier)
+			}
+			if err := saveConfig(cfg); err != nil {
+				return err
+			}
+			fmt.Printf("removed %s from %s tier\n", modelID, tier)
+			return nil
+		},
+	}
+}
+
+// ── embed ─────────────────────────────────────────────────────────────────────
+
+func printSvcEmbedHelp() {
+	n := program_name
+	fmt.Printf("Manage Ollama embed models for cue classification and KB retrieval.\n\n")
+	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("  %s svc embed <command>\n\n", n)
+	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("  %-24s %s\n", "show", "Show both configured embed models")
+	fmt.Printf("  %-24s %s\n", "set cue <model>", "Set cue classification model")
+	fmt.Printf("  %-24s %s\n", "set kb <model>", "Set KB indexing/retrieval model")
+	fmt.Printf("  %-24s %s\n", "rm cue", "Revert cue model to default")
+	fmt.Printf("  %-24s %s\n\n", "rm kb", "Revert KB model to default")
+	fmt.Printf("%s\n", utl.Whi2("NOTES"))
+	fmt.Printf("  Ollama must be running. 'set' writes config.yaml and pulls the model.\n")
+	fmt.Printf("  Changing kb model invalidates kb.json — re-ingest required.\n\n")
+	fmt.Printf("%s\n", utl.Whi2("DEFAULTS"))
+	fmt.Printf("  cue  %s\n", utl.Gra(defaultCueModel))
+	fmt.Printf("  kb   %s\n\n", utl.Gra(defaultKbModel))
+	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("  $ %s svc embed show\n", n)
+	fmt.Printf("  $ %s svc embed set cue nomic-embed-text\n", n)
+	fmt.Printf("  $ %s svc embed set kb mxbai-embed-large:335m\n\n", n)
+}
+
+func newSvcEmbedCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "embed",
+		Short:        "Manage Ollama embed models",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			printSvcEmbedHelp()
+			return nil
+		},
+	}
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		printSvcEmbedHelp()
+	})
+	cmd.AddCommand(newSvcEmbedShowCmd(), newSvcEmbedSetCmd(), newSvcEmbedRmCmd())
+	return cmd
+}
+
+func newSvcEmbedShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "show",
+		Short:        "Show configured embed models for both roles",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			cueSuffix := ""
+			if cfg.CueModel == "" {
+				cueSuffix = utl.Gra("  (default)")
+			}
+			kbSuffix := ""
+			if cfg.KbModel == "" {
+				kbSuffix = utl.Gra("  (default)")
+			}
+			fmt.Printf("cue_model  %s%s\n", utl.Gre(cueModel(cfg)), cueSuffix)
+			fmt.Printf("kb_model   %s%s\n", utl.Gre(kbModel(cfg)), kbSuffix)
+			return nil
+		},
+	}
+}
+
+// ollamaPull pulls a model via the Ollama SDK, printing progress.
+func ollamaPull(modelName string) error {
+	c, err := ollamaClient()
+	if err != nil {
+		return fmt.Errorf("ollama client: %w", err)
+	}
+	fmt.Printf("pulling %s ...\n", modelName)
+	ctx := context.Background()
+	err = c.Pull(ctx, &ollamaapi.PullRequest{Model: modelName},
+		func(resp ollamaapi.ProgressResponse) error {
+			if resp.Total > 0 {
+				pct := int(100 * resp.Completed / resp.Total)
+				fmt.Printf("\r  %s  %d%%   ", resp.Status, pct)
+			} else {
+				fmt.Printf("\r  %s   ", resp.Status)
+			}
+			return nil
+		})
+	fmt.Println()
+	if err != nil {
+		return fmt.Errorf("ollama pull: %w", err)
+	}
+	return nil
+}
+
+func newSvcEmbedSetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "set <cue|kb> <model>",
+		Short:        "Set embed model for a role and pull it via Ollama",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			role, modelName := args[0], args[1]
+			if role != "cue" && role != "kb" {
+				return fmt.Errorf("role must be 'cue' or 'kb'")
+			}
+			if !ollamaRunning() {
+				return fmt.Errorf("ollama is not running — start it with: ollama serve")
+			}
+
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
+			switch role {
+			case "cue":
+				cfg.CueModel = modelName
+				if err := saveConfig(cfg); err != nil {
+					return err
+				}
+				invalidateCueEmbeddings()
+				if err := ollamaPull(modelName); err != nil {
+					return err
+				}
+				fmt.Printf("cue_model  %s\n", utl.Gre(modelName))
+			case "kb":
+				cfg.KbModel = modelName
+				if err := saveConfig(cfg); err != nil {
+					return err
+				}
+				if err := ollamaPull(modelName); err != nil {
+					return err
+				}
+				fmt.Printf("kb_model   %s\n", utl.Gre(modelName))
+				// Warn: existing KB indexes are stale.
+				kbP, _ := kbPath()
+				if _, err := os.Stat(kbP); err == nil {
+					fmt.Printf("%s\n", utl.Yel("warning: kb_model changed — existing kb.json is stale"))
+					fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func newSvcEmbedRmCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "rm <cue|kb>",
+		Short:        "Revert an embed model role to its default",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			role := args[0]
+			if role != "cue" && role != "kb" {
+				return fmt.Errorf("role must be 'cue' or 'kb'")
+			}
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			switch role {
+			case "cue":
+				cfg.CueModel = ""
+				if err := saveConfig(cfg); err != nil {
+					return err
+				}
+				invalidateCueEmbeddings()
+				fmt.Printf("cue_model  %s\n", utl.Gra("(default) "+defaultCueModel))
+			case "kb":
+				cfg.KbModel = ""
+				if err := saveConfig(cfg); err != nil {
+					return err
+				}
+				fmt.Printf("kb_model   %s\n", utl.Gra("(default) "+defaultKbModel))
+				kbP, _ := kbPath()
+				if _, err := os.Stat(kbP); err == nil {
+					fmt.Printf("%s\n", utl.Yel("warning: kb_model changed — existing kb.json is stale"))
+					fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
 				}
 			}
 			return nil
@@ -729,6 +1132,58 @@ func newSvcDocCmd() *cobra.Command {
 				checks = append(checks, runDocCheck("  --model flag", flagDetail, modelFlagOK, false))
 			}
 
+			// ── Ollama ──
+			ollamaPath, ollamaVerRaw := checkCommand("ollama", "-v")
+			ollamaInstalled := ollamaPath != ""
+			// "ollama -v" outputs "ollama version is 0.17.4" — strip prefix for display.
+			ollamaVer := strings.TrimPrefix(ollamaVerRaw, "ollama version is ")
+			if ollamaInstalled {
+				detail = fmt.Sprintf("%s  %s", ollamaPath, utl.Gra(ollamaVer))
+			} else {
+				detail = utl.Gra("not found — install with: brew install ollama")
+			}
+			checks = append(checks, runDocCheck("ollama", detail, ollamaInstalled, false))
+
+			if ollamaInstalled {
+				running := ollamaRunning()
+				var runDetail string
+				if running {
+					runDetail = utl.Gra(fmt.Sprintf("listening at %s", ollamaHost))
+				} else {
+					runDetail = utl.Gra("not running — start with: ollama serve")
+				}
+				checks = append(checks, runDocCheck("  ollama serve", runDetail, running, false))
+
+				// ── embed models — shown immediately under ollama serve ──
+				cfg, cfgErr := loadConfig()
+				if cfgErr == nil {
+					checkEmbedRole := func(label, model string) {
+						avail := false
+						d := utl.Gra(fmt.Sprintf("not found in Ollama — run: iq svc embed set %s %s", label, model))
+						if running {
+							c, cerr := ollamaClient()
+							if cerr == nil {
+								list, lerr := c.List(context.Background())
+								if lerr == nil {
+									for _, m := range list.Models {
+										if strings.HasPrefix(m.Name, model) {
+											avail = true
+											d = utl.Gra(m.Name)
+											break
+										}
+									}
+								}
+							}
+						} else {
+							d = utl.Gra("cannot check — Ollama not running")
+						}
+						checks = append(checks, runDocCheck("  "+label, d, avail, false))
+					}
+					checkEmbedRole("cue_model", cueModel(cfg))
+					checkEmbedRole("kb_model", kbModel(cfg))
+				}
+			}
+
 			// ── tier model cache dirs ──
 			cfg, cfgErr := loadConfig()
 			if cfgErr != nil {
@@ -740,7 +1195,6 @@ func newSvcDocCmd() *cobra.Command {
 					_, statErr := os.Stat(cacheDir)
 					modelOK := statErr == nil
 					if modelOK {
-						// Highlight the model name portion in white, path in gray.
 						parent := filepath.Dir(cacheDir)
 						detail = utl.Gra(parent+"/") + utl.Whi(filepath.Base(cacheDir))
 					} else {
@@ -753,44 +1207,14 @@ func newSvcDocCmd() *cobra.Command {
 				checks = append(checks, runDocCheck("tier models", utl.Gra("no models assigned"), true, true))
 			}
 
-			// ── embed model ──
-			em := embedModel(cfg)
-			emCacheDir := hfCacheDir(em)
-			_, emStatErr := os.Stat(emCacheDir)
-			emOK := emStatErr == nil
-			var emDetail string
-			if emOK {
-				parent := filepath.Dir(emCacheDir)
-				emDetail = utl.Gra(parent+"/") + utl.Whi(filepath.Base(emCacheDir))
-			} else {
-				emDetail = utl.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", em))
-			}
-			checks = append(checks, runDocCheck("embed", emDetail, emOK, false))
-
-			// ── mlx-embeddings Python package ──
-			embPkgOK := false
-			embPkgDetail := utl.Gra("not found — run: pipx inject mlx-lm mlx-embedding-models")
-			venvPy, venvErr := mlxVenvPython()
-			if venvErr != nil {
-				embPkgDetail = utl.Gra(venvErr.Error())
-			} else {
-				out, err2 := exec.Command(venvPy, "-c", "import mlx_embedding_models").CombinedOutput()
-				embPkgOK = err2 == nil && len(out) == 0
-				if embPkgOK {
-					embPkgDetail = utl.Gra(fmt.Sprintf("importable (%s)", venvPy))
-				}
-			}
-			checks = append(checks, runDocCheck("mlx-embeddings pkg", embPkgDetail, embPkgOK, false))
-
 			// ── print results ──
-			// Compute column width from longest label.
 			colW := len("CHECK")
 			for _, c := range checks {
 				if len(c.label) > colW {
 					colW = len(c.label)
 				}
 			}
-			colW += 2 // padding
+			colW += 2
 			fmt.Printf("%-*s  %-6s  %s\n", colW, "CHECK", "STATUS", "DETAIL")
 			for _, c := range checks {
 				var statusRaw, status string

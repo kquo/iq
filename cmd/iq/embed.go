@@ -1,257 +1,135 @@
 package main
 
 import (
-	"bytes"
-	_ "embed"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"syscall"
+	"strings"
 	"time"
 
-	"github.com/queone/utl"
+	ollamaapi "github.com/ollama/ollama/api"
 )
-
-//go:embed embed_server.py
-var embedServerPy string
 
 const (
-	embedPortFixed    = 27000
-	embedReadyTimeout = 60 * time.Second
-	embedCacheFile    = "cue_embeddings.json"
+	ollamaHost     = "http://localhost:11434"
+	embedCacheFile = "cue_embeddings.json"
 )
 
-// ── Embed sidecar state ───────────────────────────────────────────────────────
+// ── Ollama client helpers ─────────────────────────────────────────────────────
 
-type embedSvcState struct {
-	Model   string `json:"model"`
-	PID     int    `json:"pid"`
-	Port    int    `json:"port"`
-	Started string `json:"started"`
+// ollamaClient returns an Ollama API client pointed at OLLAMA_HOST or
+// the default localhost:11434.
+func ollamaClient() (*ollamaapi.Client, error) {
+	return ollamaapi.ClientFromEnvironment()
 }
 
-func embedStatePath() (string, error) {
-	d, err := runDir()
+// ollamaRunning returns true if the Ollama daemon is reachable.
+func ollamaRunning() bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(ollamaHost + "/api/tags")
 	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, "embed.json"), nil
-}
-
-func embedLogPath() (string, error) {
-	d, err := runDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, "embed.log"), nil
-}
-
-func readEmbedState() (*embedSvcState, error) {
-	path, err := embedStatePath()
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var s embedSvcState
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, err
-	}
-	return &s, nil
-}
-
-func writeEmbedState(s *embedSvcState) error {
-	path, err := embedStatePath()
-	if err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
-}
-
-func removeEmbedState() {
-	path, err := embedStatePath()
-	if err == nil {
-		os.Remove(path)
-	}
-}
-
-func embedSidecarRunning() bool {
-	s, err := readEmbedState()
-	if err != nil || s == nil {
 		return false
 	}
-	return pidAlive(s.PID)
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
-// ── Embed sidecar lifecycle ───────────────────────────────────────────────────
+// ── Embedding call ────────────────────────────────────────────────────────────
 
-func startEmbedSidecar(model string) error {
-	// Extract the embedded Python script to a stable temp path.
-	scriptPath := filepath.Join(os.TempDir(), "iq_embed_server.py")
-	if err := os.WriteFile(scriptPath, []byte(embedServerPy), 0755); err != nil {
-		return fmt.Errorf("failed to write embed server script: %w", err)
-	}
-
-	logP, err := embedLogPath()
+// embedTexts calls the Ollama /api/embed endpoint.
+// role is "cue" or "kb" — selects which configured model to use.
+// task is "query" or "document" — controls instruction prefix for models that require it.
+func embedTexts(texts []string, role string, task string) ([][]float32, error) {
+	cfg, err := loadConfig()
 	if err != nil {
-		return err
-	}
-	lf, err := os.OpenFile(logP, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open embed log: %w", err)
+		return nil, err
 	}
 
-	modelPath := model // mlx_embeddings.load() takes the HF model ID, not a snapshot path
-
-	pyPath, err := mlxVenvPython()
-	if err != nil {
-		lf.Close()
-		return fmt.Errorf("cannot resolve Python interpreter: %w", err)
+	var model string
+	if role == "cue" {
+		model = cueModel(cfg)
+	} else {
+		model = kbModel(cfg)
 	}
 
-	cmd := exec.Command(pyPath, scriptPath,
-		"--model", modelPath,
-		"--port", fmt.Sprintf("%d", embedPortFixed),
-	)
-	cmd.Env = os.Environ()
-	cmd.Stdout = lf
-	cmd.Stderr = lf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-
-	if err := cmd.Start(); err != nil {
-		lf.Close()
-		return fmt.Errorf("failed to start embed sidecar: %w", err)
+	// Per-model context window limits.
+	// mxbai-embed-large: 512 tokens; nomic-embed-*: 8192 tokens.
+	maxRunes := 1600
+	if strings.HasPrefix(model, "mxbai-embed-large") {
+		maxRunes = 900
 	}
-	lf.Close()
-
-	if err := writeEmbedState(&embedSvcState{
-		Model:   model,
-		PID:     cmd.Process.Pid,
-		Port:    embedPortFixed,
-		Started: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		return fmt.Errorf("started embed sidecar (pid %d) but failed to write state: %w", cmd.Process.Pid, err)
+	truncated := make([]string, len(texts))
+	for i, t := range texts {
+		r := []rune(t)
+		if len(r) > maxRunes {
+			r = r[:maxRunes]
+		}
+		truncated[i] = string(r)
 	}
 
-	fmt.Printf("  embed  pid %-7d  http://localhost:%d  ", cmd.Process.Pid, embedPortFixed)
-	healthURL := fmt.Sprintf("http://localhost:%d/health", embedPortFixed)
-	deadline := time.Now().Add(embedReadyTimeout)
-	client := &http.Client{Timeout: 2 * time.Second}
-	for time.Now().Before(deadline) {
-		resp, err := client.Get(healthURL)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				fmt.Printf("%s\n", utl.Gre("ready"))
-				return nil
+	// Apply instruction prefix for models that require it.
+	// nomic-embed-*: "search_query:" / "search_document:"
+	// mxbai-embed-large: query prefix only
+	prefixed := truncated
+	switch {
+	case strings.HasPrefix(model, "nomic-embed"):
+		prefixed = make([]string, len(truncated))
+		prefix := "search_document: "
+		if task == "query" {
+			prefix = "search_query: "
+		}
+		for i, t := range truncated {
+			prefixed[i] = prefix + t
+		}
+	case strings.HasPrefix(model, "mxbai-embed-large"):
+		if task == "query" {
+			prefixed = make([]string, len(truncated))
+			for i, t := range truncated {
+				prefixed[i] = "Represent this sentence for searching relevant passages: " + t
 			}
 		}
-		if !pidAlive(cmd.Process.Pid) {
-			fmt.Printf("%s\n", utl.Gra("failed"))
-			printLastLogLines(logP, 10)
-			return fmt.Errorf("embed sidecar process exited unexpectedly")
+	}
+
+	if os.Getenv("IQ_EMBED_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "[embed] role=%s model=%s task=%s inputs=%d first_len=%d\n",
+			role, model, task, len(prefixed), len([]rune(prefixed[0])))
+	}
+
+	c, err := ollamaClient()
+	if err != nil {
+		return nil, fmt.Errorf("ollama client: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	resp, err := c.Embed(ctx, &ollamaapi.EmbedRequest{
+		Model: model,
+		Input: prefixed,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ollama embed(%s): %w", model, err)
+	}
+
+	// Convert [][]float64 → [][]float32
+	out := make([][]float32, len(resp.Embeddings))
+	for i, vec64 := range resp.Embeddings {
+		v32 := make([]float32, len(vec64))
+		for j, f := range vec64 {
+			v32[j] = float32(f)
 		}
-		fmt.Print(".")
-		time.Sleep(sidecarPollInterval)
+		out[i] = v32
 	}
-	fmt.Printf("%s\n", utl.Gra("timeout"))
-	return fmt.Errorf("embed sidecar did not become ready within %s", embedReadyTimeout)
-}
-
-func stopEmbedSidecar() error {
-	state, err := readEmbedState()
-	if err != nil {
-		return err
-	}
-	if state == nil {
-		fmt.Printf("  embed  %s\n", utl.Gra("not running"))
-		return nil
-	}
-	if !pidAlive(state.PID) {
-		fmt.Printf("  embed  pid %-7d  %s\n", state.PID, utl.Gra("already stopped (stale state removed)"))
-		removeEmbedState()
-		return nil
-	}
-	proc, err := os.FindProcess(state.PID)
-	if err != nil {
-		return err
-	}
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("failed to send SIGTERM to embed sidecar pid %d: %w", state.PID, err)
-	}
-	for range 20 {
-		time.Sleep(500 * time.Millisecond)
-		if !pidAlive(state.PID) {
-			break
-		}
-	}
-	if pidAlive(state.PID) {
-		proc.Signal(syscall.SIGKILL)
-	}
-	removeEmbedState()
-	fmt.Printf("  embed  pid %-7d  %s\n", state.PID, utl.Gra("stopped"))
-	return nil
-}
-
-// ── Embedding HTTP client ─────────────────────────────────────────────────────
-
-type embedRequest struct {
-	Texts []string `json:"texts"`
-}
-
-type embedResponse struct {
-	Embeddings [][]float32 `json:"embeddings"`
-	Error      string      `json:"error,omitempty"`
-}
-
-func embedTexts(texts []string) ([][]float32, error) {
-	state, err := readEmbedState()
-	if err != nil || state == nil {
-		return nil, fmt.Errorf("embed sidecar not running — run 'iq svc start'")
-	}
-	body, err := json.Marshal(embedRequest{Texts: texts})
-	if err != nil {
-		return nil, err
-	}
-	url := fmt.Sprintf("http://localhost:%d/embed", state.Port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("embed sidecar at :%d unreachable: %w", state.Port, err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var result embedResponse
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse embed response: %w", err)
-	}
-	if result.Error != "" {
-		return nil, fmt.Errorf("embed sidecar error: %s", result.Error)
-	}
-	return result.Embeddings, nil
+	return out, nil
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────
 
 // cosineSimilarity returns the cosine similarity between two float32 vectors.
-// Vectors from the embed sidecar are L2-normalised, so this is equivalent to
-// a dot product — kept explicit for clarity.
 func cosineSimilarity(a, b []float32) float32 {
 	var dot, normA, normB float64
 	for i := range a {
@@ -265,7 +143,7 @@ func cosineSimilarity(a, b []float32) float32 {
 	return float32(dot / (math.Sqrt(normA) * math.Sqrt(normB)))
 }
 
-// ── Embedding cache ───────────────────────────────────────────────────────────
+// ── Cue embedding cache ───────────────────────────────────────────────────────
 
 type cueEmbeddingCache struct {
 	Model     string               `json:"model"`
@@ -313,7 +191,7 @@ func saveCueEmbeddings(cache *cueEmbeddingCache) error {
 }
 
 // invalidateCueEmbeddings deletes the embedding cache. Called after any cue
-// mutation so the next prompt triggers a rebuild.
+// mutation or cue_model change so the next prompt triggers a rebuild.
 func invalidateCueEmbeddings() {
 	path, err := cueEmbeddingsPath()
 	if err == nil {
@@ -340,7 +218,7 @@ func cueEmbeddingsStale(cues []Cue, model string) bool {
 }
 
 // refreshCueEmbeddings embeds all cue name+description strings and writes the
-// result to the cache file. Takes ~1s for 56 cues on a Mac mini M-series.
+// result to the cache file. Always uses the "cue" role model.
 func refreshCueEmbeddings(cues []Cue, model string) error {
 	texts := make([]string, len(cues))
 	names := make([]string, len(cues))
@@ -349,7 +227,7 @@ func refreshCueEmbeddings(cues []Cue, model string) error {
 		texts[i] = c.Name + ": " + c.Description
 		names[i] = c.Name
 	}
-	embeddings, err := embedTexts(texts)
+	embeddings, err := embedTexts(texts, "cue", "document")
 	if err != nil {
 		return fmt.Errorf("failed to embed cue descriptions: %w", err)
 	}
@@ -396,7 +274,7 @@ func embedClassify(input string, cues []Cue, model string) (string, *embedClassi
 		return "initial", nil, fmt.Errorf("cue embeddings unavailable")
 	}
 
-	inputEmb, err := embedTexts([]string{input})
+	inputEmb, err := embedTexts([]string{input}, "cue", "query")
 	if err != nil {
 		return "initial", nil, err
 	}
@@ -427,38 +305,4 @@ func embedClassify(input string, cues []Cue, model string) (string, *embedClassi
 		CacheHit: cacheHit,
 	}
 	return bestName, trace, nil
-}
-
-// ── Python interpreter resolution ─────────────────────────────────────────────
-
-// mlxVenvPython returns the Python interpreter that shares a venv with
-// mlx_lm.server. pipx installs mlx_lm.server as a symlink:
-//
-//	~/.local/bin/mlx_lm.server → ~/.local/pipx/venvs/mlx-lm/bin/mlx_lm.server
-//
-// We resolve the symlink, then look for python3 (or python) as a sibling in
-// the same bin/ directory. This ensures mlx_embeddings — installed via
-// `pipx inject mlx-lm mlx-embeddings` — is importable.
-func mlxVenvPython() (string, error) {
-	serverPath, _ := checkCommand("mlx_lm.server", "")
-	if serverPath == "" {
-		return "", fmt.Errorf("mlx_lm.server not found on PATH")
-	}
-
-	// Resolve symlink to get the real path inside the pipx venv.
-	real, err := filepath.EvalSymlinks(serverPath)
-	if err != nil {
-		real = serverPath // not a symlink, use as-is
-	}
-
-	binDir := filepath.Dir(real)
-
-	for _, name := range []string{"python3", "python"} {
-		candidate := filepath.Join(binDir, name)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("no python3/python found in mlx_lm venv (%s) — run: pipx inject mlx-lm mlx-embedding-models", binDir)
 }

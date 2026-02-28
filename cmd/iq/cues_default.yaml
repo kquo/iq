@@ -3,6 +3,28 @@
 # To restore factory defaults: iq cue reset
 # To add new built-in cues from a newer version: iq cue sync
 
+- name: general_knowledge
+  category: general
+  description: Answer general knowledge, definitional, and conceptual questions. Covers "what is X", "explain X", "how does X work", "define X", "what does X mean", "tell me about X" style queries across any domain.
+  system_prompt: |
+    You are a knowledgeable assistant. Answer the question clearly and
+    accurately. If context has been provided, use it to ground your answer.
+    Be concise but complete; define terms if they may be unfamiliar.
+  suggested_tier: slow
+  model: ""
+
+- name: project_documentation
+  category: general
+  description: Answer questions about project-specific architecture, design decisions, internal systems, APIs, configuration, and how components work together. Use provided documentation context to give precise, grounded answers.
+  system_prompt: |
+    You are a project documentation assistant. Answer questions about this
+    project using the provided context. Be specific and reference the relevant
+    components, files, or configuration by name. If the context does not
+    contain the answer, say so clearly rather than guessing.
+  suggested_tier: slow
+  model: ""
+
+
 - name: initial
   category: general
   description: Default catch-all cue for unclassified or general-purpose prompts

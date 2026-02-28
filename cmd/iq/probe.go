@@ -37,6 +37,7 @@ func newProbeCmd() *cobra.Command {
 	var cueName string
 	var system string
 	var noStream bool
+	var useKB bool
 
 	cmd := &cobra.Command{
 		Use:          "probe <model|tier> <message>",
@@ -63,6 +64,28 @@ func newProbeCmd() *cobra.Command {
 					return fmt.Errorf("cue %q not found", cueName)
 				}
 				systemPrompt = cue.SystemPrompt
+			}
+
+			// KB retrieval — prepend context to system prompt.
+			if useKB {
+				if !kbExists() {
+					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: knowledge base is empty — run: iq kb ingest <path>"))
+				} else if !ollamaRunning() {
+					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: Ollama not running — start with: ollama serve"))
+				} else {
+					results, kbErr := KBSearch(message, 5)
+					if kbErr != nil {
+						fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kbErr.Error()))
+					} else if len(results) > 0 {
+						ctx := KBContext(results)
+						if systemPrompt != "" {
+							systemPrompt = systemPrompt + "\n\n" + ctx
+						} else {
+							systemPrompt = ctx
+						}
+						fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(fmt.Sprintf("[kb: %d chunks retrieved]", len(results))))
+					}
+				}
 			}
 
 			// Resolve sidecar — tier name or specific model ID.
@@ -103,7 +126,7 @@ func newProbeCmd() *cobra.Command {
 			// Infer and time it.
 			t0 := time.Now()
 			if noStream {
-				response, err := callSidecar(sidecar.Port, messages, false, 0)
+				response, err := callSidecar(sidecar.Port, messages, false, 8192)
 				if err != nil {
 					return err
 				}
@@ -128,6 +151,7 @@ func newProbeCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&cueName, "cue", "c", "", "Use a cue's system prompt")
 	cmd.Flags().StringVarP(&system, "system", "s", "", "Use a literal system prompt")
 	cmd.Flags().BoolVarP(&noStream, "no-stream", "S", false, "Collect full response before printing")
+	cmd.Flags().BoolVarP(&useKB, "kb", "k", false, "Retrieve knowledge base context for this probe")
 
 	return cmd
 }

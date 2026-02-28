@@ -540,7 +540,7 @@ func newLmGetCmd() *cobra.Command {
 			tier := suggestTier(model)
 			fmt.Printf("\nSuggested tier: %s\n", utl.Gre(tier))
 			fmt.Printf("%s\n", utl.Gra(
-				fmt.Sprintf("  iq cfg tier add %s %s", tier, model)))
+				fmt.Sprintf("  iq svc tier add %s %s", tier, model)))
 
 			return nil
 		},
@@ -566,6 +566,9 @@ func newLmListCmd() *cobra.Command {
 			}
 			fmt.Printf("%-55s  %8s  %-10s  %8s  %10s  %s\n",
 				"MODEL", "DISK", "PULLED", "PARAMS", "EST MEM", "TIER")
+			cfg, _ := loadConfig()
+			cueM := cueModel(cfg)
+			kbM := kbModel(cfg)
 			for _, e := range entries {
 				disk := diskUsage(hfCacheDir(e.ID))
 				pulled := ""
@@ -574,14 +577,23 @@ func newLmListCmd() *cobra.Command {
 				}
 				// Pad raw strings to width before colorizing, so ANSI codes
 				// don't corrupt column alignment.
-				tier := tierForModel(e.ID)
-				tierRaw := "<unset>"
-				if tier != "" {
-					tierRaw = tier
-				}
-				tierDisplay := utl.Gra(fmt.Sprintf("%-6s", tierRaw))
-				if tier != "" {
-					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", tierRaw))
+				var tierDisplay string
+				if e.ID == cueM && e.ID == kbM {
+					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "embed"))
+				} else if e.ID == cueM {
+					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "cue"))
+				} else if e.ID == kbM {
+					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "kb"))
+				} else {
+					tier := tierForModel(e.ID)
+					tierRaw := "<unset>"
+					if tier != "" {
+						tierRaw = tier
+					}
+					tierDisplay = utl.Gra(fmt.Sprintf("%-6s", tierRaw))
+					if tier != "" {
+						tierDisplay = utl.Gre(fmt.Sprintf("%-6s", tierRaw))
+					}
 				}
 				fmt.Printf("%-55s  %8s  %-10s  %8s  %10s  %s\n",
 					e.ID,
@@ -711,7 +723,7 @@ func newLmShowCmd() *cobra.Command {
 				suggested := suggestTier(entry.ID)
 				fmt.Printf("%-12s %s\n", "TIER", utl.Gra("<unset>"))
 				fmt.Printf("%-12s %s\n", "",
-					utl.Gra(fmt.Sprintf("iq cfg tier add %s %s", suggested, entry.ID)))
+					utl.Gra(fmt.Sprintf("iq svc tier add %s %s", suggested, entry.ID)))
 			} else {
 				fmt.Printf("%-12s %s\n", "TIER", utl.Gre(tier))
 			}
@@ -748,10 +760,10 @@ func newLmRmCmd() *cobra.Command {
 				state, _ := readState(model)
 				if state != nil && pidAlive(state.PID) {
 					return fmt.Errorf("%s is in the %s tier and its sidecar is running\n"+
-						"  Run 'iq svc stop %s' then 'iq cfg tier rm %s %s' before removing", model, t, model, t, model)
+						"  Run 'iq svc stop %s' then 'iq svc tier rm %s %s' before removing", model, t, model, t, model)
 				}
 				return fmt.Errorf("%s is in the %s tier\n"+
-					"  Run 'iq cfg tier rm %s %s' before removing", model, t, t, model)
+					"  Run 'iq svc tier rm %s %s' before removing", model, t, t, model)
 			}
 
 			if !force {

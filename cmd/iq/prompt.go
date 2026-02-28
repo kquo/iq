@@ -26,9 +26,10 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Messages  []chatMessage `json:"messages"`
-	Stream    bool          `json:"stream"`
-	MaxTokens int           `json:"max_tokens,omitempty"`
+	Messages          []chatMessage `json:"messages"`
+	Stream            bool          `json:"stream"`
+	MaxTokens         int           `json:"max_tokens,omitempty"`
+	RepetitionPenalty float64       `json:"repetition_penalty,omitempty"`
 }
 
 type chatStreamChunk struct {
@@ -268,7 +269,7 @@ func printStep1Classify(t *embedClassifyTrace) {
 	if t.CacheHit {
 		cacheStr = "hit"
 	}
-	traceStep(1, "CLASSIFY", fmt.Sprintf("embed :%d", embedPortFixed))
+	traceStep(1, "CLASSIFY", fmt.Sprintf("embed %s", ollamaHost))
 	traceField("model", t.Model)
 	traceField("resolved", t.Resolved)
 	traceField("score", fmt.Sprintf("%.4f", t.Score))
@@ -278,7 +279,7 @@ func printStep1Classify(t *embedClassifyTrace) {
 
 // printStep2Route prints the routing decision.
 func printStep2Route(route *routeResult, elapsed time.Duration) {
-	traceStep(2, "RESOLVE ROLE", "Go code")
+	traceStep(2, "RESOLVE ROUTE", "Go code")
 	traceField("cue", route.CueName)
 	traceField("category", route.Category)
 	traceField("suggested", route.SuggestedTier)
@@ -288,17 +289,27 @@ func printStep2Route(route *routeResult, elapsed time.Duration) {
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
-// printStep3EffectivePrompt prints the full message array that will be sent.
-func printStep3EffectivePrompt(messages []chatMessage, route *routeResult) {
-	traceStep(3, "EFFECTIVE PROMPT", fmt.Sprintf("%s :%d", route.Tier, route.Port))
+// printStep3KB prints the knowledge base retrieval trace.
+func printStep3KB(results []kbResult, elapsed time.Duration) {
+	traceStep(3, "KB RETRIEVE", fmt.Sprintf("kb.json → %d chunks", len(results)))
+	for _, r := range results {
+		traceField("chunk", fmt.Sprintf("score:%.4f  %s:%d–%d",
+			r.Score, r.Chunk.Source, r.Chunk.LineStart, r.Chunk.LineEnd))
+	}
+	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
+}
+
+// printStep4EffectivePrompt prints the full message array that will be sent.
+func printStep4EffectivePrompt(messages []chatMessage, route *routeResult) {
+	traceStep(4, "EFFECTIVE PROMPT", fmt.Sprintf("%s :%d", route.Tier, route.Port))
 	for _, m := range messages {
 		traceBlock(m.Role, m.Content, true)
 	}
 }
 
-// printStep5Session prints session persistence info.
-func printStep5Session(sess *session, path string, elapsed time.Duration) {
-	traceStep(5, "SESSION", "Go code")
+// printStep6Session prints session persistence info.
+func printStep6Session(sess *session, path string, elapsed time.Duration) {
+	traceStep(6, "SESSION", "Go code")
 	traceField("id", sess.ID)
 	traceField("saved", path)
 	traceField("turns", fmt.Sprintf("%d", (len(sess.Messages)-1)/2))
@@ -307,8 +318,27 @@ func printStep5Session(sess *session, path string, elapsed time.Duration) {
 
 // ── Sidecar HTTP ──────────────────────────────────────────────────────────────
 
+// stripThinkBlocks removes <think>...</think> reasoning blocks emitted by
+// models like DeepSeek-R1 before returning the response to the user.
+func stripThinkBlocks(s string) string {
+	for {
+		start := strings.Index(s, "<think>")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(s, "</think>")
+		if end == -1 {
+			// Unclosed tag — strip from <think> to end of string.
+			s = strings.TrimSpace(s[:start])
+			break
+		}
+		s = s[:start] + s[end+len("</think>"):]
+	}
+	return strings.TrimSpace(s)
+}
+
 func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int) (string, error) {
-	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens}
+	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: 1.3}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err
@@ -338,11 +368,12 @@ func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int) (
 	if len(result.Choices) == 0 {
 		return "", fmt.Errorf("empty response from sidecar")
 	}
-	return result.Choices[0].Message.Content, nil
+	content := result.Choices[0].Message.Content
+	return stripThinkBlocks(content), nil
 }
 
 func streamSidecar(port int, messages []chatMessage) (string, error) {
-	req := chatRequest{Messages: messages, Stream: true}
+	req := chatRequest{Messages: messages, Stream: true, MaxTokens: 8192, RepetitionPenalty: 1.3}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err
@@ -358,8 +389,16 @@ func streamSidecar(port int, messages []chatMessage) (string, error) {
 		return "", fmt.Errorf("sidecar returned %d: %s", resp.StatusCode, b)
 	}
 
+	// Collect all tokens. If the model uses <think> blocks (e.g. DeepSeek-R1),
+	// we suppress streaming output entirely and print the clean result at the end.
+	// For non-thinking models, tokens stream normally as they arrive.
 	var full strings.Builder
+	hasThink := false
+
+	// Use a large scanner buffer — DeepSeek-R1 think blocks can produce
+	// SSE lines well in excess of bufio's default 64KB limit.
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -374,14 +413,27 @@ func streamSidecar(port int, messages []chatMessage) (string, error) {
 			continue
 		}
 		for _, choice := range chunk.Choices {
-			if choice.Delta.Content != "" {
-				fmt.Print(choice.Delta.Content)
-				full.WriteString(choice.Delta.Content)
+			token := choice.Delta.Content
+			if token == "" {
+				continue
+			}
+			full.WriteString(token)
+			if strings.Contains(full.String(), "<think>") {
+				hasThink = true
+			}
+			// Only stream to stdout if we have not encountered a think block.
+			if !hasThink {
+				fmt.Print(token)
 			}
 		}
 	}
+	result := stripThinkBlocks(full.String())
+	if hasThink {
+		// Print the clean result after stripping think blocks.
+		fmt.Print(result)
+	}
 	fmt.Println()
-	return full.String(), scanner.Err()
+	return strings.TrimSpace(result), scanner.Err()
 }
 
 // ── Auto-name session (background) ───────────────────────────────────────────
@@ -453,6 +505,7 @@ type promptOpts struct {
 	dryRun    bool
 	debug     bool
 	noStream  bool
+	noKB      bool
 }
 
 func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
@@ -479,14 +532,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				return sess, fmt.Errorf("no cues in category %q", opts.category)
 			}
 		}
-		if !embedSidecarRunning() {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial (run 'iq svc start')"))
+		if !ollamaRunning() {
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("Ollama not running — falling back to initial cue (start with: ollama serve)"))
 			cueName = "initial"
 		} else {
 			cfg2, cfgErr := loadConfig()
-			em := defaultEmbedModel
+			em := defaultCueModel
 			if cfgErr == nil {
-				em = embedModel(cfg2)
+				em = cueModel(cfg2)
 			}
 			cueName, et, err = embedClassify(input, candidates, em)
 			if err != nil {
@@ -528,11 +581,34 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		printStep2Route(route, time.Since(t2))
 	}
 
-	// ── Step 3: Build messages + effective prompt ──
+	// ── Step 3: KB retrieval ──
+	var kbContext string
+	if kbExists() && !opts.noKB && ollamaRunning() {
+		t3 := time.Now()
+		results, kbErr := KBSearch(input, 5)
+		if kbErr == nil && len(results) > 0 {
+			kbContext = KBContext(results)
+			if trace {
+				printStep3KB(results, time.Since(t3))
+			}
+		} else if kbErr != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kbErr.Error()))
+		}
+	}
+
+	// ── Step 4: Build messages + effective prompt ──
 	var messages []chatMessage
 	if sess != nil && len(sess.Messages) > 0 {
 		messages = append(messages, sess.Messages...)
 		messages = append(messages, chatMessage{Role: "user", Content: input})
+	} else if kbContext != "" {
+		// KB reading-comprehension format: small models follow this pattern
+		// more reliably than context-in-system-prompt. Keeps the system prompt
+		// lean and puts the retrieved text directly adjacent to the question.
+		systemPrompt := "You are a helpful assistant. Answer the question using only the provided text. If the text does not contain the answer, say so."
+		userContent := kbContext + "\n\nQuestion: " + input + "\n\nAnswer based only on the text above."
+		messages = append(messages, chatMessage{Role: "system", Content: systemPrompt})
+		messages = append(messages, chatMessage{Role: "user", Content: userContent})
 	} else {
 		if route.SystemPrompt != "" {
 			messages = append(messages, chatMessage{Role: "system", Content: route.SystemPrompt})
@@ -540,7 +616,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		messages = append(messages, chatMessage{Role: "user", Content: input})
 	}
 	if trace {
-		printStep3EffectivePrompt(messages, route)
+		printStep4EffectivePrompt(messages, route)
 	}
 
 	// Dry-run stops here.
@@ -548,16 +624,16 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		return sess, nil
 	}
 
-	// ── Step 4: Infer ──
-	var t4 time.Time
+	// ── Step 5: Infer ──
+	var t5 time.Time
 	if trace {
-		traceStep(4, "INFER", fmt.Sprintf("%s :%d", route.Tier, route.Port))
-		t4 = time.Now()
+		traceStep(5, "INFER", fmt.Sprintf("%s :%d", route.Tier, route.Port))
+		t5 = time.Now()
 	}
 
 	var response string
 	if opts.noStream {
-		response, err = callSidecar(route.Port, messages, false, 0)
+		response, err = callSidecar(route.Port, messages, false, 8192)
 		if err != nil {
 			return sess, err
 		}
@@ -569,10 +645,10 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		}
 	}
 	if trace {
-		traceField("elapsed", fmt.Sprintf("%dms", time.Since(t4).Milliseconds()))
+		traceField("elapsed", fmt.Sprintf("%dms", time.Since(t5).Milliseconds()))
 	}
 
-	// ── Step 5: Persist session ──
+	// ── Step 6: Persist session ──
 	if opts.sessionID != "" || sess != nil {
 		if sess == nil {
 			sess = newSession(route.CueName, route.Tier)
@@ -591,9 +667,9 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: failed to save session: "+err.Error()))
 		}
 		if trace {
-			t5 := time.Now()
+			t6 := time.Now()
 			sp, _ := sessionPath(sess.ID)
-			printStep5Session(sess, sp, time.Since(t5))
+			printStep6Session(sess, sp, time.Since(t6))
 		}
 		if len(sess.Messages) <= 3 {
 			autoNameSession(sess)
@@ -724,8 +800,9 @@ func printPromptHelp() {
 	fmt.Printf("  %-32s %s\n", "-c, --category <n>", "Classify within a category only")
 	fmt.Printf("  %-32s %s\n", "    --tier <n>", "Override tier directly, bypass cue system")
 	fmt.Printf("  %-32s %s\n", "-s, --session <id>", "Load/continue a session by ID")
-	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–3, skip inference")
+	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–4, skip inference")
 	fmt.Printf("  %-32s %s\n", "-d, --debug", "Trace all steps including inference")
+	fmt.Printf("  %-32s %s\n", "-K, --no-kb", "Disable knowledge base retrieval for this prompt")
 	fmt.Printf("  %-32s %s\n\n", "    --no-stream", "Collect full response before printing")
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-32s %s\n\n", "-h, --help", "Show help for command")
@@ -791,8 +868,9 @@ func newPromptCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.category, "category", "c", "", "Classify within a category only")
 	cmd.Flags().StringVar(&opts.tier, "tier", "", "Override tier directly")
 	cmd.Flags().StringVarP(&opts.sessionID, "session", "s", "", "Load/continue a session by ID")
-	cmd.Flags().BoolVarP(&opts.dryRun, "dry-run", "n", false, "Trace steps 1–3, skip inference")
+	cmd.Flags().BoolVarP(&opts.dryRun, "dry-run", "n", false, "Trace steps 1–4, skip inference")
 	cmd.Flags().BoolVarP(&opts.debug, "debug", "d", false, "Trace all steps including inference")
+	cmd.Flags().BoolVarP(&opts.noKB, "no-kb", "K", false, "Disable knowledge base retrieval")
 	cmd.Flags().BoolVar(&opts.noStream, "no-stream", false, "Collect full response before printing")
 
 	return cmd

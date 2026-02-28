@@ -20,7 +20,7 @@ A personal tool for experimenting with LLM orchestration directly from the Mac t
 ```bash
 git clone https://github.com/kquo/iq
 cd iq
-./build
+./build.sh
 ```
 
 Requires Go installed with `$GOPATH/bin` in your `$PATH`.

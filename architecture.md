@@ -2,35 +2,33 @@
 
 ## Overview
 
-IQ is a local LLM orchestration tool for Apple Silicon. It manages the full lifecycle of MLX-format language models — discovery, download, tier assignment, cue management, runtime serving, and intelligent prompt routing — through a unified CLI. All inference runs locally with no cloud dependency.
+IQ is a local LLM orchestration tool for Apple Silicon. It manages the full lifecycle of MLX-format language models — discovery, download, tier assignment, cue management, knowledge base, runtime serving, and intelligent prompt routing — through a unified CLI. All inference runs locally with no cloud dependency.
 
 ---
 
 ## System Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                              iq CLI (Go)                                 │
-│                                                                          │
-│  iq lm     iq cfg     iq cue    iq svc     iq prompt    iq probe         │
-│  (models)  (config)   (roles)    (service)  (infer/REPL) (raw debug)     │
-└────┬───────────┬───────────┬─────────┬──────────┬────────────┬───────────┘
-     │           │           │         │          │            │
-     ▼           ▼           ▼         ▼          ▼            ▼
-┌─────────┐ ┌─────────┐ ┌────────┐ ┌─────────────────────┐ ┌────────────┐
-│ HF      │ │config   │ │roles   │ │ mlx_lm.server       │ │ sessions/  │
-│ cache   │ │.yaml    │ │.yaml   │ │ sidecars (pool)     │ │ <id>.yaml  │
-│         │ │         │ │        │ │                     │ │            │
-│~/.cache/│ │tiers:   │ │name    │ │ fast pool :27001+   │ │ id         │
-│hugging  │ │  fast:  │ │category│ │ slow pool :27001+   │ │ name       │
-│face/hub/│ │  - m1   │ │desc    │ │                     │ │ cue/tier   │
-│models-- │ │  - m2   │ │prompt  │ │ dynamic ports,      │ │ messages[] │
-│org--repo│ │  slow:  │ │tier    │ │ one state file per  │ │            │
-│/snapshot│ │  - m3   │ │hint    │ │ running model       │ └────────────┘
-│  /hash/ │ └─────────┘ └────────┘ │                     │
-└─────────┘                        │ OpenAI-compatible   │
-                                   │ HTTP API            │
-                                   └─────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                               iq CLI (Go)                                   │
+│                                                                             │
+│  iq lm    iq cfg    iq cue    iq svc    iq kb    iq prompt    iq probe      │
+│  (models) (config)  (cues)   (service) (RAG)    (infer/REPL) (raw debug)   │
+└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬──────────┘
+     │          │          │        │       │         │            │
+     ▼          ▼          ▼        ▼       ▼         ▼            ▼
+┌─────────┐ ┌──────┐ ┌────────┐ ┌──────────────────────┐ ┌──────────────────┐
+│ HF      │ │config│ │cues    │ │ mlx_lm.server        │ │ sessions/        │
+│ cache   │ │.yaml │ │.yaml   │ │ sidecars (pool)      │ │ <id>.yaml        │
+│         │ │      │ │        │ │                      │ │                  │
+│~/.cache/│ │tiers:│ │name    │ │ fast pool :27001+    │ │ kb.json          │
+│hugging  │ │ fast │ │category│ │ slow pool :27001+    │ │ (vector index)   │
+│face/hub/│ │ slow │ │desc    │ │ embed sidecar :27000 │ │                  │
+│models-- │ │      │ │prompt  │ │                      │ └──────────────────┘
+│org--repo│ │      │ │tier    │ │ OpenAI-compatible    │
+│/snapshot│ └──────┘ └────────┘ │ HTTP API             │
+│  /hash/ │                     └──────────────────────┘
+└─────────┘
 ```
 
 ---
@@ -56,10 +54,10 @@ Manages `~/.config/iq/config.yaml`. Tiers are **pools** — each tier holds a li
 ```
 fast    sub-2GB models — used for quick inference tasks
 slow    2GB+ models    — used for quality inference
-embed   embedding model — used for cue classification (fixed port 27000)
+embed   embedding model — used for cue classification and KB retrieval (fixed port 27000)
 ```
 
-Commands: `cfg show` (path + model table), `cfg tier show`, `cfg tier add <tier> <model>`, `cfg tier rm <tier> <model>`, `cfg embed show/set/rm` (embedding model for classification).
+Commands: `cfg show` (path + model table), `cfg tier show`, `cfg tier add <tier> <model>`, `cfg tier rm <tier> <model>`, `cfg embed show/set/rm` (embedding model for classification and RAG retrieval).
 
 `cfg show` renders the same model table as `lm list`, scoped to assigned models only.
 
@@ -67,7 +65,7 @@ Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`
 
 ### `iq cue` — Cue Definitions
 
-Manages `~/.config/iq/cues.yaml`, seeded from an embedded default set of 55 cues across 10 categories:
+Manages `~/.config/iq/cues.yaml`, seeded from an embedded default set of 56 cues across 10 categories:
 
 ```
 language_tasks  generation  reasoning  code       retrieval
@@ -76,7 +74,7 @@ summarization   dialogue    safety     domain     ml_ops
 
 Each cue carries a `name`, `category`, `description`, `system_prompt`, `suggested_tier`, and an optional direct `model` override (kept for power users, not actively promoted in routing).
 
-Role management: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `sync`.
+Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `sync`.
 
 ### `iq svc` — Service Daemon
 
@@ -90,61 +88,110 @@ Start sequence:
 5. Poll `GET /v1/models` until 200 OK or 120s timeout
 6. On failure: print last 10 log lines + path
 
-`iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models).
+`iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models). Starting with no argument or a tier name also starts the embedding sidecar.
 
 **Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
 
-`iq svc doc` runs preflight checks: `python3` on PATH, `mlx_lm.server` found, `--model` flag present, all assigned model cache dirs exist, embed model cache present, `mlx_embeddings` Python package importable.
+`iq svc doc` runs preflight checks: `python3` on PATH, `mlx_lm.server` found, `--model` flag present, all assigned model cache dirs exist, embed model cache present, `mlx-embedding-models` Python package importable in the mlx-lm pipx venv.
 
-**Embedding sidecar** — a separate Python HTTP process (`embed_server.py`, embedded in the IQ binary) that runs `bge-small-en-v1.5-mlx` (or a user-configured model via `iq cfg embed set`). Fixed port: 27000. Started and stopped alongside generative sidecars via `iq svc start/stop`. Serves `POST /embed` (accepts a list of texts, returns L2-normalised float32 vectors) and `GET /health`. State file: `~/.config/iq/run/embed.json`. Requires `pipx install mlx-embeddings`.
+**Embedding sidecar** — a separate Python HTTP process (`embed_server.py`, embedded in the IQ binary) that runs `bge-small-en-v1.5-bf16` (or a user-configured model via `iq cfg embed set`). Fixed port: 27000. The Python interpreter is derived from the `mlx_lm.server` binary path — both live in the same pipx venv. Serves `POST /embed` (accepts a list of texts, returns L2-normalised float32 vectors) and `GET /health`. State file: `~/.config/iq/run/embed.json`. Requires `pipx inject mlx-lm mlx-embedding-models`.
 
-`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models, plus IQ process memory and combined total.
+`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar, IQ process memory, and combined total.
+
+### `iq kb` — Knowledge Base
+
+Manages `~/.config/iq/kb.json` — an embedded vector index for RAG (Retrieval-Augmented Generation).
+
+> **What RAG is.** Large language models know only what was in their training data. RAG extends this by retrieving relevant passages from your own documents at query time and injecting them into the prompt as plain text context — no fine-tuning, no model modification. The model reasons over retrieved material just as it would any other text in its context window. The key insight: embeddings are used for *retrieval* (finding relevant passages by semantic similarity), but the model itself only ever sees text. Embeddings never enter the model directly in this architecture.
+
+**How it works end-to-end:**
+
+```
+iq kb ingest ~/projects/myapp
+    │
+    ├── walk directory (skips .git, node_modules, vendor, __pycache__, hidden dirs)
+    ├── read each text file (.go, .md, .py, .txt, .yaml, ...)
+    ├── split into overlapping line-based chunks (40 lines, 5-line overlap)
+    ├── embed each chunk via embed sidecar (batches of 20)
+    └── store chunk text + 384-float vector in kb.json
+
+iq prompt "how does the auth middleware work?"
+    │
+    ├── embed user input → query vector
+    ├── cosine_similarity(query_vec, all_chunk_vecs) — Go, in-memory
+    ├── top-5 chunks retrieved
+    ├── injected into system prompt as plain text:
+    │     "Relevant context from knowledge base:
+    │      ─── /path/to/middleware.go (lines 42–81) ───
+    │      <chunk text>
+    │      ─── /path/to/README.md (lines 12–51) ───
+    │      <chunk text>"
+    └── inference proceeds as normal — model sees your actual code
+```
+
+KB retrieval is **always-on** when `kb.json` exists and the embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
+
+Commands: `ingest` (alias: `in`), `list`, `search`, `rm`, `clear`.
+
+```
+iq kb ingest <path>     # file or directory tree
+iq kb in <path>         # alias
+iq kb list              # show sources with file/chunk counts and ingest time
+iq kb search <query>    # raw similarity search — shows score + preview, no inference
+iq kb rm <path>         # remove a source and all its chunks
+iq kb clear             # wipe entire kb.json
+```
+
+`iq probe` also supports KB retrieval via `-k / --kb`.
 
 ### `iq prompt` — Inference and REPL
 
-Routes user prompts through a five-step pipeline:
+Routes user prompts through a pipeline:
 
-**1. Classify** — the user input is embedded by the embedding sidecar (see below) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. This replaces the previous LLM-based classifier — no generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running. Every prompt therefore makes two calls: one cheap embedding call (~10ms), then the full inference call with the resolved cue's system prompt.
+**1. Classify** — the user input is embedded by the embedding sidecar and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
 
-> **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space, which is what makes similarity search possible: "explain a transformer model" and "describe how attention works" will produce vectors that point in nearly the same direction, even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, each cue description is embedded once and cached; at query time the user input is embedded and the closest cue is selected in microseconds via cosine similarity — no token generation, no instruction-following uncertainty.
+> **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space: "explain a transformer model" and "describe how attention works" will produce vectors pointing in nearly the same direction even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, embeddings serve double duty: classifying prompts to cues, and retrieving relevant knowledge base chunks for RAG.
 
-The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first use and refreshed automatically when cues change (add/edit/rm/reset/sync). The cache stores a 384-float L2-normalised vector per cue, keyed by cue name, along with the embed model ID and generation timestamp.
+The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first use and refreshed automatically when cues change.
 
 **2. Route** — resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
 
-**3. Build** — assembles the message array: system prompt from the cue, session history (if any), new user message.
+**3. KB Retrieve** — if `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved and appended to the cue's system prompt as plain text context. Skipped silently if kb is empty or unavailable.
 
-**4. Infer** — sends to the target sidecar via `POST /v1/chat/completions`. Streams tokens to stdout by default.
+**4. Build** — assembles the message array: system prompt (cue + KB context if any), session history (if any), new user message.
 
-**5. Persist** — appends the turn to `~/.config/iq/sessions/<id>.yaml`. After the first exchange, a background goroutine asks the smallest fast-tier model to generate a short name and description for the session.
+**5. Infer** — sends to the target sidecar via `POST /v1/chat/completions`. Streams tokens to stdout by default.
+
+**6. Persist** — appends the turn to `~/.config/iq/sessions/<id>.yaml`. After the first exchange, a background goroutine asks the smallest fast-tier model to generate a short name and description for the session.
 
 **Flags:**
 ```
--r, --cue <n>      Skip classification, use this cue directly
+-r, --cue <n>       Skip classification, use this cue directly
 -c, --category <n>  Restrict auto-classification to one category
     --tier <n>      Override tier directly, bypass cue system
 -s, --session <id>  Load/continue a named session
--n, --dry-run       Trace steps 1–3, skip inference
+-K, --no-kb         Disable knowledge base retrieval for this prompt
+-n, --dry-run       Trace steps 1–4, skip inference
 -d, --debug         Trace all steps including inference
     --no-stream     Collect full response before printing
 ```
-
-`--dry-run` and `--debug` print a step-by-step trace to stderr showing exactly which sidecar handled classification, how the route was resolved, the full effective prompt, and elapsed time per step.
 
 **REPL mode** — entered when no message arg and stdin is a terminal. Supports `/cue`, `/session`, `/clear`, `/dry-run`, `/debug`, `/help`, `/quit`. Pipe-friendly: `echo "..." | iq prompt` takes the stdin path.
 
 ### `iq probe` — Raw Sidecar Access
 
-Bypasses the IQ framework entirely. Sends a message directly to a specific sidecar for debugging and model exploration.
+Bypasses the IQ prompt pipeline. Sends a message directly to a specific sidecar for debugging and model exploration.
 
 ```
 iq probe <model|tier> [flags] <message>
 
--s, --system <text>   Optional system prompt
--S, --no-stream       Collect full response before printing
+-c, --cue <n>       Use a cue's system prompt
+-s, --system <text> Use a literal system prompt
+-k, --kb            Retrieve knowledge base context (prepended to system prompt)
+-S, --no-stream     Collect full response before printing
 ```
 
-Accepts a tier name (routes to any live sidecar in that pool) or a specific model ID. Prints routing info (tier, model, port) in gray before the response, and elapsed time in gray after.
+Accepts a tier name or specific model ID. Prints routing info in gray before the response and elapsed time after.
 
 ---
 
@@ -152,25 +199,24 @@ Accepts a tier name (routes to any live sidecar in that pool) or a specific mode
 
 ```
 ~/.config/iq/
-├── config.yaml              # tier pool assignments
-├── models.json              # manifest of downloaded models
+├── config.yaml                  # tier pool assignments + embed model
+├── models.json                  # manifest of downloaded models
 ├── cues.yaml                    # cue definitions (seeded from embedded defaults)
 ├── cue_embeddings.json          # cosine similarity cache (auto-built, invalidated on cue changes)
+├── kb.json                      # knowledge base: chunk text + 384-float vectors (RAG)
 ├── run/
-│   ├── embed.json                                        # embed sidecar state
+│   ├── embed.json               # embed sidecar state (PID, port, model)
 │   ├── embed.log
-│   ├── mlx-community--SmolLM2-135M-Instruct-8bit.json   # sidecar state
-│   ├── mlx-community--SmolLM2-135M-Instruct-8bit.log
-│   ├── mlx-community--Phi-4-mini-reasoning-4bit.json
-│   └── mlx-community--Phi-4-mini-reasoning-4bit.log
+│   ├── <model-slug>.json        # generative sidecar state
+│   └── <model-slug>.log
 └── sessions/
-    └── <id>.yaml            # conversation history per session
+    └── <id>.yaml                # conversation history per session
 
 ~/.cache/huggingface/hub/
 └── models--org--repo/
-    ├── blobs/               # actual file content (deduplicated)
+    ├── blobs/                   # actual file content (deduplicated)
     └── snapshots/
-        └── <hash>/          # symlinks into blobs/ — this is --model path
+        └── <hash>/              # symlinks into blobs/ — this is --model path
             ├── config.json
             ├── model.safetensors
             └── tokenizer.json
@@ -183,26 +229,33 @@ Accepts a tier name (routes to any live sidecar in that pool) or a specific mode
 ```
 User input
     │
-    ├── --cue given? ─────────────────────────────────────┐
-    │                                                     │
-    ▼  (auto-classify)                                    ▼ (skip classify)
-POST /v1/chat/completions                          resolve cue directly
-  smallest fast-tier sidecar                              │
-  system: cue classifier prompt                           │
-  user:   input                                           │
-    │                                                     │
-    ▼                                                     │
-  cue name (exact or fuzzy match) ◄───────────────────────┘
+    ├── --cue given? ──────────────────────────────────────────┐
+    │                                                          │
+    ▼  (auto-classify)                                         ▼ (skip classify)
+POST /embed  →  embed sidecar :27000                    resolve cue directly
+  input text  →  384-float vector                              │
+    │                                                          │
+    ▼                                                          │
+  cosine_similarity(input_vec, cue_vecs[])                     │
+    │                                                          │
+    ▼                                                          │
+  highest-score cue name ◄──────────────────────────────────-─┘
     │
     ▼
 resolveRoute()
   cue.model override  →  pickSidecar(tier, false)
   cue.suggested_tier  →  pickSidecar(tier, false)
-  fallback             →  pickSidecar("fast", false)
+  fallback            →  pickSidecar("fast", false)
+    │
+    ▼
+KB retrieve  (if kb.json exists && embed sidecar running && !--no-kb)
+  POST /embed → query vector
+  cosine_similarity(query_vec, all_chunk_vecs[]) — Go, in-memory
+  top-5 chunks → plain text context block
     │
     ▼
 build messages[]
-  system:    cue.system_prompt
+  system:    cue.system_prompt + "\n\n" + kb_context (if any)
   ...        session history (if -s)
   user:      input
     │
@@ -221,7 +274,9 @@ append turn to session YAML
 
 | Version | Summary |
 |---------|---------|
-| 0.2.7 | Initial public release |
-| 0.2.8 | rename role→cue, add initial fallback cue, probe --cue flag |
-| 0.2.9 | embedding-based classification, normalise suggested_tier values |
-| 0.2.10 | switch embed library to mlx-embedding-models |
+| 0.2.7   | Initial public release |
+| 0.2.8   | rename role→cue, add initial fallback cue, probe --cue flag |
+| 0.2.9   | embedding-based classification, normalise suggested_tier values |
+| 0.2.10  | switch embed library to mlx-embedding-models, fix BertTokenizer compat |
+| 0.3.0   | RAG knowledge base (iq kb), KB retrieval in prompt and probe |
+| 0.3.1   | Ollama embeddings, dual embed roles (cue/kb), hybrid KB retrieval, RAG quality improvements |
