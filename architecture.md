@@ -93,9 +93,9 @@ Start sequence:
 
 `iq svc doc` runs preflight checks: `mlx_lm.server` found and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
 
-**Embeddings** — handled by two local Python sidecars started with `iq svc start`. One for cue classification (`cue_model`, port 27000) and one for KB indexing/retrieval (`kb_model`, port 27001). Configure both via `iq svc embed`.
+**Embeddings** — handled by a single local Python sidecar (`embed_model`, port 27000) started with `iq svc start`. Serves both cue classification and KB indexing/retrieval. Configure via `iq svc embed`.
 
-`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus both embed sidecar rows, IQ process memory, and combined total.
+`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar row, IQ process memory, and combined total.
 
 ### `iq kb` — Knowledge Base
 
@@ -111,7 +111,7 @@ iq kb ingest ~/projects/myapp
     ├── walk directory (skips .git, node_modules, vendor, __pycache__, hidden dirs)
     ├── read each text file (.go, .md, .py, .txt, .yaml, ...)
     ├── split into overlapping line-based chunks (40 lines, 5-line overlap)
-    ├── embed each chunk via kb embed sidecar :27001 (batches of 20)
+    ├── embed each chunk via embed sidecar :27000 (batches of 20)
     └── store chunk text + 384-float vector in kb.json
 
 iq ask "how does the auth middleware work?"
@@ -128,7 +128,7 @@ iq ask "how does the auth middleware work?"
     └── inference proceeds as normal — model sees your actual code
 ```
 
-KB retrieval is **always-on** when `kb.json` exists and the kb embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
+KB retrieval is **always-on** when `kb.json` exists and the embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
 
 Commands: `ingest` (alias: `in`), `list`, `search`, `rm`, `clear`.
 
@@ -147,7 +147,7 @@ iq kb clear             # wipe entire kb.json
 
 Routes user prompts through a pipeline:
 
-**1. Classify** — the user input is embedded via the cue embed sidecar (:27000) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the cue embed sidecar is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
+**1. Classify** — the user input is embedded via the embed sidecar (:27000) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
 
 > **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space: "explain a transformer model" and "describe how attention works" will produce vectors pointing in nearly the same direction even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, embeddings serve double duty: classifying prompts to cues, and retrieving relevant knowledge base chunks for RAG.
 
@@ -229,7 +229,7 @@ User input
     ├── --cue given? ──────────────────────────────────────────┐
     │                                                          │
     ▼  (auto-classify)                                         ▼ (skip classify)
-POST /embed  →  embed-cue :27000 (cue_model)            resolve cue directly
+POST /embed  →  embed :27000 (embed_model)              resolve cue directly
   input text  →  384-float vector                              │
     │                                                          │
     ▼                                                          │
@@ -245,8 +245,8 @@ resolveRoute()
   fallback            →  pickSidecar("fast", false)
     │
     ▼
-KB retrieve  (if kb.json exists && embed-kb running && !--no-kb)
-  POST /embed → query vector (embed-kb :27001)
+KB retrieve  (if kb.json exists && embed running && !--no-kb)
+  POST /embed → query vector (embed :27000)
   cosine_similarity(query_vec, all_chunk_vecs[]) — Go, in-memory
   top-5 chunks → plain text context block
     │
@@ -281,3 +281,4 @@ append turn to session YAML
 | 0.4.1   | fix: version bump, remove Ollama from docs, fix diagram alignment |
 | 0.4.2   | Rename `iq prompt` → `iq ask` (prompt kept as alias); add pre-commit checklist to CLAUDE.md |
 | 0.4.3   | Rename `iq probe` → `iq pry` (probe kept as alias) |
+| 0.4.4   | Merge dual embed sidecars into single `embed` sidecar on :27000; default to bge-small-en-v1.5-bf16; auto-migrate cue_model/kb_model → embed_model |

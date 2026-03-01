@@ -12,36 +12,25 @@ import (
 
 // ── Config file ───────────────────────────────────────────────────────────────
 
-// Config stores pools of models per tier and named embed model roles.
+// Config stores pools of models per tier and the shared embed model.
 type Config struct {
-	Tiers    map[string][]string `yaml:"tiers"`
-	CueModel string              `yaml:"cue_model,omitempty"` // embed model for cue classification
-	KbModel  string              `yaml:"kb_model,omitempty"`  // embed model for KB indexing/retrieval
-	// Legacy field — migrated to KbModel on load.
-	EmbedModel string `yaml:"embed_model,omitempty"`
+	Tiers      map[string][]string `yaml:"tiers"`
+	EmbedModel string              `yaml:"embed_model,omitempty"` // single embed model for cue + KB
+	// Legacy fields — migrated to EmbedModel on load.
+	CueModel string `yaml:"cue_model,omitempty"`
+	KbModel  string `yaml:"kb_model,omitempty"`
 }
 
 var tierOrder = []string{"fast", "slow"}
 
-const (
-	defaultCueModel = "mlx-community/nomicai-modernbert-embed-base-4bit"
-	defaultKbModel  = "mlx-community/mxbai-embed-large-v1"
-)
+const defaultEmbedModel = "mlx-community/bge-small-en-v1.5-bf16"
 
-// cueModel returns the configured cue classification embed model.
-func cueModel(cfg *Config) string {
-	if cfg.CueModel != "" {
-		return cfg.CueModel
+// embedModel returns the configured embed model (shared by cue + KB).
+func embedModel(cfg *Config) string {
+	if cfg.EmbedModel != "" {
+		return cfg.EmbedModel
 	}
-	return defaultCueModel
-}
-
-// kbModel returns the configured KB embed model.
-func kbModel(cfg *Config) string {
-	if cfg.KbModel != "" {
-		return cfg.KbModel
-	}
-	return defaultKbModel
+	return defaultEmbedModel
 }
 
 func configPath() (string, error) {
@@ -84,13 +73,18 @@ func loadConfig() (*Config, error) {
 				return cfg, nil
 			}
 		}
-		// Migrate legacy embed_model → kb_model.
-		if cfg.EmbedModel != "" && cfg.KbModel == "" {
-			cfg.KbModel = cfg.EmbedModel
-			cfg.EmbedModel = ""
+		// Migrate legacy cue_model / kb_model → embed_model.
+		if cfg.EmbedModel == "" && (cfg.CueModel != "" || cfg.KbModel != "") {
+			if cfg.CueModel != "" {
+				cfg.EmbedModel = cfg.CueModel
+			} else {
+				cfg.EmbedModel = cfg.KbModel
+			}
+			cfg.CueModel = ""
+			cfg.KbModel = ""
 			if err := saveConfig(cfg); err == nil {
 				fmt.Fprintf(os.Stderr, "%s\n",
-					utl.Gra("config.yaml migrated: embed_model → kb_model"))
+					utl.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
 			}
 		}
 		if cfg.Tiers == nil {

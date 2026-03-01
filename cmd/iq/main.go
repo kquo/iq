@@ -10,7 +10,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.4.3"
+	program_version = "0.4.4"
 )
 
 func printRootHelp() {
@@ -25,6 +25,7 @@ func printRootHelp() {
 	fmt.Printf("  %-15s %s\n", "ask", "Ask a question or send a prompt to a local IQ model")
 	fmt.Printf("  %-15s %s\n", "cue", "Work with IQ cues")
 	fmt.Printf("  %-15s %s\n", "kb", "Work with IQ knowledge base")
+	fmt.Printf("  %-15s %s\n", "perf", "Benchmark IQ model performance")
 	fmt.Printf("  %-15s %s\n", "pry", "Send a raw message directly to a model sidecar")
 	fmt.Printf("  %-15s %s\n", "status", "Show running sidecar status (alias: st)")
 	fmt.Printf("  %-15s %s\n\n", "version", "Show the current IQ version")
@@ -94,6 +95,7 @@ func runCLI() {
 		newPromptCmd(),
 		newCueCmd(),
 		newKbCmd(),
+		newPerfCmd(),
 		newProbeCmd(),
 		newStatusCmd(),
 	)

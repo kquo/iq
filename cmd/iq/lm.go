@@ -596,8 +596,7 @@ func newLmListCmd() *cobra.Command {
 			fmt.Printf("%-55s  %8s  %-10s  %8s  %10s  %s\n",
 				"MODEL", "DISK", "PULLED", "PARAMS", "EST MEM", "TIER")
 			cfg, _ := loadConfig()
-			cueM := cueModel(cfg)
-			kbM := kbModel(cfg)
+			emM := embedModel(cfg)
 			for _, e := range entries {
 				disk := diskUsage(hfCacheDir(e.ID))
 				pulled := ""
@@ -607,12 +606,8 @@ func newLmListCmd() *cobra.Command {
 				// Pad raw strings to width before colorizing, so ANSI codes
 				// don't corrupt column alignment.
 				var tierDisplay string
-				if e.ID == cueM && e.ID == kbM {
+				if e.ID == emM {
 					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "embed"))
-				} else if e.ID == cueM {
-					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "cue"))
-				} else if e.ID == kbM {
-					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "kb"))
 				} else {
 					tier := tierForModel(e.ID)
 					tierRaw := "<unset>"
@@ -739,6 +734,28 @@ func newLmShowCmd() *cobra.Command {
 			}
 
 			fmt.Printf("%-12s %s\n", "MODEL", entry.ID)
+
+			// ── PERFORMANCE ───────────────────────────────────────────
+			bs, bsErr := loadBenchStore()
+			if bsErr == nil && bs != nil {
+				results := resultsFor(bs, entry.ID, "")
+				if len(results) == 0 {
+					fmt.Printf("%-12s %s\n", "PERFORMANCE",
+						utl.Gra("<not benchmarked>"))
+				} else {
+					first := true
+					for _, r := range results {
+						label := ""
+						if first {
+							label = "PERFORMANCE"
+							first = false
+						}
+						fmt.Printf("%-12s %s\n", label,
+							formatBenchRow(r))
+					}
+				}
+			}
+
 			fmt.Printf("%-12s %s\n", "PARAMS", parseParamsM(entry.ID))
 			fmt.Printf("%-12s %s\n", "QUANT", parseQuant(entry.ID))
 			fmt.Printf("%-12s %s\n", "DISK", formatMB(disk))
@@ -783,27 +800,16 @@ func newLmRmCmd() *cobra.Command {
 			model := args[0]
 			cacheDir := hfCacheDir(model)
 
-			// Refuse to remove a model assigned as an embed role.
+			// Refuse to remove a model assigned as the embed model.
 			cfg, _ := loadConfig()
-			if cfg != nil {
-				if model == cueModel(cfg) {
-					s, _ := readState(embedCueSlug)
-					if s != nil && pidAlive(s.PID) {
-						return fmt.Errorf("%s is the cue embed model and its sidecar is running\n"+
-							"  Run 'iq svc stop' first", model)
-					}
-					return fmt.Errorf("%s is the cue embed model\n"+
-						"  Run 'iq svc embed rm cue' to revert it before removing", model)
+			if cfg != nil && model == embedModel(cfg) {
+				s, _ := readState(embedSlugConst)
+				if s != nil && pidAlive(s.PID) {
+					return fmt.Errorf("%s is the embed model and its sidecar is running\n"+
+						"  Run 'iq svc stop' first", model)
 				}
-				if model == kbModel(cfg) {
-					s, _ := readState(embedKbSlug)
-					if s != nil && pidAlive(s.PID) {
-						return fmt.Errorf("%s is the kb embed model and its sidecar is running\n"+
-							"  Run 'iq svc stop' first", model)
-					}
-					return fmt.Errorf("%s is the kb embed model\n"+
-						"  Run 'iq svc embed rm kb' to revert it before removing", model)
-				}
+				return fmt.Errorf("%s is the embed model\n"+
+					"  Run 'iq svc embed rm' to revert it before removing", model)
 			}
 
 			// Refuse to remove a model that is assigned to a tier.

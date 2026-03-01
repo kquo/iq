@@ -478,15 +478,10 @@ func printStatus() error {
 		}
 	}
 
-	// Embed sidecar rows.
-	for _, role := range []string{"cue", "kb"} {
-		slug := embedSlug(role)
-		var model string
-		if role == "kb" {
-			model = kbModel(cfg)
-		} else {
-			model = cueModel(cfg)
-		}
+	// Embed sidecar row.
+	{
+		slug := embedSlugConst
+		model := embedModel(cfg)
 		eState, _ := readState(slug)
 		endpoint := ""
 		if eState != nil {
@@ -494,15 +489,15 @@ func printStatus() error {
 		}
 		if eState == nil || !pidAlive(eState.PID) {
 			rows = append(rows, statusRow{slug, model, endpoint, 0, "—", false, "—"})
-			continue
+		} else {
+			rss := processRSSKB(eState.PID)
+			totalKB += rss
+			mem := formatMB(rss * 1024)
+			if rss == 0 {
+				mem = "?"
+			}
+			rows = append(rows, statusRow{slug, model, endpoint, eState.PID, formatUptime(eState.Started), true, mem})
 		}
-		rss := processRSSKB(eState.PID)
-		totalKB += rss
-		mem := formatMB(rss * 1024)
-		if rss == 0 {
-			mem = "?"
-		}
-		rows = append(rows, statusRow{slug, model, endpoint, eState.PID, formatUptime(eState.Started), true, mem})
 	}
 	// Compute TIER column width dynamically (longest tier name).
 	tierW := len("TIER")
@@ -579,8 +574,8 @@ func printSvcHelp() {
 	fmt.Printf("  %-10s %s\n", "embed", "Manage embed sidecar models")
 	fmt.Printf("  %-10s %s\n\n", "doc", "Check runtime dependencies and model readiness")
 	fmt.Printf("%s\n", utl.Whi2("NOTES"))
-	fmt.Printf("  Embed sidecars (cue/kb) are started automatically with 'iq svc start'.\n")
-	fmt.Printf("  They require mlx-embedding-models in the mlx-lm venv:\n")
+	fmt.Printf("  The embed sidecar is started automatically with 'iq svc start'.\n")
+	fmt.Printf("  It requires mlx-embedding-models in the mlx-lm venv:\n")
 	fmt.Printf("  pipx inject mlx-lm mlx-embedding-models\n\n")
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
@@ -647,12 +642,10 @@ func newSvcStartCmd() *cobra.Command {
 			if len(args) > 0 {
 				arg = args[0]
 			}
-			// Start embed sidecars first when starting everything (no specific target).
+			// Start embed sidecar first when starting everything (no specific target).
 			if arg == "" {
-				for _, role := range []string{"cue", "kb"} {
-					if err := startEmbedSidecar(role); err != nil {
-						fmt.Fprintf(os.Stderr, "  error starting embed-%s: %s\n", role, err.Error())
-					}
+				if err := startEmbedSidecar(); err != nil {
+					fmt.Fprintf(os.Stderr, "  error starting embed: %s\n", err.Error())
 				}
 			}
 			models, err := resolveModels(arg)
@@ -736,12 +729,10 @@ func newSvcStopCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  error stopping %s: %s\n", modelID, err.Error())
 				}
 			}
-			// Stop embed sidecars and sweep for orphans when stopping everything.
+			// Stop embed sidecar and sweep for orphans when stopping everything.
 			if arg == "" {
-				for _, role := range []string{"cue", "kb"} {
-					if err := stopSidecar(embedSlug(role)); err != nil {
-						fmt.Fprintf(os.Stderr, "  error stopping embed-%s: %s\n", role, err.Error())
-					}
+				if err := stopSidecar(embedSlugConst); err != nil {
+					fmt.Fprintf(os.Stderr, "  error stopping embed: %s\n", err.Error())
 				}
 				killOrphanSidecars()
 			}
@@ -890,26 +881,22 @@ func newSvcTierRmCmd() *cobra.Command {
 
 func printSvcEmbedHelp() {
 	n := program_name
-	fmt.Printf("Manage MLX embed models for cue classification and KB retrieval.\n\n")
+	fmt.Printf("Manage the MLX embed model for cue classification and KB retrieval.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s svc embed <command>\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
-	fmt.Printf("  %-24s %s\n", "show", "Show both configured embed models")
-	fmt.Printf("  %-24s %s\n", "set cue <model>", "Set cue classification model and restart its sidecar")
-	fmt.Printf("  %-24s %s\n", "set kb <model>", "Set KB indexing/retrieval model and restart its sidecar")
-	fmt.Printf("  %-24s %s\n", "rm cue", "Revert cue model to default and restart its sidecar")
-	fmt.Printf("  %-24s %s\n\n", "rm kb", "Revert KB model to default and restart its sidecar")
+	fmt.Printf("  %-24s %s\n", "show", "Show the configured embed model")
+	fmt.Printf("  %-24s %s\n", "set <model>", "Set embed model and restart sidecar")
+	fmt.Printf("  %-24s %s\n\n", "rm", "Revert embed model to default and restart sidecar")
 	fmt.Printf("%s\n", utl.Whi2("NOTES"))
 	fmt.Printf("  Models are HF model IDs (mlx-community/*). The model must be\n")
 	fmt.Printf("  downloaded first with 'iq lm get <model>'.\n")
-	fmt.Printf("  Changing kb model invalidates kb.json — re-ingest required.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("DEFAULTS"))
-	fmt.Printf("  cue  %s\n", utl.Gra(defaultCueModel))
-	fmt.Printf("  kb   %s\n\n", utl.Gra(defaultKbModel))
+	fmt.Printf("  Changing embed model invalidates kb.json — re-ingest required.\n\n")
+	fmt.Printf("%s\n", utl.Whi2("DEFAULT"))
+	fmt.Printf("  %s\n\n", utl.Gra(defaultEmbedModel))
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s svc embed show\n", n)
-	fmt.Printf("  $ %s svc embed set cue mlx-community/nomicai-modernbert-embed-base-4bit\n", n)
-	fmt.Printf("  $ %s svc embed set kb mlx-community/mxbai-embed-large-v1\n\n", n)
+	fmt.Printf("  $ %s svc embed set mlx-community/bge-small-en-v1.5-bf16\n\n", n)
 }
 
 func newSvcEmbedCmd() *cobra.Command {
@@ -932,23 +919,18 @@ func newSvcEmbedCmd() *cobra.Command {
 func newSvcEmbedShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "show",
-		Short:        "Show configured embed models for both roles",
+		Short:        "Show configured embed model",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			cueSuffix := ""
-			if cfg.CueModel == "" {
-				cueSuffix = utl.Gra("  (default)")
+			suffix := ""
+			if cfg.EmbedModel == "" {
+				suffix = utl.Gra("  (default)")
 			}
-			kbSuffix := ""
-			if cfg.KbModel == "" {
-				kbSuffix = utl.Gra("  (default)")
-			}
-			fmt.Printf("cue_model  %s%s\n", utl.Gre(cueModel(cfg)), cueSuffix)
-			fmt.Printf("kb_model   %s%s\n", utl.Gre(kbModel(cfg)), kbSuffix)
+			fmt.Printf("embed_model  %s%s\n", utl.Gre(embedModel(cfg)), suffix)
 			return nil
 		},
 	}
@@ -956,84 +938,59 @@ func newSvcEmbedShowCmd() *cobra.Command {
 
 func newSvcEmbedSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "set <cue|kb> <model>",
-		Short:        "Set embed model for a role and restart its sidecar",
+		Use:          "set <model>",
+		Short:        "Set embed model and restart sidecar",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(2),
+		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			role, modelName := args[0], args[1]
-			if role != "cue" && role != "kb" {
-				return fmt.Errorf("role must be 'cue' or 'kb'")
-			}
+			modelName := args[0]
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			switch role {
-			case "cue":
-				cfg.CueModel = modelName
-				if err := saveConfig(cfg); err != nil {
-					return err
-				}
-				invalidateCueEmbeddings()
-				fmt.Printf("cue_model  %s\n", utl.Gre(modelName))
-			case "kb":
-				cfg.KbModel = modelName
-				if err := saveConfig(cfg); err != nil {
-					return err
-				}
-				fmt.Printf("kb_model   %s\n", utl.Gre(modelName))
-				kbP, _ := kbPath()
-				if _, err := os.Stat(kbP); err == nil {
-					fmt.Printf("%s\n", utl.Yel("warning: kb_model changed — existing kb.json is stale"))
-					fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
-				}
+			cfg.EmbedModel = modelName
+			if err := saveConfig(cfg); err != nil {
+				return err
+			}
+			invalidateCueEmbeddings()
+			fmt.Printf("embed_model  %s\n", utl.Gre(modelName))
+			kbP, _ := kbPath()
+			if _, err := os.Stat(kbP); err == nil {
+				fmt.Printf("%s\n", utl.Yel("warning: embed_model changed — existing kb.json is stale"))
+				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the new model.
-			stopSidecar(embedSlug(role))
-			return startEmbedSidecar(role)
+			stopSidecar(embedSlugConst)
+			return startEmbedSidecar()
 		},
 	}
 }
 
 func newSvcEmbedRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "rm <cue|kb>",
-		Short:        "Revert an embed model role to its default and restart its sidecar",
+		Use:          "rm",
+		Short:        "Revert embed model to default and restart sidecar",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			role := args[0]
-			if role != "cue" && role != "kb" {
-				return fmt.Errorf("role must be 'cue' or 'kb'")
-			}
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			switch role {
-			case "cue":
-				cfg.CueModel = ""
-				if err := saveConfig(cfg); err != nil {
-					return err
-				}
-				invalidateCueEmbeddings()
-				fmt.Printf("cue_model  %s\n", utl.Gra("(default) "+defaultCueModel))
-			case "kb":
-				cfg.KbModel = ""
-				if err := saveConfig(cfg); err != nil {
-					return err
-				}
-				fmt.Printf("kb_model   %s\n", utl.Gra("(default) "+defaultKbModel))
-				kbP, _ := kbPath()
-				if _, err := os.Stat(kbP); err == nil {
-					fmt.Printf("%s\n", utl.Yel("warning: kb_model changed — existing kb.json is stale"))
-					fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
-				}
+			cfg.EmbedModel = ""
+			if err := saveConfig(cfg); err != nil {
+				return err
+			}
+			invalidateCueEmbeddings()
+			fmt.Printf("embed_model  %s\n", utl.Gra("(default) "+defaultEmbedModel))
+			kbP, _ := kbPath()
+			if _, err := os.Stat(kbP); err == nil {
+				fmt.Printf("%s\n", utl.Yel("warning: embed_model changed — existing kb.json is stale"))
+				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the default model.
-			stopSidecar(embedSlug(role))
-			return startEmbedSidecar(role)
+			stopSidecar(embedSlugConst)
+			return startEmbedSidecar()
 		},
 	}
 }
@@ -1152,24 +1109,21 @@ func newSvcDocCmd() *cobra.Command {
 			}
 			checks = append(checks, embPkgCheck)
 
-			// ── embed model caches ──
+			// ── embed model cache ──
 			cfg2, cfgErr2 := loadConfig()
 			if cfgErr2 == nil {
-				checkEmbedCache := func(label, modelID string) {
-					cacheDir := hfCacheDir(modelID)
-					_, statErr := os.Stat(cacheDir)
-					ok := statErr == nil
-					var d string
-					if ok {
-						parent := filepath.Dir(cacheDir)
-						d = utl.Gra(parent+"/") + utl.Whi(filepath.Base(cacheDir))
-					} else {
-						d = utl.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", modelID))
-					}
-					checks = append(checks, runDocCheck("  "+label, d, ok, false))
+				emID := embedModel(cfg2)
+				cacheDir := hfCacheDir(emID)
+				_, statErr := os.Stat(cacheDir)
+				ok := statErr == nil
+				var d string
+				if ok {
+					parent := filepath.Dir(cacheDir)
+					d = utl.Gra(parent+"/") + utl.Whi(filepath.Base(cacheDir))
+				} else {
+					d = utl.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", emID))
 				}
-				checkEmbedCache("cue_model", cueModel(cfg2))
-				checkEmbedCache("kb_model", kbModel(cfg2))
+				checks = append(checks, runDocCheck("  embed_model", d, ok, false))
 			}
 
 			// ── tier model cache dirs ──

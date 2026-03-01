@@ -22,10 +22,8 @@ import (
 var embedServerPy string
 
 const (
-	embedCueSlug      = "embed-cue"
-	embedKbSlug       = "embed-kb"
-	embedCuePort      = 27000
-	embedKbPort       = 27001
+	embedSlugConst    = "embed"
+	embedPortConst    = 27000
 	embedReadyTimeout = 60 * time.Second
 	embedCacheFile    = "cue_embeddings.json"
 
@@ -37,25 +35,9 @@ const (
 
 // ── Embed sidecar helpers ─────────────────────────────────────────────────────
 
-// embedSlug returns the state-file slug for the given role ("cue" or "kb").
-func embedSlug(role string) string {
-	if role == "kb" {
-		return embedKbSlug
-	}
-	return embedCueSlug
-}
-
-// embedPort returns the fixed port for the given role.
-func embedPort(role string) int {
-	if role == "kb" {
-		return embedKbPort
-	}
-	return embedCuePort
-}
-
-// embedSidecarAlive returns true if the embed sidecar for the given role is running.
-func embedSidecarAlive(role string) bool {
-	state, err := readState(embedSlug(role))
+// embedSidecarAlive returns true if the embed sidecar is running.
+func embedSidecarAlive() bool {
+	state, err := readState(embedSlugConst)
 	return err == nil && state != nil && pidAlive(state.PID)
 }
 
@@ -81,24 +63,16 @@ func mlxVenvPython() (string, error) {
 }
 
 // startEmbedSidecar extracts embed_server.py, finds the venv Python, and
-// spawns the embedding sidecar for the given role ("cue" or "kb").
-func startEmbedSidecar(role string) error {
-	if role != "cue" && role != "kb" {
-		return fmt.Errorf("unknown embed role %q — valid roles: cue, kb", role)
-	}
+// spawns the single embedding sidecar.
+func startEmbedSidecar() error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
 
-	var modelID string
-	if role == "kb" {
-		modelID = kbModel(cfg)
-	} else {
-		modelID = cueModel(cfg)
-	}
-	slug := embedSlug(role)
-	port := embedPort(role)
+	modelID := embedModel(cfg)
+	slug := embedSlugConst
+	port := embedPortConst
 
 	existing, _ := readState(slug)
 	if existing != nil && pidAlive(existing.PID) {
@@ -144,7 +118,7 @@ func startEmbedSidecar(role string) error {
 	lf.Close()
 
 	if err := writeStateAs(slug, &svcState{
-		Tier:    "embed-" + role,
+		Tier:    "embed",
 		Model:   modelID,
 		PID:     cmd.Process.Pid,
 		Port:    port,
@@ -185,27 +159,10 @@ func startEmbedSidecar(role string) error {
 
 // ── Embedding call ────────────────────────────────────────────────────────────
 
-// embedTexts calls the local embed sidecar for the given role.
-// role is "cue" or "kb".
-// task is "query" or "document" — controls instruction prefix for models that require it.
-func embedTexts(texts []string, role string, task string) ([][]float32, error) {
-	slug := embedSlug(role)
-	state, err := readState(slug)
-	if err != nil || state == nil || !pidAlive(state.PID) {
-		return nil, fmt.Errorf("embed sidecar (%s) not running — run: iq svc start", slug)
-	}
-
-	cfg, err := loadConfig()
-	if err != nil {
-		return nil, err
-	}
-	var model string
-	if role == "kb" {
-		model = kbModel(cfg)
-	} else {
-		model = cueModel(cfg)
-	}
-
+// embedTextsOnPort sends texts to an embed sidecar at the given port, applying
+// model-specific truncation and instruction prefixes based on model name.
+// This is the low-level call used by both the normal path and benchmark sidecars.
+func embedTextsOnPort(texts []string, model string, port int, task string) ([][]float32, error) {
 	// Per-model context window limits.
 	maxRunes := 1600
 	if strings.Contains(strings.ToLower(model), "mxbai") {
@@ -245,8 +202,8 @@ func embedTexts(texts []string, role string, task string) ([][]float32, error) {
 	}
 
 	if os.Getenv("IQ_EMBED_DEBUG") != "" {
-		fmt.Fprintf(os.Stderr, "[embed] role=%s model=%s task=%s port=%d inputs=%d first_len=%d\n",
-			role, model, task, state.Port, len(prefixed), len([]rune(prefixed[0])))
+		fmt.Fprintf(os.Stderr, "[embed] model=%s task=%s port=%d inputs=%d first_len=%d\n",
+			model, task, port, len(prefixed), len([]rune(prefixed[0])))
 	}
 
 	reqBody := map[string][]string{"texts": prefixed}
@@ -255,11 +212,11 @@ func embedTexts(texts []string, role string, task string) ([][]float32, error) {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/embed", state.Port)
+	url := fmt.Sprintf("http://localhost:%d/embed", port)
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("embed sidecar (%s) at :%d unreachable: %w", slug, state.Port, err)
+		return nil, fmt.Errorf("embed sidecar at :%d unreachable: %w", port, err)
 	}
 	defer resp.Body.Close()
 
@@ -268,7 +225,7 @@ func embedTexts(texts []string, role string, task string) ([][]float32, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("embed sidecar (%s) error: %s", slug, strings.TrimSpace(string(raw)))
+		return nil, fmt.Errorf("embed sidecar at :%d error: %s", port, strings.TrimSpace(string(raw)))
 	}
 
 	var result struct {
@@ -278,6 +235,22 @@ func embedTexts(texts []string, role string, task string) ([][]float32, error) {
 		return nil, fmt.Errorf("failed to parse embed response: %w", err)
 	}
 	return result.Embeddings, nil
+}
+
+// embedTexts calls the local embed sidecar.
+// task is "query" or "document" — controls instruction prefix for models that require it.
+func embedTexts(texts []string, task string) ([][]float32, error) {
+	state, err := readState(embedSlugConst)
+	if err != nil || state == nil || !pidAlive(state.PID) {
+		return nil, fmt.Errorf("embed sidecar not running — run: iq svc start")
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	return embedTextsOnPort(texts, embedModel(cfg), state.Port, task)
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────
@@ -379,7 +352,7 @@ func refreshCueEmbeddings(cues []Cue, model string) error {
 		texts[i] = c.Name + ": " + c.Description
 		names[i] = c.Name
 	}
-	embeddings, err := embedTexts(texts, "cue", "document")
+	embeddings, err := embedTexts(texts, "document")
 	if err != nil {
 		return fmt.Errorf("failed to embed cue descriptions: %w", err)
 	}
@@ -426,7 +399,7 @@ func embedClassify(input string, cues []Cue, model string) (string, *embedClassi
 		return "initial", nil, fmt.Errorf("cue embeddings unavailable")
 	}
 
-	inputEmb, err := embedTexts([]string{input}, "cue", "query")
+	inputEmb, err := embedTexts([]string{input}, "query")
 	if err != nil {
 		return "initial", nil, err
 	}

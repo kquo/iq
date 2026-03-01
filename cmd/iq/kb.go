@@ -608,7 +608,7 @@ func KBSearch(query string, topK int) ([]kbResult, error) {
 		return nil, nil
 	}
 
-	vecs, err := embedTexts([]string{query}, "kb", "query")
+	vecs, err := embedTexts([]string{query}, "query")
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -670,8 +670,8 @@ func KBContext(results []kbResult) string {
 // ── Ingest ────────────────────────────────────────────────────────────────────
 
 func kbIngest(root string) error {
-	if !embedSidecarAlive("kb") {
-		return fmt.Errorf("embed-kb sidecar not running — run: iq svc start")
+	if !embedSidecarAlive() {
+		return fmt.Errorf("embed sidecar not running — run: iq svc start")
 	}
 
 	abs, err := filepath.Abs(root)
@@ -749,7 +749,7 @@ func kbIngest(root string) error {
 		for j, c := range batch {
 			texts[j] = embedText(abs, c.Source, c.Label, c.Text)
 		}
-		vecs, err := embedTexts(texts, "kb", "document")
+		vecs, err := embedTexts(texts, "document")
 		if err != nil {
 			fmt.Println()
 			return fmt.Errorf("embed batch %d: %w", i/embedBatch, err)
@@ -905,8 +905,8 @@ func newKbSearchCmd() *cobra.Command {
 			if !kbExists() {
 				return fmt.Errorf("knowledge base is empty — run: iq kb ingest <path>")
 			}
-			if !embedSidecarAlive("kb") {
-				return fmt.Errorf("embed-kb sidecar not running — run: iq svc start")
+			if !embedSidecarAlive() {
+				return fmt.Errorf("embed sidecar not running — run: iq svc start")
 			}
 			query := strings.Join(args, " ")
 
@@ -915,7 +915,7 @@ func newKbSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			vecs, err := embedTexts([]string{query}, "kb", "query")
+			vecs, err := embedTexts([]string{query}, "query")
 			if err != nil {
 				return err
 			}

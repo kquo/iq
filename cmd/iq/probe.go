@@ -71,8 +71,8 @@ func newProbeCmd() *cobra.Command {
 			if useKB {
 				if !kbExists() {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: knowledge base is empty — run: iq kb ingest <path>"))
-				} else if !embedSidecarAlive("kb") {
-					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: embed-kb sidecar not running — run: iq svc start"))
+				} else if !embedSidecarAlive() {
+					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: embed sidecar not running — run: iq svc start"))
 				} else {
 					results, kbErr := KBSearch(message, 5)
 					if kbErr != nil {

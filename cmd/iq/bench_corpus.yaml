@@ -1,0 +1,1341 @@
+# bench_corpus.yaml  ──  IQ benchmark corpus (embedded, not user data)
+# Do not edit for production use — this corpus is bundled inside the binary.
+#
+# KB docs simulate a realistic codebase: "Pulse" — a Go REST API service
+# with JWT auth, PostgreSQL, structured logging, and documentation.
+# Code docs include File: prefix + label to match real KB chunk format.
+
+kb_docs:
+  # ── Go Handlers & Routes ──────────────────────────────────────────────────
+
+  - id: go_main_routes
+    text: |
+      File: cmd/pulse/main.go
+      func setupRoutes
+
+      // setupRoutes registers all HTTP routes on the chi router.
+      func setupRoutes(r chi.Router, h *handler.Handler, cfg *config.Config) {
+          r.Use(middleware.RequestLogger)
+          r.Use(middleware.Recovery)
+          r.Get("/api/health", h.HealthCheck)
+          r.Route("/api/auth", func(r chi.Router) {
+              r.Post("/login", h.Login)
+              r.Post("/refresh", h.RefreshToken)
+          })
+          r.Route("/api/users", func(r chi.Router) {
+              r.Use(middleware.AuthRequired(cfg.Auth.JWTSecret))
+              r.Post("/", h.CreateUser)
+              r.Get("/", h.ListUsers)
+              r.Get("/{id}", h.GetUser)
+              r.With(middleware.RequireRole("admin")).Delete("/{id}", h.DeleteUser)
+          })
+      }
+
+  - id: go_handler_create_user
+    text: |
+      File: internal/handler/user.go
+      func CreateUser
+
+      // CreateUser handles POST /api/users. It validates the input JSON,
+      // hashes the password with bcrypt, and inserts the user via the store.
+      func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
+          var req CreateUserRequest
+          if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+              writeError(w, http.StatusBadRequest, "invalid request body")
+              return
+          }
+          if req.Email == "" || req.Password == "" {
+              writeError(w, http.StatusBadRequest, "email and password are required")
+              return
+          }
+          hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), h.cfg.Auth.BcryptCost)
+          if err != nil {
+              writeError(w, http.StatusInternalServerError, "failed to hash password")
+              return
+          }
+          user := &model.User{
+              Email:        req.Email,
+              PasswordHash: string(hash),
+              DisplayName:  req.DisplayName,
+              Role:         "user",
+          }
+          if err := h.store.InsertUser(r.Context(), user); err != nil {
+              if errors.Is(err, store.ErrDuplicateEmail) {
+                  writeError(w, http.StatusConflict, "email already registered")
+                  return
+              }
+              writeError(w, http.StatusInternalServerError, "failed to create user")
+              return
+          }
+          writeJSON(w, http.StatusCreated, user)
+      }
+
+  - id: go_handler_get_user
+    text: |
+      File: internal/handler/user.go
+      func GetUser
+
+      // GetUser handles GET /api/users/{id}. Extracts the user ID from
+      // the URL path parameter, queries the store, and returns 404 if not found.
+      func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
+          id := chi.URLParam(r, "id")
+          if id == "" {
+              writeError(w, http.StatusBadRequest, "missing user id")
+              return
+          }
+          user, err := h.store.FindUserByID(r.Context(), id)
+          if err != nil {
+              if errors.Is(err, store.ErrNotFound) {
+                  writeError(w, http.StatusNotFound, "user not found")
+                  return
+              }
+              writeError(w, http.StatusInternalServerError, "failed to fetch user")
+              return
+          }
+          writeJSON(w, http.StatusOK, user)
+      }
+
+  - id: go_handler_list_users
+    text: |
+      File: internal/handler/user.go
+      func ListUsers
+
+      // ListUsers handles GET /api/users with pagination. Reads page and limit
+      // from query parameters, applies defaults, and returns paginated JSON.
+      func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
+          page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+          limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+          if page < 1 { page = 1 }
+          if limit < 1 || limit > 100 { limit = 20 }
+          offset := (page - 1) * limit
+          users, total, err := h.store.ListUsers(r.Context(), offset, limit)
+          if err != nil {
+              writeError(w, http.StatusInternalServerError, "failed to list users")
+              return
+          }
+          writeJSON(w, http.StatusOK, map[string]any{
+              "users": users, "total": total, "page": page, "limit": limit,
+          })
+      }
+
+  - id: go_handler_delete_user
+    text: |
+      File: internal/handler/user.go
+      func DeleteUser
+
+      // DeleteUser handles DELETE /api/users/{id}. Requires admin role
+      // (enforced by RequireRole middleware). Performs a soft delete by setting
+      // the deleted_at timestamp rather than removing the database row.
+      func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+          id := chi.URLParam(r, "id")
+          if id == "" {
+              writeError(w, http.StatusBadRequest, "missing user id")
+              return
+          }
+          if err := h.store.SoftDeleteUser(r.Context(), id); err != nil {
+              if errors.Is(err, store.ErrNotFound) {
+                  writeError(w, http.StatusNotFound, "user not found")
+                  return
+              }
+              writeError(w, http.StatusInternalServerError, "failed to delete user")
+              return
+          }
+          w.WriteHeader(http.StatusNoContent)
+      }
+
+  - id: go_handler_login
+    text: |
+      File: internal/handler/auth.go
+      func Login
+
+      // Login handles POST /api/auth/login. Validates email and password
+      // against bcrypt hash, then generates a JWT access token and a
+      // refresh token. The refresh token is set as a secure HTTP-only cookie.
+      func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+          var req LoginRequest
+          if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+              writeError(w, http.StatusBadRequest, "invalid request body")
+              return
+          }
+          user, err := h.store.FindUserByEmail(r.Context(), req.Email)
+          if err != nil {
+              writeError(w, http.StatusUnauthorized, "invalid credentials")
+              return
+          }
+          if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+              writeError(w, http.StatusUnauthorized, "invalid credentials")
+              return
+          }
+          accessToken, err := h.issueAccessToken(user)
+          if err != nil {
+              writeError(w, http.StatusInternalServerError, "token generation failed")
+              return
+          }
+          refreshToken, err := h.issueRefreshToken(user)
+          if err != nil {
+              writeError(w, http.StatusInternalServerError, "token generation failed")
+              return
+          }
+          http.SetCookie(w, &http.Cookie{
+              Name: "refresh_token", Value: refreshToken,
+              HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+              Path: "/api/auth/refresh", MaxAge: int(h.cfg.Auth.RefreshTTL.Seconds()),
+          })
+          writeJSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
+      }
+
+  - id: go_handler_refresh
+    text: |
+      File: internal/handler/auth.go
+      func RefreshToken
+
+      // RefreshToken handles POST /api/auth/refresh. Reads the refresh token
+      // from the HTTP-only cookie, validates it, and issues a new access token
+      // with rotated claims. Returns 401 if the cookie is missing or invalid.
+      func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
+          cookie, err := r.Cookie("refresh_token")
+          if err != nil {
+              writeError(w, http.StatusUnauthorized, "missing refresh token")
+              return
+          }
+          claims, err := h.validateToken(cookie.Value, h.cfg.Auth.JWTSecret)
+          if err != nil {
+              writeError(w, http.StatusUnauthorized, "invalid or expired refresh token")
+              return
+          }
+          user, err := h.store.FindUserByID(r.Context(), claims.UserID)
+          if err != nil {
+              writeError(w, http.StatusUnauthorized, "user not found")
+              return
+          }
+          accessToken, _ := h.issueAccessToken(user)
+          writeJSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
+      }
+
+  - id: go_handler_health
+    text: |
+      File: internal/handler/health.go
+      func HealthCheck
+
+      // HealthCheck handles GET /api/health. Pings the database to verify
+      // connectivity, reports component statuses and server uptime in JSON.
+      // Used by container orchestrators for liveness and readiness probes.
+      func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
+          dbOk := true
+          if err := h.store.Ping(r.Context()); err != nil {
+              dbOk = false
+          }
+          status := "healthy"
+          code := http.StatusOK
+          if !dbOk {
+              status = "degraded"
+              code = http.StatusServiceUnavailable
+          }
+          writeJSON(w, code, map[string]any{
+              "status": status,
+              "uptime": time.Since(h.startTime).String(),
+              "components": map[string]bool{"database": dbOk},
+          })
+      }
+
+  # ── Go Middleware ──────────────────────────────────────────────────────────
+
+  - id: go_mw_auth
+    text: |
+      File: internal/middleware/auth.go
+      func AuthRequired
+
+      // AuthRequired returns middleware that validates JWT Bearer tokens.
+      // It extracts the token from the Authorization header, parses it with
+      // the signing secret, and injects the claims into the request context.
+      // Returns 401 Unauthorized for missing or invalid tokens.
+      func AuthRequired(secret string) func(http.Handler) http.Handler {
+          return func(next http.Handler) http.Handler {
+              return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                  header := r.Header.Get("Authorization")
+                  if !strings.HasPrefix(header, "Bearer ") {
+                      writeError(w, http.StatusUnauthorized, "missing bearer token")
+                      return
+                  }
+                  tokenStr := strings.TrimPrefix(header, "Bearer ")
+                  claims := &model.Claims{}
+                  token, err := jwt.ParseWithClaims(tokenStr, claims,
+                      func(t *jwt.Token) (any, error) { return []byte(secret), nil })
+                  if err != nil || !token.Valid {
+                      writeError(w, http.StatusUnauthorized, "invalid or expired token")
+                      return
+                  }
+                  ctx := context.WithValue(r.Context(), claimsKey, claims)
+                  next.ServeHTTP(w, r.WithContext(ctx))
+              })
+          }
+      }
+
+  - id: go_mw_rbac
+    text: |
+      File: internal/middleware/auth.go
+      func RequireRole
+
+      // RequireRole returns middleware that enforces role-based access control.
+      // It reads JWT claims from the context (set by AuthRequired) and checks
+      // whether the user's role is in the allowed set. Returns 403 Forbidden
+      // if the user lacks the required role.
+      func RequireRole(allowed ...string) func(http.Handler) http.Handler {
+          allowedSet := make(map[string]bool, len(allowed))
+          for _, role := range allowed {
+              allowedSet[role] = true
+          }
+          return func(next http.Handler) http.Handler {
+              return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                  claims, ok := r.Context().Value(claimsKey).(*model.Claims)
+                  if !ok {
+                      writeError(w, http.StatusForbidden, "missing claims")
+                      return
+                  }
+                  if !allowedSet[claims.Role] {
+                      writeError(w, http.StatusForbidden, "insufficient privileges")
+                      return
+                  }
+                  next.ServeHTTP(w, r)
+              })
+          }
+      }
+
+  - id: go_mw_logging
+    text: |
+      File: internal/middleware/logging.go
+      func RequestLogger
+
+      // RequestLogger is structured request logging middleware. It generates
+      // a unique request ID, attaches it to the context for correlation, and
+      // logs the method, path, status code, and latency using zerolog.
+      func RequestLogger(next http.Handler) http.Handler {
+          return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+              reqID := uuid.NewString()[:8]
+              ctx := context.WithValue(r.Context(), reqIDKey, reqID)
+              ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+              start := time.Now()
+              next.ServeHTTP(ww, r.WithContext(ctx))
+              log.Info().
+                  Str("req_id", reqID).
+                  Str("method", r.Method).
+                  Str("path", r.URL.Path).
+                  Int("status", ww.Status()).
+                  Dur("latency", time.Since(start)).
+                  Msg("request")
+          })
+      }
+
+  - id: go_mw_ratelimit
+    text: |
+      File: internal/middleware/ratelimit.go
+      func RateLimit
+
+      // RateLimit returns token-bucket rate limiting middleware. Each client
+      // IP gets its own bucket with configurable fill rate and burst size.
+      // Returns 429 Too Many Requests with a Retry-After header when the
+      // bucket is exhausted. Client IP is extracted from X-Forwarded-For
+      // or falls back to RemoteAddr.
+      func RateLimit(rps float64, burst int) func(http.Handler) http.Handler {
+          buckets := newIPBucketStore(rps, burst)
+          return func(next http.Handler) http.Handler {
+              return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                  ip := realIP(r)
+                  if !buckets.Allow(ip) {
+                      w.Header().Set("Retry-After", "1")
+                      writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+                      return
+                  }
+                  next.ServeHTTP(w, r)
+              })
+          }
+      }
+
+  - id: go_mw_recovery
+    text: |
+      File: internal/middleware/recovery.go
+      func Recovery
+
+      // Recovery is panic recovery middleware. It catches panics in
+      // downstream handlers, logs the stack trace with zerolog, and
+      // returns a sanitized 500 Internal Server Error JSON response
+      // to avoid leaking internal details to the client.
+      func Recovery(next http.Handler) http.Handler {
+          return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+              defer func() {
+                  if rvr := recover(); rvr != nil {
+                      reqID, _ := r.Context().Value(reqIDKey).(string)
+                      log.Error().
+                          Str("req_id", reqID).
+                          Interface("panic", rvr).
+                          Str("stack", string(debug.Stack())).
+                          Msg("panic recovered")
+                      writeError(w, http.StatusInternalServerError, "internal server error")
+                  }
+              }()
+              next.ServeHTTP(w, r)
+          })
+      }
+
+  # ── Go Data Layer ─────────────────────────────────────────────────────────
+
+  - id: go_store_interface
+    text: |
+      File: internal/store/store.go
+      type UserStore
+
+      // UserStore defines the data access interface for user operations.
+      // Implementations must be safe for concurrent use.
+      type UserStore interface {
+          InsertUser(ctx context.Context, u *model.User) error
+          FindUserByID(ctx context.Context, id string) (*model.User, error)
+          FindUserByEmail(ctx context.Context, email string) (*model.User, error)
+          ListUsers(ctx context.Context, offset, limit int) ([]*model.User, int, error)
+          SoftDeleteUser(ctx context.Context, id string) error
+          UpdateUser(ctx context.Context, u *model.User) error
+          Ping(ctx context.Context) error
+      }
+
+  - id: go_store_postgres
+    text: |
+      File: internal/store/postgres.go
+      func NewPostgresStore
+
+      // NewPostgresStore creates a PostgreSQL-backed UserStore. It opens a
+      // connection pool via pgxpool, configures max connections from the
+      // provided config, and pings the database to verify connectivity.
+      func NewPostgresStore(ctx context.Context, cfg config.Database) (*PostgresStore, error) {
+          poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+          if err != nil {
+              return nil, fmt.Errorf("invalid DSN: %w", err)
+          }
+          poolCfg.MaxConns = int32(cfg.MaxOpenConns)
+          poolCfg.MinConns = int32(cfg.MaxIdleConns)
+          poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+          pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+          if err != nil {
+              return nil, fmt.Errorf("failed to create pool: %w", err)
+          }
+          if err := pool.Ping(ctx); err != nil {
+              pool.Close()
+              return nil, fmt.Errorf("database unreachable: %w", err)
+          }
+          return &PostgresStore{pool: pool}, nil
+      }
+
+  - id: go_store_insert
+    text: |
+      File: internal/store/postgres.go
+      func InsertUser
+
+      // InsertUser inserts a new user row. Uses ON CONFLICT (email) DO NOTHING
+      // to handle duplicate email addresses gracefully. Returns ErrDuplicateEmail
+      // if the email already exists (no row was affected).
+      func (s *PostgresStore) InsertUser(ctx context.Context, u *model.User) error {
+          u.ID = uuid.NewString()
+          u.CreatedAt = time.Now().UTC()
+          u.UpdatedAt = u.CreatedAt
+          sql := `INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7)
+                  ON CONFLICT (email) DO NOTHING`
+          tag, err := s.pool.Exec(ctx, sql, u.ID, u.Email, u.PasswordHash,
+              u.DisplayName, u.Role, u.CreatedAt, u.UpdatedAt)
+          if err != nil {
+              return fmt.Errorf("insert user: %w", err)
+          }
+          if tag.RowsAffected() == 0 {
+              return ErrDuplicateEmail
+          }
+          return nil
+      }
+
+  - id: go_store_query
+    text: |
+      File: internal/store/postgres.go
+      func FindUserByID
+
+      // FindUserByID queries a single user by primary key. Returns ErrNotFound
+      // when no row matches. Only returns non-soft-deleted users.
+      func (s *PostgresStore) FindUserByID(ctx context.Context, id string) (*model.User, error) {
+          sql := `SELECT id, email, password_hash, display_name, role,
+                         created_at, updated_at, deleted_at
+                  FROM users WHERE id = $1 AND deleted_at IS NULL`
+          rows, err := s.pool.Query(ctx, sql, id)
+          if err != nil {
+              return nil, fmt.Errorf("query user: %w", err)
+          }
+          user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.User])
+          if errors.Is(err, pgx.ErrNoRows) {
+              return nil, ErrNotFound
+          }
+          if err != nil {
+              return nil, fmt.Errorf("scan user: %w", err)
+          }
+          return &user, nil
+      }
+
+  - id: go_store_errors
+    text: |
+      File: internal/store/errors.go
+      var block
+
+      // Sentinel errors for the store layer. Handlers map these to HTTP status
+      // codes: ErrNotFound → 404, ErrDuplicateEmail → 409, ErrConnectionFailed → 503.
+      var (
+          ErrNotFound         = errors.New("not found")
+          ErrDuplicateEmail   = errors.New("duplicate email address")
+          ErrConnectionFailed = errors.New("database connection failed")
+      )
+
+  - id: go_store_migrate
+    text: |
+      File: internal/store/migrate.go
+      func RunMigrations
+
+      // RunMigrations reads SQL migration files from the migrations/ directory
+      // in sorted order. Each file is executed inside a transaction. A
+      // schema_migrations tracking table records which migrations have already
+      // been applied so they are not re-run.
+      func RunMigrations(ctx context.Context, pool *pgxpool.Pool, dir string) error {
+          files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+          if err != nil {
+              return fmt.Errorf("glob migrations: %w", err)
+          }
+          sort.Strings(files)
+          for _, f := range files {
+              name := filepath.Base(f)
+              if migrationApplied(ctx, pool, name) {
+                  continue
+              }
+              sql, err := os.ReadFile(f)
+              if err != nil {
+                  return fmt.Errorf("read %s: %w", name, err)
+              }
+              tx, err := pool.Begin(ctx)
+              if err != nil {
+                  return fmt.Errorf("begin tx for %s: %w", name, err)
+              }
+              if _, err := tx.Exec(ctx, string(sql)); err != nil {
+                  tx.Rollback(ctx)
+                  return fmt.Errorf("exec %s: %w", name, err)
+              }
+              if err := recordMigration(ctx, tx, name); err != nil {
+                  tx.Rollback(ctx)
+                  return err
+              }
+              tx.Commit(ctx)
+          }
+          return nil
+      }
+
+  # ── Go Config & Types ─────────────────────────────────────────────────────
+
+  - id: go_config_load
+    text: |
+      File: internal/config/config.go
+      func LoadConfig
+
+      // LoadConfig reads a YAML configuration file and returns a Config struct.
+      // Secrets (database password, JWT secret) are read from environment
+      // variables PULSE_DB_PASSWORD and PULSE_JWT_SECRET, overriding any
+      // values in the YAML file.
+      func LoadConfig(path string) (*Config, error) {
+          data, err := os.ReadFile(path)
+          if err != nil {
+              return nil, fmt.Errorf("read config: %w", err)
+          }
+          var cfg Config
+          if err := yaml.Unmarshal(data, &cfg); err != nil {
+              return nil, fmt.Errorf("parse config: %w", err)
+          }
+          if pw := os.Getenv("PULSE_DB_PASSWORD"); pw != "" {
+              cfg.Database.DSN = strings.Replace(cfg.Database.DSN, "${PULSE_DB_PASSWORD}", pw, 1)
+          }
+          if secret := os.Getenv("PULSE_JWT_SECRET"); secret != "" {
+              cfg.Auth.JWTSecret = secret
+          }
+          return &cfg, nil
+      }
+
+  - id: go_config_struct
+    text: |
+      File: internal/config/config.go
+      type Config
+
+      // Config holds all application settings. Nested structs map directly
+      // to top-level YAML keys: server, database, auth, rate_limit.
+      type Config struct {
+          Server   ServerConfig   `yaml:"server"`
+          Database DatabaseConfig `yaml:"database"`
+          Auth     AuthConfig     `yaml:"auth"`
+          RateLimit RateLimitConfig `yaml:"rate_limit"`
+      }
+
+      type ServerConfig struct {
+          Host            string        `yaml:"host"`
+          Port            int           `yaml:"port"`
+          ReadTimeout     time.Duration `yaml:"read_timeout"`
+          WriteTimeout    time.Duration `yaml:"write_timeout"`
+          ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+      }
+
+      type DatabaseConfig struct {
+          DSN             string        `yaml:"dsn"`
+          MaxOpenConns    int           `yaml:"max_open_conns"`
+          MaxIdleConns    int           `yaml:"max_idle_conns"`
+          ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
+      }
+
+      type AuthConfig struct {
+          JWTSecret  string        `yaml:"jwt_secret"`
+          AccessTTL  time.Duration `yaml:"access_token_ttl"`
+          RefreshTTL time.Duration `yaml:"refresh_token_ttl"`
+          BcryptCost int           `yaml:"bcrypt_cost"`
+      }
+
+  - id: go_types_user
+    text: |
+      File: internal/model/user.go
+      type User
+
+      // User is the core domain model. JSON tags control API serialization,
+      // db tags control pgx struct scanning. PasswordHash is never serialized.
+      type User struct {
+          ID           string     `json:"id"           db:"id"`
+          Email        string     `json:"email"        db:"email"`
+          PasswordHash string     `json:"-"            db:"password_hash"`
+          DisplayName  string     `json:"display_name" db:"display_name"`
+          Role         string     `json:"role"         db:"role"`
+          CreatedAt    time.Time  `json:"created_at"   db:"created_at"`
+          UpdatedAt    time.Time  `json:"updated_at"   db:"updated_at"`
+          DeletedAt    *time.Time `json:"deleted_at"   db:"deleted_at"`
+      }
+
+  - id: go_jwt_claims
+    text: |
+      File: internal/model/claims.go
+      type Claims
+
+      // Claims extends jwt.RegisteredClaims with application-specific fields.
+      // UserID, Email, and Role are embedded in every access and refresh token.
+      type Claims struct {
+          jwt.RegisteredClaims
+          UserID string `json:"user_id"`
+          Email  string `json:"email"`
+          Role   string `json:"role"`
+      }
+
+      // Valid checks token expiry and ensures required fields are present.
+      func (c *Claims) Valid() error {
+          if err := c.RegisteredClaims.Valid(); err != nil {
+              return err
+          }
+          if c.UserID == "" || c.Email == "" {
+              return fmt.Errorf("missing required claims")
+          }
+          return nil
+      }
+
+  # ── Python Scripts ────────────────────────────────────────────────────────
+
+  - id: py_test_client
+    text: |
+      File: scripts/test_client.py
+      class PulseClient
+
+      class PulseClient:
+          """HTTP client for Pulse API integration testing."""
+
+          def __init__(self, base_url="http://localhost:8080"):
+              self.base_url = base_url
+              self.token = None
+
+          def login(self, email: str, password: str) -> dict:
+              resp = requests.post(f"{self.base_url}/api/auth/login",
+                  json={"email": email, "password": password})
+              resp.raise_for_status()
+              data = resp.json()
+              self.token = data["access_token"]
+              return data
+
+          def create_user(self, email: str, password: str, name: str = "") -> dict:
+              resp = requests.post(f"{self.base_url}/api/users",
+                  json={"email": email, "password": password, "display_name": name},
+                  headers=self._auth_headers())
+              resp.raise_for_status()
+              return resp.json()
+
+          def get_user(self, user_id: str) -> dict:
+              resp = requests.get(f"{self.base_url}/api/users/{user_id}",
+                  headers=self._auth_headers())
+              resp.raise_for_status()
+              return resp.json()
+
+          def _auth_headers(self) -> dict:
+              return {"Authorization": f"Bearer {self.token}"} if self.token else {}
+
+  - id: py_load_test
+    text: |
+      File: scripts/load_test.py
+      def run_load_test
+
+      def run_load_test(base_url, num_workers=10, duration_sec=60):
+          """Run a concurrent load test against the Pulse API.
+          Spawns num_workers threads that continuously hit /api/users
+          and /api/auth/login. Measures p50/p95 latency, error rate,
+          and throughput. Outputs a CSV summary to stdout."""
+          results = []
+          stop_event = threading.Event()
+
+          def worker():
+              client = PulseClient(base_url)
+              client.login("loadtest@example.com", "testpass123")
+              while not stop_event.is_set():
+                  start = time.time()
+                  try:
+                      client.list_users(page=1, limit=10)
+                      elapsed = (time.time() - start) * 1000
+                      results.append(("ok", elapsed))
+                  except Exception as e:
+                      elapsed = (time.time() - start) * 1000
+                      results.append(("err", elapsed))
+
+          threads = [threading.Thread(target=worker) for _ in range(num_workers)]
+          for t in threads: t.start()
+          time.sleep(duration_sec)
+          stop_event.set()
+          for t in threads: t.join()
+          print_summary(results)
+
+  - id: py_db_seed
+    text: |
+      File: scripts/seed_data.py
+      def seed_users
+
+      def seed_users(dsn, count=100):
+          """Seed the database with fake users for development and testing.
+          Connects via psycopg2, generates users with the Faker library,
+          hashes passwords with bcrypt, and bulk-inserts using execute_values."""
+          conn = psycopg2.connect(dsn)
+          fake = Faker()
+          rows = []
+          for _ in range(count):
+              email = fake.unique.email()
+              password_hash = bcrypt.hashpw(b"testpass123", bcrypt.gensalt()).decode()
+              name = fake.name()
+              rows.append((str(uuid4()), email, password_hash, name, "user",
+                          datetime.utcnow(), datetime.utcnow()))
+          with conn.cursor() as cur:
+              execute_values(cur,
+                  "INSERT INTO users (id, email, password_hash, display_name, "
+                  "role, created_at, updated_at) VALUES %s", rows)
+          conn.commit()
+          conn.close()
+          print(f"Seeded {count} users")
+
+  # ── Markdown Documentation ────────────────────────────────────────────────
+
+  - id: md_readme_overview
+    text: |
+      File: README.md
+      Pulse
+
+      Pulse is a Go REST API service for user management. It provides JWT-based
+      authentication, role-based access control, PostgreSQL storage with connection
+      pooling, structured request logging, and rate limiting. Designed as a
+      reference architecture for building small-to-medium Go HTTP services with
+      clean separation between handlers, middleware, and data access layers.
+
+  - id: md_readme_quickstart
+    text: |
+      File: README.md
+      Pulse > Quick Start
+
+      ## Quick Start
+
+      1. Clone the repository: `git clone https://github.com/example/pulse`
+      2. Copy configuration: `cp config.example.yaml config.yaml`
+      3. Start PostgreSQL: `docker-compose up -d postgres`
+      4. Run database migrations: `go run ./cmd/pulse migrate`
+      5. Seed test data (optional): `python scripts/seed_data.py`
+      6. Start the server: `go run ./cmd/pulse serve`
+      7. Test the health endpoint: `curl http://localhost:8080/api/health`
+
+      The server binds to `0.0.0.0:8080` by default. Set `PULSE_JWT_SECRET`
+      and `PULSE_DB_PASSWORD` environment variables for production use.
+
+  - id: md_arch_overview
+    text: |
+      File: docs/architecture.md
+      Architecture
+
+      ## Architecture Overview
+
+      Pulse follows a layered architecture with clear dependency flow:
+
+      Client → Router → Middleware Chain → Handler → Store → PostgreSQL
+
+      The middleware chain processes requests in order: RequestLogger (assigns
+      request ID and logs timing), Recovery (catches panics), RateLimit (per-IP
+      token bucket), AuthRequired (JWT validation), RequireRole (RBAC check).
+
+      Handlers contain only HTTP logic: parsing requests, calling the store,
+      and writing responses. Business logic lives in the store layer. The
+      UserStore interface allows swapping PostgreSQL for an in-memory
+      implementation during tests.
+
+  - id: md_arch_auth
+    text: |
+      File: docs/architecture.md
+      Architecture > Authentication
+
+      ## Authentication
+
+      Pulse uses stateless JWT authentication with two token types:
+
+      - **Access token**: Short-lived (15 minutes), sent in the Authorization
+        header as a Bearer token. Contains user ID, email, and role claims.
+      - **Refresh token**: Longer-lived (7 days), stored in a secure HTTP-only
+        cookie. Used only by the /api/auth/refresh endpoint.
+
+      Refresh token rotation: each refresh request issues a new access token
+      but does not rotate the refresh token itself. Password hashing uses
+      bcrypt with a configurable cost factor (default 12). There is no server-side
+      session storage — all state lives in the JWT claims.
+
+  - id: md_arch_database
+    text: |
+      File: docs/architecture.md
+      Architecture > Database
+
+      ## Database Design
+
+      Pulse uses a single `users` table with UUID primary keys generated by
+      the application. The `email` column has a unique constraint. Soft deletes
+      are implemented via a nullable `deleted_at` timestamp — queries filter
+      on `deleted_at IS NULL` to exclude deleted users.
+
+      Connection pooling is handled by pgxpool with configurable max open
+      connections (default 25) and max idle connections (default 5). Connection
+      lifetime is set to 5 minutes to handle DNS changes in cloud environments.
+      Future plans include adding read replicas behind a load balancer.
+
+  - id: md_arch_errors
+    text: |
+      File: docs/architecture.md
+      Architecture > Error Handling
+
+      ## Error Handling
+
+      Errors flow from store → handler → client as structured JSON:
+
+      ```json
+      {"code": 404, "message": "user not found", "request_id": "a1b2c3d4"}
+      ```
+
+      The store layer defines sentinel errors (ErrNotFound, ErrDuplicateEmail,
+      ErrConnectionFailed). Handlers map these to HTTP status codes using
+      errors.Is(). Unknown errors return 500 with a generic message — internal
+      details are never leaked to the client. The Recovery middleware catches
+      panics as a safety net, logging the full stack trace via zerolog.
+
+  - id: md_api_users
+    text: |
+      File: docs/api.md
+      API Reference > Users
+
+      ## User Endpoints
+
+      **POST /api/users** — Create a new user. Requires authentication.
+      Body: `{"email": "...", "password": "...", "display_name": "..."}`.
+      Returns 201 with user object. Returns 409 if email already exists.
+
+      **GET /api/users/:id** — Get a user by ID. Requires authentication.
+      Returns 200 with user object or 404 if not found.
+
+      **GET /api/users?page=1&limit=20** — List users with pagination.
+      Requires authentication. Returns `{"users": [...], "total": N, "page": 1, "limit": 20}`.
+
+      **DELETE /api/users/:id** — Soft-delete a user. Requires admin role.
+      Returns 204 No Content on success, 404 if not found, 403 if not admin.
+
+  - id: md_api_auth
+    text: |
+      File: docs/api.md
+      API Reference > Authentication
+
+      ## Authentication Endpoints
+
+      **POST /api/auth/login** — Authenticate with email and password.
+      Body: `{"email": "...", "password": "..."}`.
+      Returns 200 with `{"access_token": "..."}` and sets a secure HTTP-only
+      cookie containing the refresh token. Returns 401 for invalid credentials.
+
+      **POST /api/auth/refresh** — Refresh an expired access token.
+      Reads the refresh token from the cookie (no body required).
+      Returns 200 with a new `{"access_token": "..."}`.
+      Returns 401 if the refresh cookie is missing or the token is expired.
+
+  - id: md_security
+    text: |
+      File: docs/security.md
+      Security
+
+      ## Security Practices
+
+      - **Password storage**: bcrypt with cost factor 12, never stored in plaintext
+      - **SQL injection prevention**: all queries use parameterized placeholders ($1, $2)
+      - **JWT security**: tokens signed with HMAC-SHA256, short access TTL (15 min)
+      - **HTTPS**: enforced in production via reverse proxy; HSTS headers recommended
+      - **Rate limiting**: per-IP token bucket (10 req/s, burst 20) to prevent abuse
+      - **CORS**: configurable allowed origins; credentials mode for cookie-based refresh
+      - **Input validation**: request bodies validated before processing
+      - **Error sanitization**: internal errors never exposed to clients (generic 500)
+
+  - id: md_deploy
+    text: |
+      File: docs/deployment.md
+      Deployment
+
+      ## Deployment
+
+      Pulse is deployed as a Docker container built with a multi-stage Dockerfile.
+      The final image is based on Alpine Linux (~15MB). Configuration is provided
+      through environment variables:
+
+      - `PULSE_JWT_SECRET` — JWT signing key (required)
+      - `PULSE_DB_PASSWORD` — Database password (required)
+      - `CONFIG_PATH` — Path to config.yaml (default: /etc/pulse/config.yaml)
+
+      The `/api/health` endpoint is used for liveness and readiness probes.
+      Graceful shutdown: on SIGTERM the server stops accepting new connections,
+      waits up to `shutdown_timeout` (default 15s) for in-flight requests to
+      complete, then closes the database pool and exits.
+
+  # ── YAML Configuration ────────────────────────────────────────────────────
+
+  - id: yaml_config_server
+    text: |
+      File: config.yaml
+      key: server
+
+      server:
+        host: "0.0.0.0"
+        port: 8080
+        read_timeout: 10s
+        write_timeout: 30s
+        shutdown_timeout: 15s
+
+  - id: yaml_config_database
+    text: |
+      File: config.yaml
+      key: database
+
+      database:
+        dsn: "postgres://pulse:${PULSE_DB_PASSWORD}@localhost:5432/pulse?sslmode=disable"
+        max_open_conns: 25
+        max_idle_conns: 5
+        conn_max_lifetime: 5m
+
+  - id: yaml_config_auth
+    text: |
+      File: config.yaml
+      key: auth
+
+      auth:
+        jwt_secret: "${PULSE_JWT_SECRET}"
+        access_token_ttl: 15m
+        refresh_token_ttl: 168h
+        bcrypt_cost: 12
+
+  - id: yaml_config_ratelimit
+    text: |
+      File: config.yaml
+      key: rate_limit
+
+      rate_limit:
+        enabled: true
+        requests_per_second: 10
+        burst: 20
+        whitelist:
+          - "127.0.0.1"
+          - "10.0.0.0/8"
+
+  # ── SQL Migrations ────────────────────────────────────────────────────────
+
+  - id: sql_create_users
+    text: |
+      File: migrations/001_create_users.sql
+
+      CREATE TABLE IF NOT EXISTS users (
+          id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          email         TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          display_name  TEXT NOT NULL DEFAULT '',
+          role          TEXT NOT NULL DEFAULT 'user',
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+          deleted_at    TIMESTAMPTZ
+      );
+
+  - id: sql_add_indexes
+    text: |
+      File: migrations/002_add_indexes.sql
+
+      -- Unique partial index on email excluding soft-deleted rows.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active
+          ON users (email) WHERE deleted_at IS NULL;
+
+      -- Index for paginated listing sorted by creation time.
+      CREATE INDEX IF NOT EXISTS idx_users_created_at
+          ON users (created_at DESC);
+
+      -- Index for role-based queries (admin lookups).
+      CREATE INDEX IF NOT EXISTS idx_users_role
+          ON users (role);
+
+  # ── Docker ────────────────────────────────────────────────────────────────
+
+  - id: docker_multistage
+    text: |
+      File: Dockerfile
+
+      FROM golang:1.22-alpine AS builder
+      WORKDIR /app
+      COPY go.mod go.sum ./
+      RUN go mod download
+      COPY . .
+      RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /pulse ./cmd/pulse
+
+      FROM alpine:3.19
+      RUN apk --no-cache add ca-certificates
+      COPY --from=builder /pulse /usr/local/bin/pulse
+      COPY config.example.yaml /etc/pulse/config.yaml
+      EXPOSE 8080
+      ENTRYPOINT ["pulse", "serve"]
+
+  - id: compose_services
+    text: |
+      File: docker-compose.yaml
+      key: services
+
+      services:
+        api:
+          build: .
+          ports:
+            - "8080:8080"
+          environment:
+            - PULSE_JWT_SECRET=${PULSE_JWT_SECRET}
+            - PULSE_DB_PASSWORD=${PULSE_DB_PASSWORD}
+            - CONFIG_PATH=/etc/pulse/config.yaml
+          depends_on:
+            postgres:
+              condition: service_healthy
+        postgres:
+          image: postgres:16-alpine
+          environment:
+            POSTGRES_USER: pulse
+            POSTGRES_PASSWORD: ${PULSE_DB_PASSWORD}
+            POSTGRES_DB: pulse
+          volumes:
+            - pulse_pgdata:/var/lib/postgresql/data
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U pulse"]
+            interval: 5s
+            timeout: 3s
+            retries: 5
+
+  - id: compose_volumes
+    text: |
+      File: docker-compose.yaml
+      key: volumes
+
+      volumes:
+        pulse_pgdata:
+          driver: local
+
+  # ── Retained AI/ML Concept Docs (prose, no File: prefix) ──────────────────
+
+  - id: doc_transformer_arch
+    text: >
+      The Transformer architecture, introduced in "Attention Is All You Need" (2017),
+      replaces recurrent layers with multi-head self-attention. Each attention head
+      learns different relationship patterns. The encoder stack processes input tokens
+      in parallel, while the decoder attends to encoder outputs via cross-attention.
+      Positional encodings inject sequence order information into token embeddings.
+
+  - id: doc_rag_overview
+    text: >
+      Retrieval-Augmented Generation (RAG) combines a dense retrieval step with
+      generative inference. A query embedding is compared against a pre-built
+      document index using cosine similarity. The top-k retrieved chunks are
+      prepended to the prompt, grounding the generation in external knowledge
+      without retraining the model. RAG reduces hallucination for fact-intensive tasks.
+
+  - id: doc_cosine_similarity
+    text: >
+      Cosine similarity measures the angle between two non-zero vectors in an inner
+      product space. Its value ranges from -1 (opposite) to 1 (identical direction).
+      For normalized embedding vectors the dot product equals cosine similarity.
+      It is the standard metric for semantic search because magnitude differences
+      between document-length and query-length embeddings are neutralized.
+
+  - id: doc_embedding_models
+    text: >
+      Embedding models map text to dense fixed-dimensional vectors capturing
+      semantic meaning. BERT-family models use bidirectional attention trained
+      with masked language modeling. Contrastive training (e.g. SimCSE, MNRL)
+      aligns semantically similar texts and separates dissimilar ones in embedding
+      space. Models such as nomic-embed-text and mxbai-embed-large achieve
+      strong retrieval performance on the MTEB benchmark.
+
+  - id: doc_quantization_basics
+    text: >
+      Quantization reduces model size by representing weights in lower-precision
+      formats such as int8, int4, or NF4. Post-training quantization (PTQ) applies
+      directly to pretrained weights. 4-bit quantization typically reduces memory
+      by 4x with a 1-3% accuracy drop on standard benchmarks. MLX uses a custom
+      grouped quantization scheme optimized for Apple Silicon.
+
+  - id: doc_mlx_framework
+    text: >
+      MLX is Apple's array computation framework for machine learning on Apple
+      Silicon. It uses a unified memory model that eliminates CPU-GPU data transfers.
+      MLX supports lazy evaluation and automatic differentiation. The mlx_lm
+      package provides a high-level API for running quantized language models
+      locally, with an OpenAI-compatible HTTP server for drop-in compatibility.
+
+  - id: doc_hallucination
+    text: >
+      Hallucination refers to language model outputs that are fluent but factually
+      incorrect or unsupported by the input. Intrinsic hallucinations contradict
+      the provided context; extrinsic hallucinations introduce unverifiable claims.
+      Mitigation strategies include RAG grounding, self-consistency sampling,
+      and training with factuality reward signals such as FactScore.
+
+  - id: doc_kv_cache
+    text: >
+      The KV cache stores key and value tensors from previous attention computations
+      during autoregressive generation, avoiding redundant recalculation of past
+      tokens on each new step. Memory consumption grows linearly with sequence length
+      and batch size. Techniques such as PagedAttention manage KV cache memory
+      using non-contiguous virtual memory pages to increase throughput.
+
+kb_queries:
+  # ── Cross-Type Queries ────────────────────────────────────────────────────
+
+  - query: "How is JWT authentication implemented?"
+    relevant: [go_mw_auth, go_handler_login, md_arch_auth, go_jwt_claims]
+
+  - query: "How is the database connection configured?"
+    relevant: [yaml_config_database, go_store_postgres, md_arch_database]
+
+  - query: "What happens when a user is deleted?"
+    relevant: [go_handler_delete_user, go_types_user, sql_create_users, md_api_users]
+
+  - query: "How are rate limits enforced?"
+    relevant: [go_mw_ratelimit, yaml_config_ratelimit, md_security]
+
+  - query: "How do I run the application locally?"
+    relevant: [md_readme_quickstart, compose_services, docker_multistage]
+
+  - query: "How are passwords stored securely?"
+    relevant: [go_handler_create_user, md_arch_auth, md_security, yaml_config_auth]
+
+  # ── Code Behavior Queries ─────────────────────────────────────────────────
+
+  - query: "What error does the API return for duplicate email addresses?"
+    relevant: [go_store_insert, go_store_errors, go_handler_create_user]
+
+  - query: "How does the server handle panics in request handlers?"
+    relevant: [go_mw_recovery, md_arch_errors]
+
+  - query: "What happens when an access token expires?"
+    relevant: [go_mw_auth, go_handler_refresh, md_api_auth]
+
+  - query: "How is pagination implemented for the users list?"
+    relevant: [go_handler_list_users, md_api_users]
+
+  - query: "How does the application shut down gracefully?"
+    relevant: [md_deploy, yaml_config_server]
+
+  - query: "What role is required to delete a user?"
+    relevant: [go_handler_delete_user, go_mw_rbac, md_api_users]
+
+  # ── Specific Detail Queries ───────────────────────────────────────────────
+
+  - query: "What fields are in the User struct?"
+    relevant: [go_types_user]
+
+  - query: "Show me the SQL schema for the users table"
+    relevant: [sql_create_users]
+
+  - query: "What is the default port for the server?"
+    relevant: [yaml_config_server]
+
+  - query: "Where is the UserStore interface defined?"
+    relevant: [go_store_interface]
+
+  - query: "What indexes exist on the users table?"
+    relevant: [sql_add_indexes]
+
+  # ── Conceptual Queries ────────────────────────────────────────────────────
+
+  - query: "Is the API secure against SQL injection?"
+    relevant: [md_security, go_store_insert, go_store_query]
+
+  - query: "How can I test the API endpoints manually?"
+    relevant: [py_test_client, md_readme_quickstart]
+
+  - query: "What monitoring and observability does the service provide?"
+    relevant: [go_mw_logging, go_handler_health, md_deploy]
+
+  - query: "How does the service handle concurrent requests?"
+    relevant: [go_mw_ratelimit, yaml_config_database, go_store_postgres]
+
+  # ── AI/ML Concept Queries ─────────────────────────────────────────────────
+
+  - query: "How does cosine similarity work for comparing text?"
+    relevant: [doc_cosine_similarity, doc_embedding_models]
+
+  - query: "What is retrieval augmented generation?"
+    relevant: [doc_rag_overview, doc_hallucination]
+
+  - query: "How does quantization reduce model memory usage?"
+    relevant: [doc_quantization_basics, doc_mlx_framework]
+
+  - query: "How does the KV cache speed up autoregressive generation?"
+    relevant: [doc_kv_cache]
+
+  # ── Tricky / Ambiguous Queries ────────────────────────────────────────────
+
+  - query: "Where are tokens used in the codebase?"
+    relevant: [go_mw_auth, go_handler_login, go_handler_refresh, go_jwt_claims]
+
+  - query: "How do I seed the database with test data?"
+    relevant: [py_db_seed, md_readme_quickstart]
+
+  - query: "What is the request flow from client to database?"
+    relevant: [md_arch_overview, go_main_routes, go_mw_logging]
+
+cue_inputs:
+  - text: "Write a Go function that reads a JSON file and unmarshals it into a struct"
+    expected_cue: code_generation
+
+  - text: "Review this Python class for any bugs or style issues"
+    expected_cue: code_review
+
+  - text: "Complete the following TypeScript function: function debounce(fn:"
+    expected_cue: code_completion
+
+  - text: "Generate unit tests for this authentication middleware"
+    expected_cue: unit_test_generation
+
+  - text: "Explain gradient descent and why it converges"
+    expected_cue: general_knowledge
+
+  - text: "What is the capital of Australia?"
+    expected_cue: general_knowledge
+
+  - text: "Solve: 3x^2 - 12x + 9 = 0 and show all steps"
+    expected_cue: math_reasoning
+
+  - text: "If all mammals are warm-blooded and dolphins are mammals, are dolphins warm-blooded?"
+    expected_cue: general_reasoning_basic
+
+  - text: "Summarize the following research paper abstract in two sentences"
+    expected_cue: summarization_abstractive
+
+  - text: "Translate this paragraph to French"
+    expected_cue: multilingual
+
+  - text: "Classify this customer review as positive, negative, or neutral"
+    expected_cue: sentiment_analysis
+
+  - text: "Extract all named people and organizations from this news article"
+    expected_cue: entity_recognition
+
+  - text: "This message contains threats of violence and should be flagged"
+    expected_cue: safety_moderation
+
+  - text: "Check if this sentence is factually accurate: The Moon orbits Earth every 24 hours"
+    expected_cue: fact_checking
+
+  - text: "Write a short horror story set in an abandoned library"
+    expected_cue: creative_writing
+
+  - text: "Given these search results, which is most relevant to the query about neural networks?"
+    expected_cue: search_reranking
+
+  - text: "Based on the provided documentation, explain how authentication tokens expire"
+    expected_cue: project_documentation
+
+  - text: "What is my likelihood of success given these ten market indicators?"
+    expected_cue: calibration_scoring
+
+  - text: "Detect and redact any personal information in this support ticket"
+    expected_cue: privacy_filtering
+
+  - text: "I need help debugging this race condition in my concurrent Go code"
+    expected_cue: interactive_debugging
+
+  - text: "Convert this user data JSON into a markdown table"
+    expected_cue: data_to_text
+
+  - text: "Work through this logic puzzle step by step: five people, five houses"
+    expected_cue: chain_of_thought
+
+  - text: "The generated output says Paris is in Germany — identify the hallucination"
+    expected_cue: hallucination_mitigation
+
+  - text: "Explain why the model chose this output for a sentiment analysis task"
+    expected_cue: explainability
+
+infer_prompts:
+  - id: infer_short_factual
+    text: "What is cosine similarity and why is it used for semantic search?"
+
+  - id: infer_medium_reasoning
+    text: >
+      A train leaves station A at 9:00 AM traveling at 80 km/h.
+      Another train leaves station B at 10:00 AM traveling toward station A at 60 km/h.
+      The distance between A and B is 280 km. At what time do the trains meet?
+      Show your work step by step.
+
+  - id: infer_code_generation
+    text: >
+      Write a Go function called `retry` that takes a function `fn func() error`,
+      a maximum number of attempts `maxAttempts int`, and a delay `delay time.Duration`.
+      It should call fn up to maxAttempts times, sleeping delay between failures,
+      and return the last error if all attempts fail. Include a doc comment.
+
+  - id: infer_summarization
+    text: >
+      Summarize the following in three sentences:
+      Large language models (LLMs) are neural networks pretrained on massive corpora
+      of text. They learn to predict the next token given context and develop
+      emergent capabilities such as reasoning, code generation, and instruction
+      following. Fine-tuning with human feedback (RLHF) further aligns their
+      behavior with human preferences. They are deployed via APIs and locally
+      with quantization techniques that reduce memory requirements significantly
+      while preserving most of their capability.
+
+  - id: infer_creative
+    text: "Write a haiku about running a language model on a laptop."
+
+  - id: infer_analysis
+    text: >
+      What are three key tradeoffs a developer must consider when choosing between
+      a 1B parameter quantized model running locally versus a 70B parameter model
+      accessed via API for a customer-facing chatbot application?
+
+  - id: infer_long_prompt
+    text: >
+      You are evaluating two approaches to building a question-answering system
+      for internal company documentation. Approach A uses a fine-tuned small model
+      (1.5B parameters, 4-bit quantized) running on-device with RAG over embedded
+      company docs. Approach B uses a large frontier model API with all docs in
+      context via long-context processing. Consider the following dimensions:
+      latency, data privacy, cost at scale, freshness of information, accuracy
+      on domain-specific queries, and ease of maintenance. Write a structured
+      comparison covering each dimension with a final recommendation.

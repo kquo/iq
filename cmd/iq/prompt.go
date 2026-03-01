@@ -269,7 +269,7 @@ func printStep1Classify(t *embedClassifyTrace) {
 	if t.CacheHit {
 		cacheStr = "hit"
 	}
-	traceStep(1, "CLASSIFY", fmt.Sprintf("embed-cue :%d", embedCuePort))
+	traceStep(1, "CLASSIFY", fmt.Sprintf("embed :%d", embedPortConst))
 	traceField("model", t.Model)
 	traceField("resolved", t.Resolved)
 	traceField("score", fmt.Sprintf("%.4f", t.Score))
@@ -532,14 +532,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				return sess, fmt.Errorf("no cues in category %q", opts.category)
 			}
 		}
-		if !embedSidecarAlive("cue") {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed-cue sidecar not running — falling back to initial cue (run: iq svc start)"))
+		if !embedSidecarAlive() {
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial cue (run: iq svc start)"))
 			cueName = "initial"
 		} else {
 			cfg2, cfgErr := loadConfig()
-			em := defaultCueModel
+			em := defaultEmbedModel
 			if cfgErr == nil {
-				em = cueModel(cfg2)
+				em = embedModel(cfg2)
 			}
 			cueName, et, err = embedClassify(input, candidates, em)
 			if err != nil {
@@ -583,7 +583,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 3: KB retrieval ──
 	var kbContext string
-	if kbExists() && !opts.noKB && embedSidecarAlive("kb") {
+	if kbExists() && !opts.noKB && embedSidecarAlive() {
 		t3 := time.Now()
 		results, kbErr := KBSearch(input, 5)
 		if kbErr == nil && len(results) > 0 {
