@@ -798,7 +798,7 @@ func printPromptHelp() {
 	n := program_name
 	fmt.Printf("Send a prompt to a local IQ model.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
-	fmt.Printf("  %s prompt [flags] [message]\n\n", n)
+	fmt.Printf("  %s ask [flags] [message]\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
 	fmt.Printf("  %-32s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-32s %s\n", "-c, --category <n>", "Classify within a category only")
@@ -811,14 +811,14 @@ func printPromptHelp() {
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-32s %s\n\n", "-h, --help", "Show help for command")
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s prompt \"explain transformers\"\n", n)
-	fmt.Printf("  $ %s prompt -n \"explain transformers\"\n", n)
-	fmt.Printf("  $ %s prompt -d \"explain transformers\"\n", n)
-	fmt.Printf("  $ %s prompt --cue math_reasoning \"solve x^2 + 3x - 4\"\n", n)
-	fmt.Printf("  $ %s prompt --category code \"write a binary search in Go\"\n", n)
-	fmt.Printf("  $ %s prompt --session abc123 \"continue from before\"\n", n)
-	fmt.Printf("  $ %s prompt\n", n)
-	fmt.Printf("  $ echo \"translate to French: hello\" | %s prompt\n\n", n)
+	fmt.Printf("  $ %s ask \"explain transformers\"\n", n)
+	fmt.Printf("  $ %s ask -n \"explain transformers\"\n", n)
+	fmt.Printf("  $ %s ask -d \"explain transformers\"\n", n)
+	fmt.Printf("  $ %s ask --cue math_reasoning \"solve x^2 + 3x - 4\"\n", n)
+	fmt.Printf("  $ %s ask --category code \"write a binary search in Go\"\n", n)
+	fmt.Printf("  $ %s ask --session abc123 \"continue from before\"\n", n)
+	fmt.Printf("  $ %s ask\n", n)
+	fmt.Printf("  $ echo \"translate to French: hello\" | %s ask\n\n", n)
 }
 
 // ── Command ───────────────────────────────────────────────────────────────────
@@ -827,7 +827,8 @@ func newPromptCmd() *cobra.Command {
 	var opts promptOpts
 
 	cmd := &cobra.Command{
-		Use:          "prompt [flags] [message]",
+		Use:          "ask [flags] [message]",
+		Aliases:      []string{"prompt"},
 		Short:        "Send a prompt to a local IQ model",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

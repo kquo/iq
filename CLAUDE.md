@@ -21,6 +21,12 @@
   - If a valid semver tag (`vX.Y.Z`) is the first argument, `build.sh` will run `git add . && git commit && git tag && git push` automatically after a successful build.
   - Omitting the tag just builds without committing.
 
+## Pre-Commit Checklist
+Before offering to run a release commit, always complete these steps in order:
+1. **Bump `program_version`** in `cmd/iq/main.go` to the new version string.
+2. **Add a version history row** to the bottom of the table in `architecture.md` with the new version and a one-line summary of the changes.
+3. **Offer to run** `./build.sh <tag> "<message>"` — do not run it automatically; prompt the user to confirm first.
+
 ## Coding Rules / Style
 - Format code using `go fmt`.
 - Ensure code passes `go vet` and `staticcheck`.

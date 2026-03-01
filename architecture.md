@@ -12,7 +12,7 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                               iq CLI (Go)                                   │
 │                                                                             │
-│  iq lm    iq svc    iq cue    iq kb    iq prompt    iq probe    iq status   │
+│  iq lm    iq svc    iq cue    iq kb    iq ask       iq probe    iq status   │
 │  (models) (service) (cues)   (RAG)    (infer/REPL) (raw debug) (alias: st)  │
 └────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬──────────┘
      │          │          │        │       │         │            │
@@ -114,7 +114,7 @@ iq kb ingest ~/projects/myapp
     ├── embed each chunk via kb embed sidecar :27001 (batches of 20)
     └── store chunk text + 384-float vector in kb.json
 
-iq prompt "how does the auth middleware work?"
+iq ask "how does the auth middleware work?"
     │
     ├── embed user input → query vector
     ├── cosine_similarity(query_vec, all_chunk_vecs) — Go, in-memory
@@ -143,7 +143,7 @@ iq kb clear             # wipe entire kb.json
 
 `iq probe` also supports KB retrieval via `-k / --kb`.
 
-### `iq prompt` — Inference and REPL
+### `iq ask` — Inference and REPL
 
 Routes user prompts through a pipeline:
 
@@ -175,7 +175,7 @@ The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first u
     --no-stream     Collect full response before printing
 ```
 
-**REPL mode** — entered when no message arg and stdin is a terminal. Supports `/cue`, `/session`, `/clear`, `/dry-run`, `/debug`, `/help`, `/quit`. Pipe-friendly: `echo "..." | iq prompt` takes the stdin path.
+**REPL mode** — entered when no message arg and stdin is a terminal. Supports `/cue`, `/session`, `/clear`, `/dry-run`, `/debug`, `/help`, `/quit`. Pipe-friendly: `echo "..." | iq ask` takes the stdin path.
 
 ### `iq probe` — Raw Sidecar Access
 
@@ -279,3 +279,4 @@ append turn to session YAML
 | 0.3.1   | MLX embed sidecars, dual embed roles (cue/kb), hybrid KB retrieval, RAG quality improvements |
 | 0.4.0   | Replace Ollama with local MLX embed sidecars (embed_server.py, cue :27000 / kb :27001); fix mxbai int attention-mask via _construct_batch patch; mlx-lm decoder fallback for Qwen3-Embedding; registerInManifest for embed models; embed model guard in lm rm; build.sh auto-commit/tag/push; cue classifier confidence threshold (0.68); KB RAG uses cue system prompt instead of hardcoded reading-comprehension template; architecture docs purged of Ollama references |
 | 0.4.1   | fix: version bump, remove Ollama from docs, fix diagram alignment |
+| 0.4.2   | Rename `iq prompt` → `iq ask` (prompt kept as alias); add pre-commit checklist to CLAUDE.md |

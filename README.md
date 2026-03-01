@@ -47,13 +47,13 @@ iq svc tier add slow mlx-community/Phi-4-mini-reasoning-4bit
 iq svc start
 
 # Run a prompt — auto-classifies and routes to the right model
-iq prompt "explain how transformers work"
+iq ask "explain how transformers work"
 
 # Debug: see classification and routing without inferring
-iq prompt -n "explain how transformers work"
+iq ask -n "explain how transformers work"
 
 # Full trace including inference
-iq prompt -d "explain how transformers work"
+iq ask -d "explain how transformers work"
 
 # Raw access to a specific sidecar, bypassing the IQ framework
 iq probe fast "hello"
@@ -66,7 +66,7 @@ iq probe slow "explain attention" -s "You are a terse assistant."
 |---------|-------------|
 | `iq lm` | Search, download, list, and manage local models |
 | `iq svc` | Start, stop, monitor sidecars; manage tier and embed config |
-| `iq prompt` | Route prompts through classification and cue system |
+| `iq ask` | Route prompts through classification and cue system |
 | `iq probe` | Send raw messages directly to a model sidecar |
 | `iq cue` | Manage the cue library |
 | `iq kb` | Manage the knowledge base for RAG retrieval |
