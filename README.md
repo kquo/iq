@@ -14,7 +14,7 @@ A personal tool for experimenting with LLM orchestration directly from the Mac t
 - Go (for building)
 - Python 3 with `mlx-lm` installed (`pipx install mlx-lm`)
 - `hf` CLI (`pipx install huggingface_hub`)
-- Ollama (`brew install ollama`) — used for embeddings (classification + RAG)
+- `mlx-embedding-models` in the mlx-lm venv (`pipx inject mlx-lm mlx-embedding-models`) — used for embeddings (classification + RAG)
 
 ## Getting Started
 
