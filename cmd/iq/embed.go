@@ -154,6 +154,7 @@ func startEmbedSidecar() error {
 		time.Sleep(sidecarPollInterval)
 	}
 	fmt.Printf("%s\n", utl.Gra("timeout"))
+	printLastLogLines(logP, 10)
 	return fmt.Errorf("embed sidecar did not become ready within %s", embedReadyTimeout)
 }
 

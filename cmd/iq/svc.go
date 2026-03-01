@@ -644,18 +644,38 @@ func newSvcStartCmd() *cobra.Command {
 			}
 			// Start embed sidecar first when starting everything (no specific target).
 			if arg == "" {
+				// First-run hint: no tier models and embed model not downloaded.
+				if len(allAssignedModels()) == 0 {
+					cfg, err := loadConfig()
+					if err != nil {
+						return err
+					}
+					emDir := hfCacheDir(embedModel(cfg))
+					if _, err := os.Stat(emDir); err != nil {
+						fmt.Println("No models configured. Recommended setup:")
+						fmt.Println()
+						fmt.Println("  iq lm get mlx-community/bge-small-en-v1.5-bf16")
+						fmt.Println("  iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit")
+						fmt.Println("  iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit")
+						fmt.Println()
+						fmt.Println("  iq svc embed set mlx-community/bge-small-en-v1.5-bf16")
+						fmt.Println("  iq svc tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
+						fmt.Println("  iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
+						fmt.Println()
+						fmt.Println("Then run 'iq svc start' again.")
+						return nil
+					}
+				}
 				if err := startEmbedSidecar(); err != nil {
 					fmt.Fprintf(os.Stderr, "  error starting embed: %s\n", err.Error())
 				}
-				// First-run hint: no tier models configured yet.
+				// Hint when embed started but no tier models configured yet.
 				if len(allAssignedModels()) == 0 {
 					fmt.Println("No models configured. Recommended setup:")
 					fmt.Println()
-					fmt.Println("  iq lm get mlx-community/bge-small-en-v1.5-bf16")
 					fmt.Println("  iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit")
 					fmt.Println("  iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit")
 					fmt.Println()
-					fmt.Println("  iq svc embed set mlx-community/bge-small-en-v1.5-bf16")
 					fmt.Println("  iq svc tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
 					fmt.Println("  iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
 					fmt.Println()
