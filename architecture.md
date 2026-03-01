@@ -12,8 +12,8 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                               iq CLI (Go)                                   │
 │                                                                             │
-│  iq lm    iq svc    iq cue    iq kb    iq prompt    iq probe    iq status    │
-│  (models) (service) (cues)   (RAG)    (infer/REPL) (raw debug) (alias: st) │
+│  iq lm    iq svc    iq cue    iq kb    iq prompt    iq probe    iq status   │
+│  (models) (service) (cues)   (RAG)    (infer/REPL) (raw debug) (alias: st)  │
 └────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬──────────┘
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
@@ -236,7 +236,7 @@ POST /embed  →  embed-cue :27000 (cue_model)            resolve cue directly
   cosine_similarity(input_vec, cue_vecs[])                     │
     │                                                          │
     ▼                                                          │
-  highest-score cue name ◄──────────────────────────────────-─┘
+  highest-score cue name ◄─────────────────────────────────────┘
     │
     ▼
 resolveRoute()
@@ -278,3 +278,4 @@ append turn to session YAML
 | 0.3.0   | RAG knowledge base (iq kb), KB retrieval in prompt and probe |
 | 0.3.1   | MLX embed sidecars, dual embed roles (cue/kb), hybrid KB retrieval, RAG quality improvements |
 | 0.4.0   | Replace Ollama with local MLX embed sidecars (embed_server.py, cue :27000 / kb :27001); fix mxbai int attention-mask via _construct_batch patch; mlx-lm decoder fallback for Qwen3-Embedding; registerInManifest for embed models; embed model guard in lm rm; build.sh auto-commit/tag/push; cue classifier confidence threshold (0.68); KB RAG uses cue system prompt instead of hardcoded reading-comprehension template; architecture docs purged of Ollama references |
+| 0.4.1   | fix: version bump, remove Ollama from docs, fix diagram alignment |
