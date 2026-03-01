@@ -670,8 +670,8 @@ func KBContext(results []kbResult) string {
 // ── Ingest ────────────────────────────────────────────────────────────────────
 
 func kbIngest(root string) error {
-	if !ollamaRunning() {
-		return fmt.Errorf("ollama not running — start with: ollama serve")
+	if !embedSidecarAlive("kb") {
+		return fmt.Errorf("embed-kb sidecar not running — run: iq svc start")
 	}
 
 	abs, err := filepath.Abs(root)
@@ -905,8 +905,8 @@ func newKbSearchCmd() *cobra.Command {
 			if !kbExists() {
 				return fmt.Errorf("knowledge base is empty — run: iq kb ingest <path>")
 			}
-			if !ollamaRunning() {
-				return fmt.Errorf("ollama not running — start with: ollama serve")
+			if !embedSidecarAlive("kb") {
+				return fmt.Errorf("embed-kb sidecar not running — run: iq svc start")
 			}
 			query := strings.Join(args, " ")
 

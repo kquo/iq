@@ -21,13 +21,13 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 │ HF      │ │config│ │cues    │ │ mlx_lm.server        │ │ sessions/        │
 │ cache   │ │.yaml │ │.yaml   │ │ sidecars (pool)      │ │ <id>.yaml        │
 │         │ │      │ │        │ │                      │ │                  │
-│~/.cache/│ │tiers:│ │name    │ │ fast pool :27001+    │ │ kb.json          │
-│hugging  │ │ fast │ │category│ │ slow pool :27001+    │ │ (vector index)   │
+│~/.cache/│ │tiers:│ │name    │ │ fast pool :27002+    │ │ kb.json          │
+│hugging  │ │ fast │ │category│ │ slow pool :27002+    │ │ (vector index)   │
 │face/hub/│ │ slow │ │desc    │ │                      │ │                  │
 │models-- │ │      │ │prompt  │ │ OpenAI-compatible    │ └──────────────────┘
 │org--repo│ │      │ │tier    │ │ HTTP API             │ ┌──────────────────┐
-│/snapshot│ └──────┘ └────────┘ └──────────────────────┘ │ Ollama :11434    │
-│  /hash/ │                                               │ (embeddings)    │
+│/snapshot│ └──────┘ └────────┘ └──────────────────────┘ │ embed sidecars   │
+│  /hash/ │                                               │ :27000  :27001   │
 └─────────┘                                               └──────────────────┘
 ```
 
@@ -91,11 +91,11 @@ Start sequence:
 
 **Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
 
-`iq svc doc` runs preflight checks: `mlx_lm.server` found and `--model` flag supported, Ollama installed and running, configured cue and KB embed models present in Ollama, all assigned model HuggingFace cache dirs exist.
+`iq svc doc` runs preflight checks: `mlx_lm.server` found and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
 
-**Embeddings** — handled entirely by Ollama (`ollama serve`, default `http://localhost:11434`). Two separate models are used: one for cue classification (`cue_model`, default `nomic-embed-text`) and one for KB indexing/retrieval (`kb_model`, default `mxbai-embed-large:335m`). Configure both via `iq svc embed`.
+**Embeddings** — handled by two local Python sidecars started with `iq svc start`. One for cue classification (`cue_model`, port 27000) and one for KB indexing/retrieval (`kb_model`, port 27001). Configure both via `iq svc embed`.
 
-`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus both Ollama embed model rows, IQ process memory, and combined total.
+`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus both embed sidecar rows, IQ process memory, and combined total.
 
 ### `iq kb` — Knowledge Base
 
@@ -111,7 +111,7 @@ iq kb ingest ~/projects/myapp
     ├── walk directory (skips .git, node_modules, vendor, __pycache__, hidden dirs)
     ├── read each text file (.go, .md, .py, .txt, .yaml, ...)
     ├── split into overlapping line-based chunks (40 lines, 5-line overlap)
-    ├── embed each chunk via Ollama kb_model (batches of 20)
+    ├── embed each chunk via kb embed sidecar :27001 (batches of 20)
     └── store chunk text + 384-float vector in kb.json
 
 iq prompt "how does the auth middleware work?"
@@ -128,7 +128,7 @@ iq prompt "how does the auth middleware work?"
     └── inference proceeds as normal — model sees your actual code
 ```
 
-KB retrieval is **always-on** when `kb.json` exists and Ollama is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
+KB retrieval is **always-on** when `kb.json` exists and the kb embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
 
 Commands: `ingest` (alias: `in`), `list`, `search`, `rm`, `clear`.
 
@@ -147,7 +147,7 @@ iq kb clear             # wipe entire kb.json
 
 Routes user prompts through a pipeline:
 
-**1. Classify** — the user input is embedded via Ollama (cue_model) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if Ollama is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
+**1. Classify** — the user input is embedded via the cue embed sidecar (:27000) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the cue embed sidecar is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
 
 > **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space: "explain a transformer model" and "describe how attention works" will produce vectors pointing in nearly the same direction even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, embeddings serve double duty: classifying prompts to cues, and retrieving relevant knowledge base chunks for RAG.
 
@@ -155,7 +155,7 @@ The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first u
 
 **2. Route** — resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
 
-**3. KB Retrieve** — if `kb.json` exists and Ollama is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved and appended to the cue's system prompt as plain text context. Skipped silently if kb is empty or unavailable.
+**3. KB Retrieve** — if `kb.json` exists and the kb embed sidecar is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved and appended to the cue's system prompt as plain text context. Skipped silently if kb is empty or unavailable.
 
 **4. Build** — assembles the message array: system prompt (cue + KB context if any), session history (if any), new user message.
 
@@ -229,7 +229,7 @@ User input
     ├── --cue given? ──────────────────────────────────────────┐
     │                                                          │
     ▼  (auto-classify)                                         ▼ (skip classify)
-POST /api/embed  →  Ollama :11434 (cue_model)           resolve cue directly
+POST /embed  →  embed-cue :27000 (cue_model)            resolve cue directly
   input text  →  384-float vector                              │
     │                                                          │
     ▼                                                          │
@@ -245,8 +245,8 @@ resolveRoute()
   fallback            →  pickSidecar("fast", false)
     │
     ▼
-KB retrieve  (if kb.json exists && Ollama running && !--no-kb)
-  POST /api/embed → query vector (kb_model)
+KB retrieve  (if kb.json exists && embed-kb running && !--no-kb)
+  POST /embed → query vector (embed-kb :27001)
   cosine_similarity(query_vec, all_chunk_vecs[]) — Go, in-memory
   top-5 chunks → plain text context block
     │
@@ -276,4 +276,5 @@ append turn to session YAML
 | 0.2.9   | embedding-based classification, normalise suggested_tier values |
 | 0.2.10  | switch embed library to mlx-embedding-models, fix BertTokenizer compat |
 | 0.3.0   | RAG knowledge base (iq kb), KB retrieval in prompt and probe |
-| 0.3.1   | Ollama embeddings, dual embed roles (cue/kb), hybrid KB retrieval, RAG quality improvements |
+| 0.3.1   | MLX embed sidecars, dual embed roles (cue/kb), hybrid KB retrieval, RAG quality improvements |
+| 0.4.0   | Replace Ollama with local MLX embed sidecars (embed_server.py, cue :27000 / kb :27001); fix mxbai int attention-mask via _construct_batch patch; mlx-lm decoder fallback for Qwen3-Embedding; registerInManifest for embed models; embed model guard in lm rm; build.sh auto-commit/tag/push; cue classifier confidence threshold (0.68); KB RAG uses cue system prompt instead of hardcoded reading-comprehension template; architecture docs purged of Ollama references |

@@ -269,7 +269,7 @@ func printStep1Classify(t *embedClassifyTrace) {
 	if t.CacheHit {
 		cacheStr = "hit"
 	}
-	traceStep(1, "CLASSIFY", fmt.Sprintf("embed %s", ollamaHost))
+	traceStep(1, "CLASSIFY", fmt.Sprintf("embed-cue :%d", embedCuePort))
 	traceField("model", t.Model)
 	traceField("resolved", t.Resolved)
 	traceField("score", fmt.Sprintf("%.4f", t.Score))
@@ -532,8 +532,8 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				return sess, fmt.Errorf("no cues in category %q", opts.category)
 			}
 		}
-		if !ollamaRunning() {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("Ollama not running — falling back to initial cue (start with: ollama serve)"))
+		if !embedSidecarAlive("cue") {
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed-cue sidecar not running — falling back to initial cue (run: iq svc start)"))
 			cueName = "initial"
 		} else {
 			cfg2, cfgErr := loadConfig()
@@ -583,7 +583,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 3: KB retrieval ──
 	var kbContext string
-	if kbExists() && !opts.noKB && ollamaRunning() {
+	if kbExists() && !opts.noKB && embedSidecarAlive("kb") {
 		t3 := time.Now()
 		results, kbErr := KBSearch(input, 5)
 		if kbErr == nil && len(results) > 0 {
@@ -602,12 +602,16 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		messages = append(messages, sess.Messages...)
 		messages = append(messages, chatMessage{Role: "user", Content: input})
 	} else if kbContext != "" {
-		// KB reading-comprehension format: small models follow this pattern
-		// more reliably than context-in-system-prompt. Keeps the system prompt
-		// lean and puts the retrieved text directly adjacent to the question.
-		systemPrompt := "You are a helpful assistant. Answer the question using only the provided text. If the text does not contain the answer, say so."
-		userContent := kbContext + "\n\nQuestion: " + input + "\n\nAnswer based only on the text above."
-		messages = append(messages, chatMessage{Role: "system", Content: systemPrompt})
+		// Use the cue's system prompt (or a generic fallback) and inject KB
+		// context as a prefix in the user message, immediately before the
+		// question. Avoids overriding the cue prompt and the hard "only use
+		// the text above" constraint that was tuned for tiny models.
+		sysprompt := route.SystemPrompt
+		if sysprompt == "" {
+			sysprompt = "You are a helpful assistant."
+		}
+		userContent := kbContext + "\n\n" + input
+		messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
 		messages = append(messages, chatMessage{Role: "user", Content: userContent})
 	} else {
 		if route.SystemPrompt != "" {

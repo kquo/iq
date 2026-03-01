@@ -24,8 +24,8 @@ type Config struct {
 var tierOrder = []string{"fast", "slow"}
 
 const (
-	defaultCueModel = "nomic-embed-text"
-	defaultKbModel  = "mxbai-embed-large:335m"
+	defaultCueModel = "mlx-community/nomicai-modernbert-embed-base-4bit"
+	defaultKbModel  = "mlx-community/mxbai-embed-large-v1"
 )
 
 // cueModel returns the configured cue classification embed model.

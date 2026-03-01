@@ -213,6 +213,35 @@ func addToManifest(id string) error {
 	return saveManifest(entries)
 }
 
+// registerInManifest adds id to the manifest only if not already present.
+// Unlike addToManifest it does not update the PulledAt timestamp, so it is
+// safe to call on every sidecar start without clobbering the download date.
+func registerInManifest(id string) error {
+	entries, err := loadManifest()
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.ID == id {
+			return nil // already registered
+		}
+	}
+	hfName := "models--" + strings.ReplaceAll(id, "/", "--")
+	home, _ := os.UserHomeDir()
+	hfCache := filepath.Join(home, ".cache", "huggingface", "hub", hfName)
+	// Use the mtime of the cache dir as a proxy for when the model was pulled.
+	pulledAt := time.Now().UTC().Format(time.RFC3339)
+	if info, err := os.Stat(hfCache); err == nil {
+		pulledAt = info.ModTime().UTC().Format(time.RFC3339)
+	}
+	entries = append(entries, manifestEntry{
+		ID:       id,
+		PulledAt: pulledAt,
+		HFCache:  hfCache,
+	})
+	return saveManifest(entries)
+}
+
 func removeFromManifest(id string) (manifestEntry, bool, error) {
 	entries, err := loadManifest()
 	if err != nil {
@@ -753,6 +782,29 @@ func newLmRmCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			model := args[0]
 			cacheDir := hfCacheDir(model)
+
+			// Refuse to remove a model assigned as an embed role.
+			cfg, _ := loadConfig()
+			if cfg != nil {
+				if model == cueModel(cfg) {
+					s, _ := readState(embedCueSlug)
+					if s != nil && pidAlive(s.PID) {
+						return fmt.Errorf("%s is the cue embed model and its sidecar is running\n"+
+							"  Run 'iq svc stop' first", model)
+					}
+					return fmt.Errorf("%s is the cue embed model\n"+
+						"  Run 'iq svc embed rm cue' to revert it before removing", model)
+				}
+				if model == kbModel(cfg) {
+					s, _ := readState(embedKbSlug)
+					if s != nil && pidAlive(s.PID) {
+						return fmt.Errorf("%s is the kb embed model and its sidecar is running\n"+
+							"  Run 'iq svc stop' first", model)
+					}
+					return fmt.Errorf("%s is the kb embed model\n"+
+						"  Run 'iq svc embed rm kb' to revert it before removing", model)
+				}
+			}
 
 			// Refuse to remove a model that is assigned to a tier.
 			if t := tierForModel(model); t != "" {

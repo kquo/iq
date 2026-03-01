@@ -3,8 +3,19 @@
 set -euo pipefail  # Fail immediately on any error
 Gre='\e[1;32m' Red='\e[1;31m' Mag='\e[1;35m' Yel='\e[1;33m' Blu='\e[1;34m' Rst='\e[0m'
 
-# Parse arguments - if provided, only build specified utilities
-BUILD_TARGETS=("$@")
+# Parse arguments
+#   [v1.2.3] [message]  optional: release tag + commit message for the one-liner
+#   remaining positional args → build targets (unchanged behaviour)
+TAG_ARG=""
+MSG_ARG=""
+BUILD_TARGETS=()
+if [[ $# -ge 1 ]] && [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    TAG_ARG="$1"; shift
+    if [[ $# -ge 1 ]]; then MSG_ARG="$1"; shift; fi
+    BUILD_TARGETS=("$@")
+else
+    BUILD_TARGETS=("$@")
+fi
 Prg=$(head -1 go.mod | awk -F'/' '{print $NF}' | awk '{print $NF}')
 
 # Detect OS
@@ -121,7 +132,18 @@ CurrentTag=$(git tag | sort -V | tail -1)
 IFS='.' read -r Major Minor Patch <<< "${CurrentTag#v}"
 NextTag="v$Major.$Minor.$((Patch+1))"
 
-printf "\n==> To release as ${Gre}$NextTag${Rst}, adjust comment and run below one-liner:\n"
-printf "\n    TAG=${Gre}$NextTag${Rst} && git add . && git commit -m \"${Gre}<insert comment>${Rst}\" && git tag \$TAG && git push origin \$TAG && git push\n\n"
+if [ -n "$TAG_ARG" ] && [ -n "$MSG_ARG" ]; then
+    printf "\n==> Releasing as ${Gre}$TAG_ARG${Rst}:\n"
+    printf "\n    git add . && git commit -m %s && git tag %s && git push origin %s && git push\n\n" \
+        "$(printf '%q' "$MSG_ARG")" "$TAG_ARG" "$TAG_ARG"
+    git add .
+    git commit -m "$MSG_ARG"
+    git tag "$TAG_ARG"
+    git push origin "$TAG_ARG"
+    git push
+else
+    printf "\n==> To release as ${Gre}$NextTag${Rst}, adjust comment and run below one-liner:\n"
+    printf "\n    TAG=${Gre}$NextTag${Rst} && git add . && git commit -m \"${Gre}<insert comment>${Rst}\" && git tag \$TAG && git push origin \$TAG && git push\n\n"
+fi
 
 exit 0
