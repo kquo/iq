@@ -56,8 +56,8 @@ iq ask -n "explain how transformers work"
 iq ask -d "explain how transformers work"
 
 # Raw access to a specific sidecar, bypassing the IQ framework
-iq probe fast "hello"
-iq probe slow "explain attention" -s "You are a terse assistant."
+iq pry fast "hello"
+iq pry slow "explain attention" -s "You are a terse assistant."
 ```
 
 ## Commands
@@ -67,7 +67,7 @@ iq probe slow "explain attention" -s "You are a terse assistant."
 | `iq lm` | Search, download, list, and manage local models |
 | `iq svc` | Start, stop, monitor sidecars; manage tier and embed config |
 | `iq ask` | Route prompts through classification and cue system |
-| `iq probe` | Send raw messages directly to a model sidecar |
+| `iq pry` | Send raw messages directly to a model sidecar |
 | `iq cue` | Manage the cue library |
 | `iq kb` | Manage the knowledge base for RAG retrieval |
 | `iq status` | Show running sidecar status (alias: `iq st`) |

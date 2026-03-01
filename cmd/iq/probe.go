@@ -16,7 +16,7 @@ func printProbeHelp() {
 	n := program_name
 	fmt.Printf("Send a raw message directly to a model sidecar, bypassing the IQ framework.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
-	fmt.Printf("  %s probe <model|tier> [flags] <message>\n\n", n)
+	fmt.Printf("  %s pry <model|tier> [flags] <message>\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
 	fmt.Printf("  %-30s %s\n", "-c, --cue <name>", "Use a cue's system prompt")
 	fmt.Printf("  %-30s %s\n", "-s, --system <text>", "Use a literal system prompt")
@@ -24,11 +24,11 @@ func printProbeHelp() {
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s probe fast \"what is 2+2?\"\n", n)
-	fmt.Printf("  $ %s probe slow \"explain gradient descent\"\n", n)
-	fmt.Printf("  $ %s probe mlx-community/SmolLM2-135M-Instruct-8bit \"hello\"\n", n)
-	fmt.Printf("  $ %s probe fast \"respond in pirate speak\" -s \"You are a pirate.\"\n", n)
-	fmt.Printf("  $ %s probe fast \"solve x^2 + 3x - 4\" -c math_reasoning\n\n", n)
+	fmt.Printf("  $ %s pry fast \"what is 2+2?\"\n", n)
+	fmt.Printf("  $ %s pry slow \"explain gradient descent\"\n", n)
+	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"hello\"\n", n)
+	fmt.Printf("  $ %s pry fast \"respond in pirate speak\" -s \"You are a pirate.\"\n", n)
+	fmt.Printf("  $ %s pry fast \"solve x^2 + 3x - 4\" -c math_reasoning\n\n", n)
 }
 
 // ── Command ───────────────────────────────────────────────────────────────────
@@ -40,7 +40,8 @@ func newProbeCmd() *cobra.Command {
 	var useKB bool
 
 	cmd := &cobra.Command{
-		Use:          "probe <model|tier> <message>",
+		Use:          "pry <model|tier> <message>",
+		Aliases:      []string{"probe"},
 		Short:        "Send a raw message directly to a model sidecar",
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(2),
