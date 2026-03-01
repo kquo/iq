@@ -23,7 +23,7 @@ import (
 
 const sidecarReadyTimeout = 120 * time.Second
 const sidecarPollInterval = 500 * time.Millisecond
-const portBase = 27002
+const portBase = 27001
 
 // ── Model slug ────────────────────────────────────────────────────────────────
 
@@ -646,6 +646,21 @@ func newSvcStartCmd() *cobra.Command {
 			if arg == "" {
 				if err := startEmbedSidecar(); err != nil {
 					fmt.Fprintf(os.Stderr, "  error starting embed: %s\n", err.Error())
+				}
+				// First-run hint: no tier models configured yet.
+				if len(allAssignedModels()) == 0 {
+					fmt.Println("No models configured. Recommended setup:")
+					fmt.Println()
+					fmt.Println("  iq lm get mlx-community/bge-small-en-v1.5-bf16")
+					fmt.Println("  iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit")
+					fmt.Println("  iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit")
+					fmt.Println()
+					fmt.Println("  iq svc embed set mlx-community/bge-small-en-v1.5-bf16")
+					fmt.Println("  iq svc tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
+					fmt.Println("  iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
+					fmt.Println()
+					fmt.Println("Then run 'iq svc start' again.")
+					return nil
 				}
 			}
 			models, err := resolveModels(arg)

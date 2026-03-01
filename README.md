@@ -29,26 +29,28 @@ Requires Go installed with `$GOPATH/bin` in your `$PATH`.
 ## Quick Start
 
 ```bash
-# Search for models
-iq lm search
-iq lm search gemma
+# Download recommended models (or substitute your own)
+iq lm get mlx-community/bge-small-en-v1.5-bf16
+iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit
+iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit
 
-# Download models
-iq lm get mlx-community/SmolLM2-135M-Instruct-8bit
-iq lm get mlx-community/Qwen2.5-0.5B-Instruct-4bit
-iq lm get mlx-community/Phi-4-mini-reasoning-4bit
+# Configure embed model and tier assignments
+iq svc embed set mlx-community/bge-small-en-v1.5-bf16
+iq svc tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit
+iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit
 
-# Assign to tiers (< 2GB → fast, >= 2GB → slow)
-iq svc tier add fast mlx-community/SmolLM2-135M-Instruct-8bit
-iq svc tier add fast mlx-community/Qwen2.5-0.5B-Instruct-4bit
-iq svc tier add slow mlx-community/Phi-4-mini-reasoning-4bit
-
-# Start inference sidecars
+# Start sidecars
 iq svc start
 
 # Run a prompt — auto-classifies and routes to the right model
 iq ask "explain how transformers work"
+```
 
+Any MLX-compatible embedding model works for `embed`, and any MLX-compatible
+generative model works for `fast` / `slow` tiers. Use `iq lm search` to browse
+available models.
+
+```bash
 # Debug: see classification and routing without inferring
 iq ask -n "explain how transformers work"
 

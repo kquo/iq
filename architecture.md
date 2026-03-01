@@ -282,3 +282,4 @@ append turn to session YAML
 | 0.4.2   | Rename `iq prompt` → `iq ask` (prompt kept as alias); add pre-commit checklist to CLAUDE.md |
 | 0.4.3   | Rename `iq probe` → `iq pry` (probe kept as alias) |
 | 0.4.4   | Merge dual embed sidecars into single `embed` sidecar on :27000; default to bge-small-en-v1.5-bf16; auto-migrate cue_model/kb_model → embed_model |
+| 0.4.5   | First-run hint for `iq svc start` when no tier models configured; update Quick Start with recommended defaults |
