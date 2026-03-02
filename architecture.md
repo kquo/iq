@@ -12,22 +12,22 @@ IQ is a local LLM orchestration tool for Apple Silicon. It manages the full life
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                               iq CLI (Go)                                   │
 │                                                                             │
-│  iq lm    iq svc    iq cue    iq kb    iq ask       iq pry      iq status   │
-│  (models) (service) (cues)   (RAG)    (infer/REPL) (raw debug) (alias: st)  │
-└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬──────────┘
+│  iq lm    iq svc    iq cue    iq kb    iq ask       iq pry      iq perf    │
+│  (models) (service) (cues)   (RAG)    (infer/REPL) (raw debug) (bench)    │
+└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬────────┘
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
 ┌─────────┐ ┌──────┐ ┌────────┐ ┌──────────────────────┐ ┌──────────────────┐
 │ HF      │ │config│ │cues    │ │ mlx_lm.server        │ │ sessions/        │
 │ cache   │ │.yaml │ │.yaml   │ │ sidecars (pool)      │ │ <id>.yaml        │
 │         │ │      │ │        │ │                      │ │                  │
-│~/.cache/│ │tiers:│ │name    │ │ fast pool :27002+    │ │ kb.json          │
-│hugging  │ │ fast │ │category│ │ slow pool :27002+    │ │ (vector index)   │
+│~/.cache/│ │tiers:│ │name    │ │ fast pool :27001+    │ │ kb.json          │
+│hugging  │ │ fast │ │category│ │ slow pool :27001+    │ │ (vector index)   │
 │face/hub/│ │ slow │ │desc    │ │                      │ │                  │
 │models-- │ │      │ │prompt  │ │ OpenAI-compatible    │ └──────────────────┘
 │org--repo│ │      │ │tier    │ │ HTTP API             │ ┌──────────────────┐
-│/snapshot│ └──────┘ └────────┘ └──────────────────────┘ │ embed sidecars   │
-│  /hash/ │                                              │ :27000 | :27001  │
+│/snapshot│ └──────┘ └────────┘ └──────────────────────┘ │ embed sidecar    │
+│  /hash/ │                                              │ :27000           │
 └─────────┘                                              └──────────────────┘
 ```
 
@@ -58,9 +58,9 @@ slow    2GB+ models    — used for quality inference
 
 Tier commands: `iq svc tier show`, `iq svc tier add <tier> <model>`, `iq svc tier rm <tier> <model>`.
 
-Embed model commands: `iq svc embed show`, `iq svc embed set <cue|kb> <model>`, `iq svc embed rm <cue|kb>`.
+Embed model commands: `iq svc embed show`, `iq svc embed set <model>`, `iq svc embed rm`.
 
-Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold.
+Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
 
 ### `iq cue` — Cue Definitions
 
@@ -74,6 +74,8 @@ Each cue carries a `name`, `category`, `description`, `system_prompt`, `suggeste
 
 Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `sync`.
 
+`sync` merges new factory cues into an existing `cues.yaml` without overwriting user customisations — useful when upgrading IQ to a version that adds new cues.
+
 ### `iq svc` — Service Daemon
 
 Manages sidecar processes. Each sidecar is a detached `mlx_lm.server` process. Ports are assigned dynamically starting at 27001 — no fixed port per tier. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time). Logs go to `~/.config/iq/run/<model-slug>.log`.
@@ -86,15 +88,15 @@ Start sequence:
 5. Poll `GET /v1/models` until 200 OK or 120s timeout
 6. On failure: print last 10 log lines + path
 
-`iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models).
+`iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models). On first run with no tiers configured, `iq svc start` prints a recommended setup with example `iq lm get` and `iq svc tier add` commands.
 
 **Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
 
-`iq svc doc` runs preflight checks: `mlx_lm.server` found and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
+`iq svc doc` checks runtime dependencies: `python3` available, `mlx_lm.server` found and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
 
-**Embeddings** — handled by a single local Python sidecar (`embed_model`, port 27000) started with `iq svc start`. Serves both cue classification and KB indexing/retrieval. Configure via `iq svc embed`.
+**Embeddings** — handled by a single local Python sidecar (`embed_model`, port 27000) started with `iq svc start`. Serves cue classification, tool detection, and KB indexing/retrieval. Configure via `iq svc embed`.
 
-`iq svc status` shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar row, IQ process memory, and combined total.
+`iq svc status` (also available as `iq status` / `iq st`) shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar row, IQ process memory, and combined total.
 
 ### `iq kb` — Knowledge Base
 
@@ -108,17 +110,17 @@ Manages `~/.config/iq/kb.json` — an embedded vector index for RAG (Retrieval-A
 iq kb ingest ~/projects/myapp
     │
     ├── walk directory (skips .git, node_modules, vendor, __pycache__, hidden dirs)
-    ├── read each text file (.go, .md, .py, .txt, .yaml, ...)
-    ├── split into overlapping line-based chunks (40 lines, 5-line overlap)
+    ├── read each text file (.go, .md, .py, .yaml, ...)
+    ├── structure-aware chunking (see below)
     ├── embed each chunk via embed sidecar :27000 (batches of 20)
     └── store chunk text + 384-float vector in kb.json
 
 iq ask "how does the auth middleware work?"
     │
     ├── embed user input → query vector
-    ├── cosine_similarity(query_vec, all_chunk_vecs) — Go, in-memory
-    ├── top-5 chunks retrieved
-    ├── injected into system prompt as plain text:
+    ├── hybrid scoring: cosine_similarity + keyword boost — Go, in-memory
+    ├── top-5 chunks retrieved (score ≥ 0.50 threshold)
+    ├── injected as plain text context in user message:
     │     "Relevant context from knowledge base:
     │      ─── /path/to/middleware.go (lines 42–81) ───
     │      <chunk text>
@@ -126,6 +128,19 @@ iq ask "how does the auth middleware work?"
     │      <chunk text>"
     └── inference proceeds as normal — model sees your actual code
 ```
+
+**Chunking strategies** — the chunker dispatches by file type for structure-aware splits:
+
+| File type | Strategy | Boundaries |
+|-----------|----------|------------|
+| `.go` | Declaration-based | Each top-level `func`, `type`, `var`, `const` = one chunk |
+| `.md` | Heading-based | Each heading + its content body = one chunk; label carries full heading path |
+| `.yaml`, `.yml`, `.toml` | Key-value blocks | Top-level key groups |
+| Everything else | Prose/paragraph | Paragraphs grouped up to 1600 runes per chunk |
+
+Each chunk text is prefixed with `File: path/to/file.go` metadata before embedding to improve retrieval relevance.
+
+**Hybrid scoring** — KB search combines cosine similarity with keyword boosting. `extractKeywords` pulls meaningful tokens from the query (splits on whitespace/punctuation, expands camelCase, keeps tokens ≥ 4 chars). Each keyword found in a chunk adds +0.05; function call patterns (`keyword(`) add an extra +0.12 to surface callsites over definitions. Total keyword boost is capped at +0.25.
 
 KB retrieval is **always-on** when `kb.json` exists and the embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
 
@@ -146,23 +161,49 @@ iq kb clear             # wipe entire kb.json
 
 One-shot prompts can be sent directly via `iq "message"` (routes through the same pipeline). The `ask` subcommand is still available for the interactive REPL (`iq ask`) and as an explicit alias.
 
-Routes user prompts through a pipeline:
+Routes user prompts through a 6-step pipeline:
 
-**1. Classify** — the user input is embedded via the embed sidecar (:27000) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
+**Step 1 — Classify.** The user input is embedded via the embed sidecar (:27000) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected (minimum score threshold: 0.40). No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running.
 
-> **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space: "explain a transformer model" and "describe how attention works" will produce vectors pointing in nearly the same direction even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, embeddings serve double duty: classifying prompts to cues, and retrieving relevant knowledge base chunks for RAG.
+> **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space: "explain a transformer model" and "describe how attention works" will produce vectors pointing in nearly the same direction even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, embeddings serve triple duty: classifying prompts to cues, detecting when tools are needed, and retrieving relevant knowledge base chunks for RAG.
 
 The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first use and refreshed automatically when cues change.
 
-**2. Route** — resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
+**Step 1b — Tool Detect.** Determines whether to enable read-only tools for this prompt. Three detection paths, checked in order:
 
-**3. KB Retrieve** — if `kb.json` exists and the kb embed sidecar is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved and appended to the cue's system prompt as plain text context. Skipped silently if kb is empty or unavailable.
+1. **Forced** — `-T` flag forces tools on; `--no-tools` forces them off.
+2. **File-path heuristic** — deterministic check for slash-separated paths (excluding URLs) or words ending in known source-code extensions (`.go`, `.py`, `.md`, `.json`, etc.).
+3. **Embed-based signal matching** — reuses the input vector already computed in Step 1 (zero extra API calls). Compares against 4 pre-embedded tool signal descriptions via cosine similarity. If the best match exceeds the tool threshold (0.50), tools are enabled.
 
-**4. Build** — assembles the message array: system prompt (cue + KB context if any), session history (if any), new user message.
+The 4 tool signals and the tools they cover:
 
-**5. Infer** — sends to the target sidecar via `POST /v1/chat/completions`. Streams tokens to stdout by default.
+| Signal | Tools | Description |
+|--------|-------|-------------|
+| `time_date` | `get_time` | Time, date, day of the week |
+| `file_access` | `read_file`, `list_dir`, `file_info` | Read/list files, file metadata |
+| `file_search` | `search_text`, `count_lines` | Search for text in files, count lines |
+| `calculation` | `calc` | Math expressions, percentages, arithmetic |
 
-**6. Persist** — appends the turn to `~/.config/iq/sessions/<id>.yaml`. After the first exchange, a background goroutine asks the smallest fast-tier model to generate a short name and description for the session.
+Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and versioned with an FNV32a hash over signal names and descriptions so they auto-refresh when signals change.
+
+**Step 2 — Route.** Resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
+
+**Step 3 — KB Retrieve.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved via hybrid scoring and injected as plain text context in the user message. Skipped silently if KB is empty or unavailable.
+
+**Step 4 — Build.** Assembles the message array: system prompt (from cue, plus tool instructions if tools enabled), session history (if any), user message (with KB context prepended if any).
+
+**Step 5 — Infer.** Sends to the target sidecar via `POST /v1/chat/completions`. Non-tool path streams tokens to stdout by default.
+
+When tools are enabled, inference runs in a non-streaming tool loop (up to 5 iterations):
+1. Model generates a response (may contain `<tool_call>` blocks)
+2. Parser extracts tool calls — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON
+3. Each tool is executed, results injected as `<tool_result>` user messages
+4. Inference continues with the tool results in context
+5. Loop ends when the model produces a response with no tool calls, or after 5 iterations
+
+**Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Non-streaming mode strips think blocks from the full response.
+
+**Step 6 — Persist.** Appends the turn to `~/.config/iq/sessions/<id>.yaml`. After the first exchange, a background goroutine asks the smallest fast-tier model to generate a short name (≤ 5 words) and description (≤ 15 words) for the session.
 
 **Flags:**
 ```
@@ -171,12 +212,30 @@ The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first u
     --tier <n>      Override tier directly, bypass cue system
 -s, --session <id>  Load/continue a named session
 -K, --no-kb         Disable knowledge base retrieval for this prompt
+-T, --tools         Force enable read-only tool use
+    --no-tools      Disable tool use
 -n, --dry-run       Trace steps 1–4, skip inference
 -d, --debug         Trace all steps including inference
     --no-stream     Collect full response before printing
 ```
 
-**REPL mode** — entered when no message arg and stdin is a terminal. Supports `/cue`, `/session`, `/clear`, `/dry-run`, `/debug`, `/help`, `/quit`. Pipe-friendly: `echo "..." | iq ask` takes the stdin path.
+**REPL mode** — entered when no message arg and stdin is a terminal. Supports `/cue`, `/session`, `/clear`, `/dry-run`, `/debug`, `/tools` (cycles auto → on → off → auto), `/help`, `/quit`. Pipe-friendly: `echo "..." | iq ask` takes the stdin path.
+
+### `iq ask` — Tools
+
+Seven read-only tools are available. All file-access tools enforce path security: only the current working directory and paths listed in `config.yaml` `tool_paths` are allowed. Paths are resolved through symlinks and checked via prefix matching.
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `get_time` | *(none)* | Current date, time, timezone, day of week |
+| `read_file` | `path` (required) | Read file contents (max 64KB) |
+| `list_dir` | `path` (required) | List directory entries |
+| `file_info` | `path` (required) | File size, modification time, permissions |
+| `calc` | `expression` (required) | Evaluate math: `+`, `-`, `*`, `/`, `%`, parentheses, decimals |
+| `search_text` | `pattern` (required), `path` | Regex search across files (max 50 matches, skips .git/vendor/etc.) |
+| `count_lines` | `path` (required) | Count lines in a file |
+
+The tool system prompt is appended to the system message when tools are active. It instructs the model to use `<tool_call>{"name": "...", "args": {...}}</tool_call>` format, provides examples, and lists all available tools with their parameters.
 
 ### `iq pry` — Raw Sidecar Access
 
@@ -191,7 +250,44 @@ iq pry <model|tier> [flags] <message>
 -S, --no-stream     Collect full response before printing
 ```
 
-Accepts a tier name or specific model ID. Prints routing info in gray before the response and elapsed time after.
+`--cue` and `--system` are mutually exclusive. Accepts a tier name or specific model ID. Prints routing info in gray before the response and elapsed time after.
+
+### `iq perf` — Benchmarking
+
+Evaluates model performance using an embedded benchmark corpus. Results are stored in `~/.config/iq/benchmarks.json`.
+
+Benchmark types:
+- **KB retrieval** — measures search quality (MRR = Mean Reciprocal Rank)
+- **Cue classification** — measures accuracy and average similarity score against the embedded benchmark corpus
+- **Inference latency** — measures P50/P95 latency and throughput
+
+Commands:
+```
+iq perf bench [--type <type>] [--model <id>]   # run benchmarks
+iq perf show [model] [type]                     # display stored results
+iq perf clear                                   # wipe benchmark history
+```
+
+### Embed Sidecar
+
+A single Python process (`embed_server.py`, embedded in the Go binary) runs on port 27000. It uses `mlx-embedding-models` to serve embedding requests over HTTP.
+
+**Model-specific handling:**
+- **nomic** models: `"search_query: "` / `"search_document: "` instruction prefixes
+- **mxbai** models: `"Represent this sentence for searching relevant passages: "` prefix (query only)
+- **bge** models (default): no prefix, max 1600 runes per text
+
+The default embed model is `mlx-community/bge-small-en-v1.5-bf16` (384-dimensional vectors).
+
+**Dependencies:**
+```
+pipx install mlx-lm
+pipx inject mlx-lm mlx-embedding-models
+```
+
+### Web Search Library (`search.go`)
+
+A DuckDuckGo client library is included as infrastructure. It provides `Search()` and `SearchWithOption()` functions for HTML scraping with retry logic for 202 throttling responses. Currently available for future tool integration but not wired into any user-facing command.
 
 ---
 
@@ -199,11 +295,13 @@ Accepts a tier name or specific model ID. Prints routing info in gray before the
 
 ```
 ~/.config/iq/
-├── config.yaml                  # tier pool assignments + embed model
+├── config.yaml                  # tier pool assignments + embed model + tool_paths
 ├── models.json                  # manifest of downloaded models
 ├── cues.yaml                    # cue definitions (seeded from embedded defaults)
-├── cue_embeddings.json          # cosine similarity cache (auto-built, invalidated on cue changes)
+├── cue_embeddings.json          # cue description embeddings (auto-built, versioned)
+├── tool_embeddings.json         # tool signal embeddings (auto-built, FNV32a versioned)
 ├── kb.json                      # knowledge base: chunk text + 384-float vectors (RAG)
+├── benchmarks.json              # performance benchmark results
 ├── run/
 │   ├── <model-slug>.json        # generative sidecar state (PID, port, tier, model)
 │   └── <model-slug>.log
@@ -230,41 +328,134 @@ User input
     ├── --cue given? ──────────────────────────────────────────┐
     │                                                          │
     ▼  (auto-classify)                                         ▼ (skip classify)
-POST /embed  →  embed :27000 (embed_model)              resolve cue directly
-  input text  →  384-float vector                              │
+STEP 1  POST /embed → embed :27000                      resolve cue directly
+  input text → 384-float input vector                          │
     │                                                          │
     ▼                                                          │
   cosine_similarity(input_vec, cue_vecs[])                     │
+  best score ≥ 0.40 → cue name                                │
     │                                                          │
     ▼                                                          │
   highest-score cue name ◄─────────────────────────────────────┘
     │
     ▼
-resolveRoute()
+STEP 1b  Tool Detect
+  -T/--no-tools flag? → forced
+  hasFilePath(input)? → enabled (deterministic)
+  else: cosine_similarity(input_vec, tool_signal_vecs[])
+  best score ≥ 0.50 → tools enabled
+    │
+    ▼
+STEP 2  resolveRoute()
   cue.model override  →  pickSidecar(tier, false)
   cue.suggested_tier  →  pickSidecar(tier, false)
   fallback            →  pickSidecar("fast", false)
     │
     ▼
-KB retrieve  (if kb.json exists && embed running && !--no-kb)
+STEP 3  KB retrieve  (if kb.json exists && embed running && !--no-kb)
   POST /embed → query vector (embed :27000)
-  cosine_similarity(query_vec, all_chunk_vecs[]) — Go, in-memory
-  top-5 chunks → plain text context block
+  hybrid scoring: cosine_similarity + keyword boost — Go, in-memory
+  top-5 chunks (score ≥ 0.50) → plain text context block
     │
     ▼
-build messages[]
-  system:    cue.system_prompt + "\n\n" + kb_context (if any)
+STEP 4  build messages[]
+  system:    cue.system_prompt + tool instructions (if tools enabled)
   ...        session history (if -s)
-  user:      input
+  user:      kb_context (if any) + input
     │
     ▼
-POST /v1/chat/completions  →  target sidecar port
-  SSE stream  →  stdout (token by token)
+STEP 5  POST /v1/chat/completions → target sidecar port
+  ├── no tools: SSE stream → stdout (token by token)
+  └── tools: non-streaming loop (up to 5 iterations)
+       model response → parse <tool_call> blocks
+       execute tools → inject <tool_result> → re-infer
+       loop until no tool calls remain
     │
     ▼
-append turn to session YAML
+STEP 6  append turn to session YAML
   background: auto-name via smallest fast-tier (first turn only)
 ```
+
+---
+
+## Debug Trace Format (`-d` / `--debug`)
+
+Each step prints a clean header and structured sub-fields:
+
+```
+STEP 1  CLASSIFY
+  call          embed bge-small-en-v1.5-bf16 @ localhost:27000
+  task          Cosine-similarity match user input against 17 cue descriptions
+  resolved_cue  initial (score: 0.5457)
+  elapsed       40ms
+
+STEP 1b TOOL DETECT
+  task          Cosine-similarity match input vector against 4 tool signal descriptions
+  best_signal   time_date (score: 0.72)
+  result        enabled (embed)
+  elapsed       1ms
+
+STEP 2  RESOLVE ROUTE
+  task          Map resolved cue to model tier and running sidecar
+  cue           initial → general/fast
+  model         Llama-3.2-3B-Instruct-4bit @ localhost:27001
+  tier_source   suggested_tier
+  elapsed       0ms
+
+STEP 3  KB RETRIEVE
+  call          embed bge-small-en-v1.5-bf16 @ localhost:27000
+  task          Cosine-similarity search user input against KB chunks
+  chunks        5 results
+  top           score:0.7219  svc.go:245–264
+  elapsed       65ms
+
+STEP 4  EFFECTIVE PROMPT
+  [system]
+    ...
+  [user]
+    ...
+
+STEP 5  INFER
+  call          POST localhost:27001/v1/chat/completions (non-streaming, tools)
+  raw_resp      "<tool_call>{...}</tool_call>"
+  tool_call     get_time({})
+  tool_result   2026-03-02 08:55:00 EST (Monday)
+  call          POST localhost:27001/v1/chat/completions (follow-up)
+  raw_resp      "The current time is..."
+  elapsed       1200ms
+
+STEP 6  SESSION
+  task          Persist conversation to disk
+  id            abc123
+  saved         ~/.config/iq/sessions/abc123.yaml
+  turns         1
+  elapsed       0ms
+```
+
+Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
+
+---
+
+## Source Files
+
+| File | Purpose |
+|------|---------|
+| `main.go` | CLI entry point, root command, version, help routing |
+| `cfg.go` | Config CRUD, tier migration, embed model helper |
+| `svc.go` | Sidecar lifecycle, port allocation, pool dispatch, status, tier/embed commands |
+| `embed.go` | Embed sidecar startup, HTTP embedding calls, cue cache, cosine similarity |
+| `cue.go` | Cue CRUD, defaults, sync, embedded `cues_default.yaml` |
+| `prompt.go` | 6-step execution pipeline, session management, REPL, trace output, streaming |
+| `tools.go` | Tool registry (7 tools), parser, executor, tool signals, embed-based detection |
+| `tools_test.go` | Tests for calc, parseToolCalls, validatePath, hasFilePath, tool registry |
+| `kb.go` | KB index, structure-aware chunking, hybrid search, ingest, CLI commands |
+| `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
+| `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
+| `probe.go` | `iq pry` — raw sidecar access |
+| `search.go` | DuckDuckGo client library (infrastructure) |
+| `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
+| `cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
+| `bench_corpus.yaml` | Benchmark test data (embedded in binary) |
 
 ---
 
@@ -288,3 +479,4 @@ append turn to session YAML
 | 0.4.7   | Root-level prompts (`iq "message"`); `-?` help alias; extract `addPromptFlags` helper |
 | 0.4.8   | Consolidate 58→17 cues across 8 categories; keyword-rich descriptions for embedding separation; lower classifyMinScore 0.68→0.40; bench accuracy 29%→100% (28/28); print threshold in bench output |
 | 0.5.0   | Embed-based tool detection replaces keyword lists; reuse input vector from classify step (zero extra API calls); new debug trace format with step headers, call/task sub-fields, and Step 1b tool detect |
+| 0.5.1   | Architecture docs rewritten: add tool system, perf/bench, debug trace format, embed sidecar details, hybrid KB scoring, structure-aware chunking, source file map; fix diagram and data flow |
