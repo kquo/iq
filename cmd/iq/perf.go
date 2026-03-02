@@ -569,6 +569,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		return BenchResult{}, err
 	}
 	fmt.Fprintf(os.Stderr, "  cue set     %d cues loaded\n", len(cues))
+	fmt.Fprintf(os.Stderr, "  threshold   %.2f\n", classifyMinScore)
 
 	// Build cue embeddings using the benchmark sidecar.
 	fmt.Fprintf(os.Stderr, "  embedding   %d cue descriptions ...", len(cues))

@@ -686,7 +686,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 // ── REPL ──────────────────────────────────────────────────────────────────────
 
 var replCommands = map[string]string{
-	"/cue":     "show or set current cue  (e.g. /cue math_reasoning)",
+	"/cue":     "show or set current cue  (e.g. /cue math)",
 	"/session": "show current session info",
 	"/clear":   "clear session history (start fresh)",
 	"/dry-run": "toggle dry-run mode",
@@ -814,7 +814,7 @@ func printPromptHelp() {
 	fmt.Printf("  $ %s ask \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s ask -n \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s ask -d \"explain transformers\"\n", n)
-	fmt.Printf("  $ %s ask --cue math_reasoning \"solve x^2 + 3x - 4\"\n", n)
+	fmt.Printf("  $ %s ask --cue math \"solve x^2 + 3x - 4\"\n", n)
 	fmt.Printf("  $ %s ask --category code \"write a binary search in Go\"\n", n)
 	fmt.Printf("  $ %s ask --session abc123 \"continue from before\"\n", n)
 	fmt.Printf("  $ %s ask\n", n)

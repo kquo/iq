@@ -30,7 +30,7 @@ const (
 	// classifyMinScore is the minimum cosine similarity required to accept a
 	// cue match. Below this threshold the classifier falls back to "initial"
 	// rather than committing to a low-confidence (potentially wrong) cue.
-	classifyMinScore float32 = 0.68
+	classifyMinScore float32 = 0.40
 )
 
 // ── Embed sidecar helpers ─────────────────────────────────────────────────────

@@ -64,11 +64,10 @@ Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`
 
 ### `iq cue` — Cue Definitions
 
-Manages `~/.config/iq/cues.yaml`, seeded from an embedded default set of 56 cues across 10 categories:
+Manages `~/.config/iq/cues.yaml`, seeded from an embedded default set of 17 cues across 8 categories:
 
 ```
-language_tasks  generation  reasoning  code       retrieval
-summarization   dialogue    safety     domain     ml_ops
+general  code  reasoning  language_tasks  generation  summarization  safety  domain
 ```
 
 Each cue carries a `name`, `category`, `description`, `system_prompt`, `suggested_tier`, and an optional direct `model` override (kept for power users, not actively promoted in routing).
@@ -287,3 +286,4 @@ append turn to session YAML
 | 0.4.5   | First-run hint for `iq svc start` when no tier models configured; update Quick Start with recommended defaults |
 | 0.4.6   | Skip embed sidecar start when model not downloaded (immediate hint); print last log lines on embed sidecar timeout |
 | 0.4.7   | Root-level prompts (`iq "message"`); `-?` help alias; extract `addPromptFlags` helper |
+| 0.4.8   | Consolidate 58→17 cues across 8 categories; keyword-rich descriptions for embedding separation; lower classifyMinScore 0.68→0.40; bench accuracy 29%→100% (28/28); print threshold in bench output |

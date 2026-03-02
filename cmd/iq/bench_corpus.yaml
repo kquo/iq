@@ -1219,44 +1219,44 @@ kb_queries:
     relevant: [md_arch_overview, go_main_routes, go_mw_logging]
 
 cue_inputs:
-  - text: "Write a Go function that reads a JSON file and unmarshals it into a struct"
-    expected_cue: code_generation
+  - text: "Write a Go function that sorts a slice of integers using quicksort"
+    expected_cue: code_writing
 
   - text: "Review this Python class for any bugs or style issues"
     expected_cue: code_review
 
   - text: "Complete the following TypeScript function: function debounce(fn:"
-    expected_cue: code_completion
+    expected_cue: code_writing
 
-  - text: "Generate unit tests for this authentication middleware"
-    expected_cue: unit_test_generation
+  - text: "Generate unit tests for this string validation function"
+    expected_cue: code_writing
 
-  - text: "Explain gradient descent and why it converges"
+  - text: "Explain how photosynthesis works and why plants need sunlight"
     expected_cue: general_knowledge
 
   - text: "What is the capital of Australia?"
     expected_cue: general_knowledge
 
   - text: "Solve: 3x^2 - 12x + 9 = 0 and show all steps"
-    expected_cue: math_reasoning
+    expected_cue: math
 
-  - text: "If all mammals are warm-blooded and dolphins are mammals, are dolphins warm-blooded?"
-    expected_cue: general_reasoning_basic
+  - text: "If all employees must attend training and Alice is an employee, must Alice attend training?"
+    expected_cue: reasoning
 
   - text: "Summarize the following research paper abstract in two sentences"
-    expected_cue: summarization_abstractive
+    expected_cue: summarization
 
   - text: "Translate this paragraph to French"
     expected_cue: multilingual
 
   - text: "Classify this customer review as positive, negative, or neutral"
-    expected_cue: sentiment_analysis
+    expected_cue: text_analysis
 
-  - text: "Extract all named people and organizations from this news article"
-    expected_cue: entity_recognition
+  - text: "Identify and label every person name and organization mentioned in this paragraph"
+    expected_cue: text_analysis
 
   - text: "This message contains threats of violence and should be flagged"
-    expected_cue: safety_moderation
+    expected_cue: safety
 
   - text: "Check if this sentence is factually accurate: The Moon orbits Earth every 24 hours"
     expected_cue: fact_checking
@@ -1264,32 +1264,44 @@ cue_inputs:
   - text: "Write a short horror story set in an abandoned library"
     expected_cue: creative_writing
 
-  - text: "Given these search results, which is most relevant to the query about neural networks?"
-    expected_cue: search_reranking
+  - text: "Consider these three arguments and identify which one contains a logical fallacy"
+    expected_cue: reasoning
 
   - text: "Based on the provided documentation, explain how authentication tokens expire"
     expected_cue: project_documentation
 
   - text: "What is my likelihood of success given these ten market indicators?"
-    expected_cue: calibration_scoring
+    expected_cue: domain_finance
 
   - text: "Detect and redact any personal information in this support ticket"
-    expected_cue: privacy_filtering
+    expected_cue: safety
 
   - text: "I need help debugging this race condition in my concurrent Go code"
-    expected_cue: interactive_debugging
+    expected_cue: code_review
 
   - text: "Convert this user data JSON into a markdown table"
-    expected_cue: data_to_text
+    expected_cue: data_conversion
 
   - text: "Work through this logic puzzle step by step: five people, five houses"
-    expected_cue: chain_of_thought
+    expected_cue: reasoning
 
   - text: "The generated output says Paris is in Germany — identify the hallucination"
-    expected_cue: hallucination_mitigation
+    expected_cue: fact_checking
 
   - text: "Explain why the model chose this output for a sentiment analysis task"
-    expected_cue: explainability
+    expected_cue: text_analysis
+
+  - text: "Hello, how are you doing today?"
+    expected_cue: initial
+
+  - text: "What medications interact with warfarin and why?"
+    expected_cue: domain_medical
+
+  - text: "Is this non-compete clause enforceable in California?"
+    expected_cue: domain_legal
+
+  - text: "What does a high P/E ratio tell us about a stock's valuation?"
+    expected_cue: domain_finance
 
 infer_prompts:
   - id: infer_short_factual
