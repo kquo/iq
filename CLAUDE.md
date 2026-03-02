@@ -14,9 +14,10 @@
 
 ## Pre-Commit Checklist
 Before offering to run a release commit, always complete these steps in order:
-1. Bump `program_version` in `cmd/iq/main.go` to the new version string
-2. Add version row to `architecture.md` with a one-line summary of the changes
-3. Offer to run `./build.sh <tag> "<message>"` — do not run it automatically; prompt the user to confirm first
+1. Update `architecture.md` if necessary because of the changes
+2. Also add version row to `architecture.md` with a one-line summary of the changes
+3. Bump `program_version` in `cmd/iq/main.go` to the new version string
+4. Report to user they must now run `./build.sh <tag> "<message>"`
 
 ## Coding Rules / Style
 - Follow idiomatic Go practices
