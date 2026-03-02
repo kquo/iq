@@ -379,6 +379,7 @@ type embedClassifyTrace struct {
 	Score    float32
 	Elapsed  time.Duration
 	CacheHit bool
+	InputVec []float32
 }
 
 // embedClassify returns the best-matching cue name for the input using
@@ -432,6 +433,7 @@ func embedClassify(input string, cues []Cue, model string) (string, *embedClassi
 		Score:    bestScore,
 		Elapsed:  time.Since(t0),
 		CacheHit: cacheHit,
+		InputVec: vec,
 	}
 	return bestName, trace, nil
 }

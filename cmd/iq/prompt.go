@@ -200,12 +200,10 @@ func resolveRoute(cueName string, cues []Cue) (*routeResult, error) {
 
 // ── Trace output ──────────────────────────────────────────────────────────────
 
-const traceWidth = 100 // wrap width for trace content
-
 // traceStep prints a step header.
-func traceStep(n int, label, arrow string) {
+func traceStep(step, label string) {
 	fmt.Fprintf(os.Stderr, "%s\n",
-		utl.Gra(fmt.Sprintf("STEP %d  %-20s → %s", n, label, arrow)))
+		utl.Gra(fmt.Sprintf("STEP %s %s", step, label)))
 }
 
 // traceField prints "  label  value" with continuation lines indented to match.
@@ -219,35 +217,6 @@ func traceField(label, value string) {
 	}
 }
 
-// wrapText hard-wraps text at width, preserving existing newlines.
-func wrapText(text string, width int) string {
-	var out strings.Builder
-	for para := range strings.SplitSeq(text, "\n") {
-		words := strings.Fields(para)
-		if len(words) == 0 {
-			out.WriteByte('\n')
-			continue
-		}
-		col := 0
-		for i, w := range words {
-			if i == 0 {
-				out.WriteString(w)
-				col = len(w)
-			} else if col+1+len(w) > width {
-				out.WriteByte('\n')
-				out.WriteString(w)
-				col = len(w)
-			} else {
-				out.WriteByte(' ')
-				out.WriteString(w)
-				col += 1 + len(w)
-			}
-		}
-		out.WriteByte('\n')
-	}
-	return strings.TrimRight(out.String(), "\n")
-}
-
 // traceBlock prints a role label then the content indented below it.
 // User content is highlighted green when highlightUser=true.
 func traceBlock(role, content string, highlightUser bool) {
@@ -257,51 +226,77 @@ func traceBlock(role, content string, highlightUser bool) {
 		colorFn = func(s string) string { return utl.Gre(s) }
 	}
 	fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(fmt.Sprintf("  [%s]", role)))
-	wrapped := wrapText(content, traceWidth-len(blockIndent))
-	for l := range strings.SplitSeq(wrapped, "\n") {
+	for l := range strings.SplitSeq(content, "\n") {
 		fmt.Fprintf(os.Stderr, "%s%s\n", utl.Gra(blockIndent), colorFn(l))
 	}
 }
 
 // printStep1Classify prints the embedding classification trace.
 func printStep1Classify(t *embedClassifyTrace) {
-	cacheStr := "rebuilt"
-	if t.CacheHit {
-		cacheStr = "hit"
+	// Derive short model name from the full HF ID.
+	shortModel := t.Model
+	if i := strings.LastIndex(shortModel, "/"); i >= 0 {
+		shortModel = shortModel[i+1:]
 	}
-	traceStep(1, "CLASSIFY", fmt.Sprintf("embed :%d", embedPortConst))
-	traceField("model", t.Model)
-	traceField("resolved", t.Resolved)
-	traceField("score", fmt.Sprintf("%.4f", t.Score))
-	traceField("cache", cacheStr)
+	traceStep("1 ", "CLASSIFY")
+	traceField("call", fmt.Sprintf("embed %s @ localhost:%d", shortModel, embedPortConst))
+	traceField("task", "Cosine-similarity match user input against 17 cue descriptions")
+	traceField("resolved_cue", fmt.Sprintf("%s (score: %.4f)", t.Resolved, t.Score))
+	if !t.CacheHit {
+		traceField("cache", "rebuilt")
+	}
 	traceField("elapsed", fmt.Sprintf("%dms", t.Elapsed.Milliseconds()))
+}
+
+// printStep1bToolDetect prints the tool detection trace.
+func printStep1bToolDetect(tt *toolClassifyTrace) {
+	traceStep("1b", "TOOL DETECT")
+	traceField("task", "Cosine-similarity match input vector against 4 tool signal descriptions")
+	traceField("best_signal", fmt.Sprintf("%s (score: %.2f)", tt.BestSignal, tt.BestScore))
+	if tt.Enabled {
+		traceField("result", fmt.Sprintf("enabled (%s)", tt.Reason))
+	} else {
+		traceField("result", fmt.Sprintf("disabled (best: %.2f)", tt.BestScore))
+	}
+	traceField("elapsed", fmt.Sprintf("%dms", tt.Elapsed.Milliseconds()))
 }
 
 // printStep2Route prints the routing decision.
 func printStep2Route(route *routeResult, elapsed time.Duration) {
-	traceStep(2, "RESOLVE ROUTE", "Go code")
-	traceField("cue", route.CueName)
-	traceField("category", route.Category)
-	traceField("suggested", route.SuggestedTier)
-	traceField("tier", fmt.Sprintf("%s  (source: %s)", route.Tier, route.TierSource))
-	traceField("model", route.ModelID)
-	traceField("endpoint", fmt.Sprintf("http://localhost:%d", route.Port))
+	// Derive short model name from HF ID.
+	shortModel := route.ModelID
+	if i := strings.LastIndex(shortModel, "/"); i >= 0 {
+		shortModel = shortModel[i+1:]
+	}
+	traceStep("2 ", "RESOLVE ROUTE")
+	traceField("task", "Map resolved cue to model tier and running sidecar")
+	traceField("cue", fmt.Sprintf("%s → %s/%s", route.CueName, route.Category, route.Tier))
+	traceField("model", fmt.Sprintf("%s @ localhost:%d", shortModel, route.Port))
+	traceField("tier_source", route.TierSource)
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
 // printStep3KB prints the knowledge base retrieval trace.
-func printStep3KB(results []kbResult, elapsed time.Duration) {
-	traceStep(3, "KB RETRIEVE", fmt.Sprintf("kb.json → %d chunks", len(results)))
+func printStep3KB(results []kbResult, model string, elapsed time.Duration) {
+	// Derive short model name from HF ID.
+	shortModel := model
+	if i := strings.LastIndex(shortModel, "/"); i >= 0 {
+		shortModel = shortModel[i+1:]
+	}
+	traceStep("3 ", "KB RETRIEVE")
+	traceField("call", fmt.Sprintf("embed %s @ localhost:%d", shortModel, embedPortConst))
+	traceField("task", "Cosine-similarity search user input against KB chunks")
+	traceField("chunks", fmt.Sprintf("%d results", len(results)))
 	for _, r := range results {
-		traceField("chunk", fmt.Sprintf("score:%.4f  %s:%d–%d",
+		traceField("top", fmt.Sprintf("score:%.4f  %s:%d–%d",
 			r.Score, r.Chunk.Source, r.Chunk.LineStart, r.Chunk.LineEnd))
 	}
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
 // printStep4EffectivePrompt prints the full message array that will be sent.
-func printStep4EffectivePrompt(messages []chatMessage, route *routeResult) {
-	traceStep(4, "EFFECTIVE PROMPT", fmt.Sprintf("%s :%d", route.Tier, route.Port))
+func printStep4EffectivePrompt(messages []chatMessage) {
+	traceStep("4 ", "EFFECTIVE PROMPT")
 	for _, m := range messages {
 		traceBlock(m.Role, m.Content, true)
 	}
@@ -309,7 +304,8 @@ func printStep4EffectivePrompt(messages []chatMessage, route *routeResult) {
 
 // printStep6Session prints session persistence info.
 func printStep6Session(sess *session, path string, elapsed time.Duration) {
-	traceStep(6, "SESSION", "Go code")
+	traceStep("6 ", "SESSION")
+	traceField("task", "Persist conversation to disk")
 	traceField("id", sess.ID)
 	traceField("saved", path)
 	traceField("turns", fmt.Sprintf("%d", (len(sess.Messages)-1)/2))
@@ -506,6 +502,7 @@ type promptOpts struct {
 	debug     bool
 	noStream  bool
 	noKB      bool
+	toolMode  string // "" = auto, "on", "off"
 }
 
 func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
@@ -589,7 +586,11 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		if kbErr == nil && len(results) > 0 {
 			kbContext = KBContext(results)
 			if trace {
-				printStep3KB(results, time.Since(t3))
+				em := defaultEmbedModel
+				if cfg2, cfgErr := loadConfig(); cfgErr == nil {
+					em = embedModel(cfg2)
+				}
+				printStep3KB(results, em, time.Since(t3))
 			}
 		} else if kbErr != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kbErr.Error()))
@@ -597,9 +598,36 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	}
 
 	// ── Step 4: Build messages + effective prompt ──
+
+	// Determine whether tools are active.
+	useTools := false
+	var tt *toolClassifyTrace
+	switch opts.toolMode {
+	case "on":
+		useTools = true
+		tt = &toolClassifyTrace{Enabled: true, Reason: "forced"}
+	case "off":
+		useTools = false
+		tt = &toolClassifyTrace{Enabled: false, Reason: "forced"}
+	default:
+		useTools = hasFilePath(input)
+		if useTools {
+			tt = &toolClassifyTrace{Enabled: true, Reason: "file path"}
+		} else if et != nil && len(et.InputVec) > 0 {
+			useTools, tt = toolClassify(et.InputVec, et.Model)
+		}
+	}
+	if trace && tt != nil {
+		printStep1bToolDetect(tt)
+	}
+
 	var messages []chatMessage
 	if sess != nil && len(sess.Messages) > 0 {
 		messages = append(messages, sess.Messages...)
+		// If tools active, inject tool prompt into existing system message.
+		if useTools && len(messages) > 0 && messages[0].Role == "system" {
+			messages[0].Content += buildToolSystemPrompt()
+		}
 		messages = append(messages, chatMessage{Role: "user", Content: input})
 	} else if kbContext != "" {
 		// Use the cue's system prompt (or a generic fallback) and inject KB
@@ -610,17 +638,27 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		if sysprompt == "" {
 			sysprompt = "You are a helpful assistant."
 		}
+		if useTools {
+			sysprompt += buildToolSystemPrompt()
+		}
 		userContent := kbContext + "\n\n" + input
 		messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
 		messages = append(messages, chatMessage{Role: "user", Content: userContent})
 	} else {
-		if route.SystemPrompt != "" {
-			messages = append(messages, chatMessage{Role: "system", Content: route.SystemPrompt})
+		sysprompt := route.SystemPrompt
+		if useTools {
+			if sysprompt == "" {
+				sysprompt = "You are a helpful assistant."
+			}
+			sysprompt += buildToolSystemPrompt()
+		}
+		if sysprompt != "" {
+			messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
 		}
 		messages = append(messages, chatMessage{Role: "user", Content: input})
 	}
 	if trace {
-		printStep4EffectivePrompt(messages, route)
+		printStep4EffectivePrompt(messages)
 	}
 
 	// Dry-run stops here.
@@ -628,24 +666,100 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		return sess, nil
 	}
 
-	// ── Step 5: Infer ──
+	// ── Step 5: Infer (with optional tool loop) ──
 	var t5 time.Time
 	if trace {
-		traceStep(5, "INFER", fmt.Sprintf("%s :%d", route.Tier, route.Port))
+		traceStep("5 ", "INFER")
 		t5 = time.Now()
 	}
 
 	var response string
-	if opts.noStream {
+	if useTools {
+		// Tool-enabled path always uses non-streaming so we can intercept
+		// tool_call blocks before they reach the user's terminal.
+		if trace {
+			traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (non-streaming, tools)", route.Port))
+		}
 		response, err = callSidecar(route.Port, messages, false, 8192)
 		if err != nil {
 			return sess, err
 		}
-		fmt.Println(response)
+		if trace {
+			traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+		}
+
+		const maxToolIter = 5
+		for iter := range maxToolIter {
+			calls, remaining := parseToolCalls(response)
+			if len(calls) == 0 {
+				// No tool calls — final answer.
+				fmt.Println(remaining)
+				response = remaining
+				break
+			}
+
+			// Print any text the model emitted before the tool calls.
+			if remaining != "" {
+				fmt.Println(remaining)
+			}
+
+			// Append assistant message (raw, with tool_call blocks).
+			messages = append(messages, chatMessage{Role: "assistant", Content: response})
+
+			// Execute each tool and collect results.
+			var resultBlock strings.Builder
+			for _, call := range calls {
+				if trace {
+					printToolCallTrace(call)
+				} else {
+					printToolStatus(call)
+				}
+				r := executeTool(call)
+				if trace {
+					printToolResultTrace(r)
+				}
+				resultBlock.WriteString(formatToolResult(r))
+				resultBlock.WriteByte('\n')
+			}
+
+			// Inject results as a user message.
+			messages = append(messages, chatMessage{
+				Role:    "user",
+				Content: strings.TrimSpace(resultBlock.String()),
+			})
+
+			// Continue inference with tool results.
+			if trace {
+				traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (follow-up)", route.Port))
+			}
+			response, err = callSidecar(route.Port, messages, false, 8192)
+			if err != nil {
+				return sess, err
+			}
+			if trace {
+				traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+			}
+
+			// On the last iteration, strip any remaining tool calls and print.
+			if iter == maxToolIter-1 {
+				_, remaining = parseToolCalls(response)
+				fmt.Println(remaining)
+				response = remaining
+			}
+		}
 	} else {
-		response, err = streamSidecar(route.Port, messages)
-		if err != nil {
-			return sess, err
+		// Non-tool path: unchanged behavior.
+		if opts.noStream {
+			response, err = callSidecar(route.Port, messages, false, 8192)
+			if err != nil {
+				return sess, err
+			}
+			fmt.Println(response)
+		} else {
+			response, err = streamSidecar(route.Port, messages)
+			if err != nil {
+				return sess, err
+			}
 		}
 	}
 	if trace {
@@ -691,6 +805,7 @@ var replCommands = map[string]string{
 	"/clear":   "clear session history (start fresh)",
 	"/dry-run": "toggle dry-run mode",
 	"/debug":   "toggle debug trace mode",
+	"/tools":   "cycle tool mode: auto → on → off → auto",
 	"/quit":    "exit the REPL",
 	"/help":    "show REPL commands",
 }
@@ -768,6 +883,21 @@ func runREPL(opts promptOpts) error {
 			}
 			fmt.Printf("%s %s\n", utl.Gra("debug:"), state)
 			continue
+		case "/tools":
+			switch opts.toolMode {
+			case "":
+				opts.toolMode = "on"
+			case "on":
+				opts.toolMode = "off"
+			case "off":
+				opts.toolMode = ""
+			}
+			label := "auto"
+			if opts.toolMode != "" {
+				label = opts.toolMode
+			}
+			fmt.Printf("%s %s\n", utl.Gra("tools:"), label)
+			continue
 		}
 
 		if strings.HasPrefix(input, "/cue") {
@@ -807,6 +937,8 @@ func printPromptHelp() {
 	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–4, skip inference")
 	fmt.Printf("  %-32s %s\n", "-d, --debug", "Trace all steps including inference")
 	fmt.Printf("  %-32s %s\n", "-K, --no-kb", "Disable knowledge base retrieval for this prompt")
+	fmt.Printf("  %-32s %s\n", "-T, --tools", "Force enable read-only tool use")
+	fmt.Printf("  %-32s %s\n", "    --no-tools", "Disable tool use")
 	fmt.Printf("  %-32s %s\n\n", "    --no-stream", "Collect full response before printing")
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-32s %s\n\n", "-h, -?, --help", "Show help for command")
@@ -825,6 +957,7 @@ func printPromptHelp() {
 
 // addPromptFlags registers prompt flags on cmd, bound to opts.
 func addPromptFlags(cmd *cobra.Command, opts *promptOpts) {
+	var toolsOn, noTools bool
 	cmd.Flags().StringVarP(&opts.cueName, "cue", "r", "", "Skip classification, use this cue")
 	cmd.Flags().StringVarP(&opts.category, "category", "c", "", "Classify within a category only")
 	cmd.Flags().StringVar(&opts.tier, "tier", "", "Override tier directly")
@@ -833,6 +966,25 @@ func addPromptFlags(cmd *cobra.Command, opts *promptOpts) {
 	cmd.Flags().BoolVarP(&opts.debug, "debug", "d", false, "Trace all steps including inference")
 	cmd.Flags().BoolVarP(&opts.noKB, "no-kb", "K", false, "Disable knowledge base retrieval")
 	cmd.Flags().BoolVar(&opts.noStream, "no-stream", false, "Collect full response before printing")
+	cmd.Flags().BoolVarP(&toolsOn, "tools", "T", false, "Force enable read-only tool use")
+	cmd.Flags().BoolVar(&noTools, "no-tools", false, "Disable tool use")
+
+	// Resolve toolMode after flags are parsed.
+	old := cmd.PreRunE
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if old != nil {
+			if err := old(cmd, args); err != nil {
+				return err
+			}
+		}
+		if toolsOn {
+			opts.toolMode = "on"
+		} else if noTools {
+			opts.toolMode = "off"
+		}
+		// else "" = auto
+		return nil
+	}
 }
 
 // ── Command ───────────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Tiers      map[string][]string `yaml:"tiers"`
 	EmbedModel string              `yaml:"embed_model,omitempty"` // single embed model for cue + KB
+	ToolPaths  []string            `yaml:"tool_paths,omitempty"`  // extra allowed paths for tool use
 	// Legacy fields — migrated to EmbedModel on load.
 	CueModel string `yaml:"cue_model,omitempty"`
 	KbModel  string `yaml:"kb_model,omitempty"`

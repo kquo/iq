@@ -11,7 +11,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.4.8"
+	program_version = "0.5.0"
 )
 
 func printRootHelp() {
@@ -39,6 +39,8 @@ func printRootHelp() {
 	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–4, skip inference")
 	fmt.Printf("  %-32s %s\n", "-d, --debug", "Trace all steps including inference")
 	fmt.Printf("  %-32s %s\n", "-K, --no-kb", "Disable knowledge base retrieval for this prompt")
+	fmt.Printf("  %-32s %s\n", "-T, --tools", "Force enable read-only tool use")
+	fmt.Printf("  %-32s %s\n", "    --no-tools", "Disable tool use")
 	fmt.Printf("  %-32s %s\n", "    --no-stream", "Collect full response before printing")
 	fmt.Printf("  %-32s %s\n", "-h, -?, --help", "Show this help output or the help for a specified subcommand.")
 	fmt.Printf("  %-32s %s\n\n", "-v, --version", "An alias for the \"version\" subcommand.")
