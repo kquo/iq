@@ -145,6 +145,8 @@ iq kb clear             # wipe entire kb.json
 
 ### `iq ask` — Inference and REPL
 
+One-shot prompts can be sent directly via `iq "message"` (routes through the same pipeline). The `ask` subcommand is still available for the interactive REPL (`iq ask`) and as an explicit alias.
+
 Routes user prompts through a pipeline:
 
 **1. Classify** — the user input is embedded via the embed sidecar (:27000) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected. No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running. Every prompt makes two calls: one embedding call (~10ms), then the full inference call.
@@ -284,3 +286,4 @@ append turn to session YAML
 | 0.4.4   | Merge dual embed sidecars into single `embed` sidecar on :27000; default to bge-small-en-v1.5-bf16; auto-migrate cue_model/kb_model → embed_model |
 | 0.4.5   | First-run hint for `iq svc start` when no tier models configured; update Quick Start with recommended defaults |
 | 0.4.6   | Skip embed sidecar start when model not downloaded (immediate hint); print last log lines on embed sidecar timeout |
+| 0.4.7   | Root-level prompts (`iq "message"`); `-?` help alias; extract `addPromptFlags` helper |

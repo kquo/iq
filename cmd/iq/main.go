@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
@@ -10,7 +11,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.4.6"
+	program_version = "0.4.7"
 )
 
 func printRootHelp() {
@@ -18,11 +19,12 @@ func printRootHelp() {
 	fmt.Printf("%s v%s\n", n, program_version)
 	fmt.Printf("Work with IQ from the command line.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
-	fmt.Printf("  %s <command> <subcommand> [flags]\n\n", n)
+	fmt.Printf("  %s <command> <subcommand> [flags]\n", n)
+	fmt.Printf("  %s [flags] <message>\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
 	fmt.Printf("  %-15s %s\n", "svc", "Work with IQ service daemon")
 	fmt.Printf("  %-15s %s\n", "lm", "Work with IQ language models")
-	fmt.Printf("  %-15s %s\n", "ask", "Ask a question or send a prompt to a local IQ model")
+	fmt.Printf("  %-15s %s\n", "ask", "Interactive REPL and prompt aliases")
 	fmt.Printf("  %-15s %s\n", "cue", "Work with IQ cues")
 	fmt.Printf("  %-15s %s\n", "kb", "Work with IQ knowledge base")
 	fmt.Printf("  %-15s %s\n", "perf", "Benchmark IQ model performance")
@@ -30,8 +32,20 @@ func printRootHelp() {
 	fmt.Printf("  %-15s %s\n", "status", "Show running sidecar status (alias: st)")
 	fmt.Printf("  %-15s %s\n\n", "version", "Show the current IQ version")
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
-	fmt.Printf("  %-30s %s\n", "-h, --help", "Show this help output or the help for a specified subcommand.")
-	fmt.Printf("  %-30s %s\n\n", "-v, --version", "An alias for the \"version\" subcommand.")
+	fmt.Printf("  %-32s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
+	fmt.Printf("  %-32s %s\n", "-c, --category <n>", "Classify within a category only")
+	fmt.Printf("  %-32s %s\n", "    --tier <n>", "Override tier directly, bypass cue system")
+	fmt.Printf("  %-32s %s\n", "-s, --session <id>", "Load/continue a session by ID")
+	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–4, skip inference")
+	fmt.Printf("  %-32s %s\n", "-d, --debug", "Trace all steps including inference")
+	fmt.Printf("  %-32s %s\n", "-K, --no-kb", "Disable knowledge base retrieval for this prompt")
+	fmt.Printf("  %-32s %s\n", "    --no-stream", "Collect full response before printing")
+	fmt.Printf("  %-32s %s\n", "-h, -?, --help", "Show this help output or the help for a specified subcommand.")
+	fmt.Printf("  %-32s %s\n\n", "-v, --version", "An alias for the \"version\" subcommand.")
+	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("  $ %s \"explain transformers\"\n", n)
+	fmt.Printf("  $ %s -d \"explain transformers\"\n", n)
+	fmt.Printf("  $ %s ask\n\n", n)
 }
 
 func newVersionCmd() *cobra.Command {
@@ -64,21 +78,44 @@ func newStatusCmd() *cobra.Command {
 }
 
 func runCLI() {
+	// Rewrite "-?" → "-h" so cobra sees a standard help flag.
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i] == "-?" {
+			os.Args[i] = "-h"
+		}
+	}
+
 	// Rewrite "iq -h <cmd>" → "iq <cmd> -h" so cobra routes correctly.
 	if len(os.Args) == 3 && (os.Args[1] == "-h" || os.Args[1] == "--help") {
 		os.Args = []string{os.Args[0], os.Args[2], "-h"}
 	}
 
+	var rootOpts promptOpts
+
 	root := &cobra.Command{
 		Use:          program_name,
 		SilenceUsage: true,
+		Args:         cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if v, _ := cmd.Flags().GetBool("version"); v {
 				fmt.Printf("%s v%s\n", program_name, program_version)
 				return nil
 			}
-			printRootHelp()
-			return nil
+			if len(args) == 0 {
+				printRootHelp()
+				return nil
+			}
+			input := strings.Join(args, " ")
+			var sess *session
+			if rootOpts.sessionID != "" {
+				var err error
+				sess, err = loadSession(rootOpts.sessionID)
+				if err != nil {
+					return err
+				}
+			}
+			_, err := executePrompt(input, rootOpts, sess)
+			return err
 		},
 	}
 
@@ -87,6 +124,7 @@ func runCLI() {
 	})
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.Flags().BoolP("version", "v", false, "An alias for the \"version\" subcommand.")
+	addPromptFlags(root, &rootOpts)
 
 	root.AddCommand(
 		newVersionCmd(),

@@ -796,7 +796,7 @@ func runREPL(opts promptOpts) error {
 
 func printPromptHelp() {
 	n := program_name
-	fmt.Printf("Send a prompt to a local IQ model.\n\n")
+	fmt.Printf("Start the interactive REPL or send a prompt. For one-shot prompts, '%s <message>' works too.\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s ask [flags] [message]\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
@@ -809,7 +809,7 @@ func printPromptHelp() {
 	fmt.Printf("  %-32s %s\n", "-K, --no-kb", "Disable knowledge base retrieval for this prompt")
 	fmt.Printf("  %-32s %s\n\n", "    --no-stream", "Collect full response before printing")
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
-	fmt.Printf("  %-32s %s\n\n", "-h, --help", "Show help for command")
+	fmt.Printf("  %-32s %s\n\n", "-h, -?, --help", "Show help for command")
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s ask \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s ask -n \"explain transformers\"\n", n)
@@ -821,6 +821,20 @@ func printPromptHelp() {
 	fmt.Printf("  $ echo \"translate to French: hello\" | %s ask\n\n", n)
 }
 
+// ── Shared flag wiring ────────────────────────────────────────────────────────
+
+// addPromptFlags registers prompt flags on cmd, bound to opts.
+func addPromptFlags(cmd *cobra.Command, opts *promptOpts) {
+	cmd.Flags().StringVarP(&opts.cueName, "cue", "r", "", "Skip classification, use this cue")
+	cmd.Flags().StringVarP(&opts.category, "category", "c", "", "Classify within a category only")
+	cmd.Flags().StringVar(&opts.tier, "tier", "", "Override tier directly")
+	cmd.Flags().StringVarP(&opts.sessionID, "session", "s", "", "Load/continue a session by ID")
+	cmd.Flags().BoolVarP(&opts.dryRun, "dry-run", "n", false, "Trace steps 1-4, skip inference")
+	cmd.Flags().BoolVarP(&opts.debug, "debug", "d", false, "Trace all steps including inference")
+	cmd.Flags().BoolVarP(&opts.noKB, "no-kb", "K", false, "Disable knowledge base retrieval")
+	cmd.Flags().BoolVar(&opts.noStream, "no-stream", false, "Collect full response before printing")
+}
+
 // ── Command ───────────────────────────────────────────────────────────────────
 
 func newPromptCmd() *cobra.Command {
@@ -829,7 +843,7 @@ func newPromptCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "ask [flags] [message]",
 		Aliases:      []string{"prompt"},
-		Short:        "Send a prompt to a local IQ model",
+		Short:        "Start the interactive REPL (or send a prompt)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var sess *session
@@ -869,14 +883,7 @@ func newPromptCmd() *cobra.Command {
 		printPromptHelp()
 	})
 
-	cmd.Flags().StringVarP(&opts.cueName, "cue", "r", "", "Skip classification, use this cue")
-	cmd.Flags().StringVarP(&opts.category, "category", "c", "", "Classify within a category only")
-	cmd.Flags().StringVar(&opts.tier, "tier", "", "Override tier directly")
-	cmd.Flags().StringVarP(&opts.sessionID, "session", "s", "", "Load/continue a session by ID")
-	cmd.Flags().BoolVarP(&opts.dryRun, "dry-run", "n", false, "Trace steps 1–4, skip inference")
-	cmd.Flags().BoolVarP(&opts.debug, "debug", "d", false, "Trace all steps including inference")
-	cmd.Flags().BoolVarP(&opts.noKB, "no-kb", "K", false, "Disable knowledge base retrieval")
-	cmd.Flags().BoolVar(&opts.noStream, "no-stream", false, "Collect full response before printing")
+	addPromptFlags(cmd, &opts)
 
 	return cmd
 }

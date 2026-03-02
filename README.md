@@ -43,7 +43,7 @@ iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit
 iq svc start
 
 # Run a prompt — auto-classifies and routes to the right model
-iq ask "explain how transformers work"
+iq "explain how transformers work"
 ```
 
 Any MLX-compatible embedding model works for `embed`, and any MLX-compatible
@@ -52,10 +52,13 @@ available models.
 
 ```bash
 # Debug: see classification and routing without inferring
-iq ask -n "explain how transformers work"
+iq -n "explain how transformers work"
 
 # Full trace including inference
-iq ask -d "explain how transformers work"
+iq -d "explain how transformers work"
+
+# Interactive REPL
+iq ask
 
 # Raw access to a specific sidecar, bypassing the IQ framework
 iq pry fast "hello"
@@ -68,7 +71,7 @@ iq pry slow "explain attention" -s "You are a terse assistant."
 |---------|-------------|
 | `iq lm` | Search, download, list, and manage local models |
 | `iq svc` | Start, stop, monitor sidecars; manage tier and embed config |
-| `iq ask` | Route prompts through classification and cue system |
+| `iq ask` | Interactive REPL and prompt aliases (`iq "msg"` also works) |
 | `iq pry` | Send raw messages directly to a model sidecar |
 | `iq cue` | Manage the cue library |
 | `iq kb` | Manage the knowledge base for RAG retrieval |
