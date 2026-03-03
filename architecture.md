@@ -480,3 +480,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.4.8   | Consolidate 58→17 cues across 8 categories; keyword-rich descriptions for embedding separation; lower classifyMinScore 0.68→0.40; bench accuracy 29%→100% (28/28); print threshold in bench output |
 | 0.5.0   | Embed-based tool detection replaces keyword lists; reuse input vector from classify step (zero extra API calls); new debug trace format with step headers, call/task sub-fields, and Step 1b tool detect |
 | 0.5.1   | Architecture docs rewritten: add tool system, perf/bench, debug trace format, embed sidecar details, hybrid KB scoring, structure-aware chunking, source file map; fix diagram and data flow |
+| 0.5.2   | Fix `iq pry` to resolve embed sidecar by model ID; reject embed models with clear error instead of 404 |

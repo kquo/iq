@@ -233,14 +233,9 @@ func traceBlock(role, content string, highlightUser bool) {
 
 // printStep1Classify prints the embedding classification trace.
 func printStep1Classify(t *embedClassifyTrace) {
-	// Derive short model name from the full HF ID.
-	shortModel := t.Model
-	if i := strings.LastIndex(shortModel, "/"); i >= 0 {
-		shortModel = shortModel[i+1:]
-	}
 	traceStep("1 ", "CLASSIFY")
-	traceField("call", fmt.Sprintf("embed %s @ localhost:%d", shortModel, embedPortConst))
 	traceField("task", "Cosine-similarity match user input against 17 cue descriptions")
+	traceField("call", fmt.Sprintf("model %s @ localhost:%d", t.Model, embedPortConst))
 	traceField("resolved_cue", fmt.Sprintf("%s (score: %.4f)", t.Resolved, t.Score))
 	if !t.CacheHit {
 		traceField("cache", "rebuilt")
@@ -263,29 +258,19 @@ func printStep1bToolDetect(tt *toolClassifyTrace) {
 
 // printStep2Route prints the routing decision.
 func printStep2Route(route *routeResult, elapsed time.Duration) {
-	// Derive short model name from HF ID.
-	shortModel := route.ModelID
-	if i := strings.LastIndex(shortModel, "/"); i >= 0 {
-		shortModel = shortModel[i+1:]
-	}
 	traceStep("2 ", "RESOLVE ROUTE")
 	traceField("task", "Map resolved cue to model tier and running sidecar")
+	traceField("model", fmt.Sprintf("%s @ localhost:%d", route.ModelID, route.Port))
 	traceField("cue", fmt.Sprintf("%s → %s/%s", route.CueName, route.Category, route.Tier))
-	traceField("model", fmt.Sprintf("%s @ localhost:%d", shortModel, route.Port))
 	traceField("tier_source", route.TierSource)
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
 // printStep3KB prints the knowledge base retrieval trace.
 func printStep3KB(results []kbResult, model string, elapsed time.Duration) {
-	// Derive short model name from HF ID.
-	shortModel := model
-	if i := strings.LastIndex(shortModel, "/"); i >= 0 {
-		shortModel = shortModel[i+1:]
-	}
 	traceStep("3 ", "KB RETRIEVE")
-	traceField("call", fmt.Sprintf("embed %s @ localhost:%d", shortModel, embedPortConst))
 	traceField("task", "Cosine-similarity search user input against KB chunks")
+	traceField("call", fmt.Sprintf("model %s @ localhost:%d", model, embedPortConst))
 	traceField("chunks", fmt.Sprintf("%d results", len(results)))
 	for _, r := range results {
 		traceField("top", fmt.Sprintf("score:%.4f  %s:%d–%d",

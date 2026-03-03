@@ -99,12 +99,30 @@ func newProbeCmd() *cobra.Command {
 					return err
 				}
 			default:
+				// Try by slug first (e.g. state file keyed by model ID).
 				sidecar, err = readState(target)
 				if err != nil {
 					return err
 				}
+				// If not found by slug, scan all live states for a matching Model field.
+				// This handles the embed sidecar whose state is keyed as "embed" but
+				// whose Model field holds the full HF model ID.
+				if sidecar == nil || !pidAlive(sidecar.PID) {
+					live, lErr := allLiveStates()
+					if lErr == nil {
+						for _, s := range live {
+							if s.Model == target {
+								sidecar = s
+								break
+							}
+						}
+					}
+				}
 				if sidecar == nil || !pidAlive(sidecar.PID) {
 					return fmt.Errorf("%s is not running — run 'iq svc start %s' first", target, target)
+				}
+				if sidecar.Tier == "embed" {
+					return fmt.Errorf("%s is an embedding model — it does not support chat inference", target)
 				}
 			}
 

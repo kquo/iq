@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+## Interaction Mode
+- Treat all input as exploratory discussion. Only produce artifacts or make changes when explicitly authorized
+
 ## Project Overview
 - This is a Go project. Utilities live under ./cmd/<utility_name>
 - Build script `./build.sh`
