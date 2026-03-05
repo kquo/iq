@@ -696,7 +696,7 @@ var toolSignals = []toolSignal{
 
 const (
 	toolCacheFile         = "tool_embeddings.json"
-	toolMinScore  float32 = 0.50
+	toolMinScore  float32 = 0.72
 )
 
 // ── Tool embedding cache ─────────────────────────────────────────────────────

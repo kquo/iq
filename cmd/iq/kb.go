@@ -109,9 +109,9 @@ var textExtensions = map[string]bool{
 
 const (
 	embedBatch = 20   // chunks per embed request
-	kbMinScore = 0.50 // minimum cosine similarity to inject
+	kbMinScore = 0.72 // minimum cosine similarity to inject
 	kbMaxRunes = 1600 // max runes per chunk text sent to embedder
-	kbDefaultK = 5    // default top-K for retrieval
+	kbDefaultK = 3    // default top-K for retrieval
 )
 
 // goSymbolRe matches top-level Go declarations that start a new semantic chunk.

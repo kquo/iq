@@ -116,12 +116,12 @@ iq ask "how does the auth middleware work?"
     │
     ├── embed user input → query vector
     ├── hybrid scoring: cosine_similarity + keyword boost — Go, in-memory
-    ├── top-5 chunks retrieved (score ≥ 0.50 threshold)
+    ├── top-3 chunks retrieved (score ≥ 0.72 threshold)
     ├── injected as plain text context in user message:
     │     "Relevant context from knowledge base:
-    │      ─── /path/to/middleware.go (lines 42–81) ───
+    │      KB Result Chunk 01: /path/to/middleware.go (lines 42–81)
     │      <chunk text>
-    │      ─── /path/to/README.md (lines 12–51) ───
+    │      KB Result Chunk 02: /path/to/README.md (lines 12–51)
     │      <chunk text>"
     └── inference proceeds as normal — model sees your actual code
 ```
@@ -170,7 +170,7 @@ The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first u
 
 1. **Forced** — `-T` flag forces tools on; `--no-tools` forces them off.
 2. **File-path heuristic** — deterministic check for slash-separated paths (excluding URLs) or words ending in known source-code extensions (`.go`, `.py`, `.md`, `.json`, etc.).
-3. **Embed-based signal matching** — reuses the input vector already computed in Step 1 (zero extra API calls). Compares against 4 pre-embedded tool signal descriptions via cosine similarity. If the best match exceeds the tool threshold (0.50), tools are enabled.
+3. **Embed-based signal matching** — reuses the input vector already computed in Step 1 (zero extra API calls). Compares against 4 pre-embedded tool signal descriptions via cosine similarity. If the best match exceeds the tool threshold (0.72), tools are enabled.
 
 The 4 tool signals and the tools they cover:
 
@@ -185,7 +185,7 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 2 — ROUTE.** Resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
 
-**Step 3 — KB RETRIEVE.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-5 most similar chunks are retrieved via hybrid scoring and injected as plain text context in the user message. Skipped silently if KB is empty or unavailable.
+**Step 3 — KB RETRIEVE.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-3 most similar chunks are retrieved via hybrid scoring and injected as plain text context in the user message. Skipped silently if KB is empty or unavailable.
 
 **Step 4 — ASSEMBLE.** Combines system prompt (from cue, plus tool instructions if tools enabled), session history (if any), and user message (with KB context prepended if any) into the structured message array sent to inference.
 
@@ -196,7 +196,7 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 When tools are enabled, inference runs in a non-streaming tool loop (up to 5 iterations):
 1. Model generates a response (may contain `<tool_call>` blocks)
 2. Parser extracts tool calls — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON
-3. Each tool is executed, results injected as `<tool_result>` user messages
+3. Each tool is executed; results are prefixed with "Use the tool result below to answer my original question." and injected as `<tool_result>` user messages
 4. Inference continues with the tool results in context
 5. Loop ends when the model produces a response with no tool calls, or after 5 iterations
 
@@ -346,7 +346,7 @@ STEP 1b  TOOL DETECT
   -T/--no-tools flag? → forced
   hasFilePath(input)? → enabled (deterministic)
   else: cosine_similarity(input_vec, tool_signal_vecs[])
-  best score ≥ 0.50 → tools enabled
+  best score ≥ 0.72 → tools enabled
     │
     ▼
 STEP 2  RESOLVE ROUTE
@@ -358,7 +358,7 @@ STEP 2  RESOLVE ROUTE
 STEP 3  KB RETRIEVE  (if kb.json exists && embed running && !--no-kb)
   POST /embed → query vector (embed :27000)
   hybrid scoring: cosine_similarity + keyword boost — Go, in-memory
-  top-5 chunks (score ≥ 0.50) → plain text context block
+  top-3 chunks (score ≥ 0.72) → plain text context block
     │
     ▼
 STEP 4  ASSEMBLE
@@ -396,8 +396,8 @@ IQ prints a detailed **debug trace** of each step when run with **`-d` or `--deb
 
 ```
 STEP 1  CLASSIFY
-  call          embed bge-small-en-v1.5-bf16 @ localhost:27000
   task          Cosine-similarity match user input against 17 cue descriptions
+  call          embed bge-small-en-v1.5-bf16 @ localhost:27000
   resolved_cue  initial (score: 0.5457)
   elapsed       40ms
 
@@ -415,9 +415,9 @@ STEP 2  RESOLVE ROUTE
   elapsed       0ms
 
 STEP 3  KB RETRIEVE
-  call          embed bge-small-en-v1.5-bf16 @ localhost:27000
   task          Cosine-similarity search user input against KB chunks
-  chunks        5 results
+  call          embed bge-small-en-v1.5-bf16 @ localhost:27000
+  chunks        3 results
   top           score:0.7219  svc.go:245–264
   elapsed       65ms
 
@@ -507,3 +507,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.1   | Architecture docs rewritten: add tool system, perf/bench, debug trace format, embed sidecar details, hybrid KB scoring, structure-aware chunking, source file map; fix diagram and data flow |
 | 0.5.2   | Fix `iq pry` to resolve embed sidecar by model ID; reject embed models with clear error instead of 404 |
 | 0.5.3   | Response cache (Steps 4b/5b): FNV64a-keyed response cache with 1h TTL, --no-cache flag; rename Step 4→ASSEMBLE, Step 5→INFERENCE LOOP; capitalize all step names; add pass numbers to tool loop trace; add call trace for non-tool path |
+| 0.5.4   | Tune KB and tool thresholds: kbMinScore 0.50→0.72, kbDefaultK 5→3, toolMinScore 0.50→0.72; use kbDefaultK constant in all call sites; instruct model to use tool results on follow-up pass |

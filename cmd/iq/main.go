@@ -11,7 +11,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.5.3"
+	program_version = "0.5.4"
 )
 
 func printRootHelp() {

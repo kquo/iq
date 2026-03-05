@@ -648,7 +648,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	var kbContext string
 	if kbExists() && !opts.noKB && embedSidecarAlive() {
 		t3 := time.Now()
-		results, kbErr := KBSearch(input, 5)
+		results, kbErr := KBSearch(input, kbDefaultK)
 		if kbErr == nil && len(results) > 0 {
 			kbContext = KBContext(results)
 			if trace {
@@ -814,7 +814,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				// Inject results as a user message.
 				messages = append(messages, chatMessage{
 					Role:    "user",
-					Content: strings.TrimSpace(resultBlock.String()),
+					Content: "Use the tool result below to answer my original question.\n\n" + strings.TrimSpace(resultBlock.String()),
 				})
 
 				// Continue inference with tool results.
