@@ -1,6 +1,6 @@
 # IQ
 
-IQ is a command-line tool for running and orchestrating **local** LLMs on Apple Silicon. It manages model downloads, runs inference sidecars via `mlx_lm`, and routes prompts through a classification layer that selects the right model and cue for each task. All inference runs **locally** — no cloud dependency, no data leaving your machine.
+IQ is a command-line tool for managing **offline generative AI systems** on Apple Silicon. It handles local LLM downloads, runs inference sidecars via `mlx_lm`, and routes prompts through a classification layer that selects the right model and cue for each task. The underlying AI models run entirely **on-device**, while IQ provides the CLI interface, workflow management, and task orchestration — all with no cloud dependency and no data leaving your machine.
 
 For a detailed technical overview, see [architecture.md](architecture.md).
 
@@ -18,13 +18,13 @@ A personal tool for experimenting with LLM orchestration directly from the Mac t
 
 ## Getting Started
 
+Requires Go installed with `$GOPATH/bin` in your `$PATH`.
+
 ```bash
 git clone https://github.com/kquo/iq
 cd iq
 ./build.sh
 ```
-
-Requires Go installed with `$GOPATH/bin` in your `$PATH`.
 
 ## Quick Start
 
@@ -46,9 +46,7 @@ iq svc start
 iq "explain how transformers work"
 ```
 
-Any MLX-compatible embedding model works for `embed`, and any MLX-compatible
-generative model works for `fast` / `slow` tiers. Use `iq lm search` to browse
-available models.
+Any MLX-compatible embedding model works for `embed`, and any MLX-compatible generative model works for `fast` / `slow` tiers. Use `iq lm search` to browse available models.
 
 ```bash
 # Debug: see classification and routing without inferring

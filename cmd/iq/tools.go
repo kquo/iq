@@ -378,7 +378,7 @@ func toolCountLines() tool {
 // system message when tools are active.
 func buildToolSystemPrompt() string {
 	var b strings.Builder
-	b.WriteString("\n\n--- TOOLS ---\n")
+	b.WriteString("\n[tools]\n")
 	b.WriteString("You have access to read-only tools. To call a tool, you MUST use this exact format:\n")
 	b.WriteString("<tool_call>{\"name\": \"TOOL_NAME\", \"args\": {}}</tool_call>\n\n")
 	b.WriteString("Rules:\n")
@@ -401,7 +401,6 @@ func buildToolSystemPrompt() string {
 			}
 		}
 	}
-	b.WriteString("\n--- END TOOLS ---")
 	return b.String()
 }
 

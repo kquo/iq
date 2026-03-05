@@ -654,12 +654,9 @@ func KBContext(results []kbResult) string {
 	}
 	var sb strings.Builder
 	sb.WriteString("Relevant context from knowledge base:\n")
-	for _, r := range results {
-		header := fmt.Sprintf("\n─── %s", r.Chunk.Source)
-		if r.Chunk.Label != "" {
-			header += " — " + r.Chunk.Label
-		}
-		header += fmt.Sprintf(" (lines %d–%d) ───\n", r.Chunk.LineStart, r.Chunk.LineEnd)
+	for i, r := range results {
+		header := fmt.Sprintf("\nKB Result Chunk %02d: %s (lines %d–%d)\n",
+			i+1, r.Chunk.Source, r.Chunk.LineStart, r.Chunk.LineEnd)
 		sb.WriteString(header)
 		sb.WriteString(r.Chunk.Text)
 		sb.WriteString("\n")
