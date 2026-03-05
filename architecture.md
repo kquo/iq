@@ -2,8 +2,7 @@
 
 ## Overview
 
-IQ is a local LLM orchestration tool for Apple Silicon. It manages the full lifecycle of MLX-format language models — discovery, download, tier assignment, cue management, knowledge base, runtime serving, and intelligent prompt routing — through a unified CLI. All inference runs locally with no cloud dependency.
-
+IQ is a local generative AI system for Apple Silicon, capable of running LLMs entirely offline with no cloud dependency. The **`iq`** CLI binary orchestrates this system — managing model downloads, tier assignment, cue definitions, knowledge base access, sidecar processes, and intelligent prompt routing — all from a unified command-line interface.
 
 ## System Diagram
 
