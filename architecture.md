@@ -409,8 +409,8 @@ STEP 1b TOOL DETECT
 
 STEP 2  RESOLVE ROUTE
   task          Map resolved cue to model tier and running sidecar
-  cue           initial → general/fast
   model         Llama-3.2-3B-Instruct-4bit @ localhost:27001
+  cue           initial → general/fast
   tier_source   suggested_tier
   elapsed       0ms
 
@@ -508,3 +508,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.2   | Fix `iq pry` to resolve embed sidecar by model ID; reject embed models with clear error instead of 404 |
 | 0.5.3   | Response cache (Steps 4b/5b): FNV64a-keyed response cache with 1h TTL, --no-cache flag; rename Step 4→ASSEMBLE, Step 5→INFERENCE LOOP; capitalize all step names; add pass numbers to tool loop trace; add call trace for non-tool path |
 | 0.5.4   | Tune KB and tool thresholds: kbMinScore 0.50→0.72, kbDefaultK 5→3, toolMinScore 0.50→0.72; use kbDefaultK constant in all call sites; instruct model to use tool results on follow-up pass |
+| 0.5.5   | Arg validation UX: wrong/missing args now print yellow error + full command help instead of bare error message |

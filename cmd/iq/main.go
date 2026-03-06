@@ -11,8 +11,23 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.5.4"
+	program_version = "0.5.5"
 )
+
+// errSilent is returned when the error has already been printed.
+var errSilent = fmt.Errorf("")
+
+// argsUsage wraps a cobra arg validator to print yellow error + help on failure.
+func argsUsage(v cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := v(cmd, args); err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n\n", utl.Yel(err.Error()))
+			cmd.Help()
+			return errSilent
+		}
+		return nil
+	}
+}
 
 func printRootHelp() {
 	n := program_name
@@ -141,7 +156,11 @@ func runCLI() {
 		newStatusCmd(),
 	)
 
+	root.SilenceErrors = true
 	if err := root.Execute(); err != nil {
+		if err != errSilent {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		}
 		os.Exit(1)
 	}
 }

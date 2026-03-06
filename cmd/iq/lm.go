@@ -480,7 +480,7 @@ func newLmSearchCmd() *cobra.Command {
 		Use:          "search [query|count]",
 		Short:        "Search MLX model registry on Hugging Face",
 		SilenceUsage: true,
-		Args:         cobra.MaximumNArgs(1),
+		Args:         argsUsage(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := ""
 			if len(args) > 0 {
@@ -534,7 +534,7 @@ func newLmGetCmd() *cobra.Command {
 		Use:          "get <model>",
 		Short:        "Download a model from the registry",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			model := args[0]
 
@@ -707,7 +707,7 @@ func newLmShowCmd() *cobra.Command {
 		Use:          "show <model>",
 		Short:        "Show details for a specific model",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			entries, err := loadManifest()
 			if err != nil {
@@ -795,7 +795,7 @@ func newLmRmCmd() *cobra.Command {
 		Use:          "rm <model>",
 		Short:        "Remove a model",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			model := args[0]
 			cacheDir := hfCacheDir(model)

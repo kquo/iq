@@ -254,7 +254,7 @@ func newCueShowCmd() *cobra.Command {
 		Use:          "show <name>",
 		Short:        "Show full details for a cue",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cues, err := loadCues()
 			if err != nil {
@@ -300,7 +300,7 @@ func newCueAddCmd() *cobra.Command {
 		Use:          "add <name>",
 		Short:        "Add a new cue",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			cues, err := loadCues()
@@ -373,7 +373,7 @@ func newCueEditCmd() *cobra.Command {
 		Use:          "edit <name>",
 		Short:        "Edit an existing cue in $EDITOR",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cues, err := loadCues()
 			if err != nil {
@@ -444,7 +444,7 @@ func newCueRmCmd() *cobra.Command {
 		Use:          "rm <name>",
 		Short:        "Remove a cue",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cues, err := loadCues()
 			if err != nil {
@@ -479,7 +479,7 @@ func newCueAssignCmd() *cobra.Command {
 		Use:          "assign <name> <model>",
 		Short:        "Assign a model to a cue",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(2),
+		Args:         argsUsage(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cueName, modelID := args[0], args[1]
 			cues, err := loadCues()
@@ -517,7 +517,7 @@ func newCueUnassignCmd() *cobra.Command {
 		Use:          "unassign <name>",
 		Short:        "Clear the model assignment for a cue",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cues, err := loadCues()
 			if err != nil {
@@ -549,7 +549,7 @@ func newCueResetCmd() *cobra.Command {
 		Use:          "reset [name]",
 		Short:        "Reset all or one cue to factory defaults",
 		SilenceUsage: true,
-		Args:         cobra.MaximumNArgs(1),
+		Args:         argsUsage(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			defaults, err := loadDefaultCues()
 			if err != nil {

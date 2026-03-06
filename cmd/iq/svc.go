@@ -636,7 +636,7 @@ func newSvcStartCmd() *cobra.Command {
 		Use:          "start [tier|model]",
 		Short:        "Start sidecars for all, a tier pool, or a specific model",
 		SilenceUsage: true,
-		Args:         cobra.MaximumNArgs(1),
+		Args:         argsUsage(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			arg := ""
 			if len(args) > 0 {
@@ -749,7 +749,7 @@ func newSvcStopCmd() *cobra.Command {
 		Use:          "stop [tier|model]",
 		Short:        "Stop sidecars for all, a tier pool, or a specific model",
 		SilenceUsage: true,
-		Args:         cobra.MaximumNArgs(1),
+		Args:         argsUsage(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			arg := ""
 			if len(args) > 0 {
@@ -844,7 +844,7 @@ func newSvcTierAddCmd() *cobra.Command {
 		Use:          "add <tier> <model>",
 		Short:        "Add a model to a tier pool",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(2),
+		Args:         argsUsage(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tier, modelID := args[0], args[1]
 			if tier != "fast" && tier != "slow" {
@@ -885,7 +885,7 @@ func newSvcTierRmCmd() *cobra.Command {
 		Use:          "rm <tier> <model>",
 		Short:        "Remove a model from a tier pool",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(2),
+		Args:         argsUsage(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tier, modelID := args[0], args[1]
 			cfg, err := loadConfig()
@@ -976,7 +976,7 @@ func newSvcEmbedSetCmd() *cobra.Command {
 		Use:          "set <model>",
 		Short:        "Set embed model and restart sidecar",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			modelName := args[0]
 			cfg, err := loadConfig()
@@ -1006,7 +1006,7 @@ func newSvcEmbedRmCmd() *cobra.Command {
 		Use:          "rm",
 		Short:        "Revert embed model to default and restart sidecar",
 		SilenceUsage: true,
-		Args:         cobra.NoArgs,
+		Args:         argsUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

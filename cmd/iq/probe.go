@@ -44,7 +44,7 @@ func newProbeCmd() *cobra.Command {
 		Aliases:      []string{"probe"},
 		Short:        "Send a raw message directly to a model sidecar",
 		SilenceUsage: true,
-		Args:         cobra.MinimumNArgs(2),
+		Args:         argsUsage(cobra.MinimumNArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cueName != "" && system != "" {
 				return fmt.Errorf("--cue and --system are mutually exclusive — use one or the other")

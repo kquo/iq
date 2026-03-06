@@ -848,7 +848,7 @@ func newKbIngestCmd() *cobra.Command {
 		Aliases:      []string{"in"},
 		Short:        "Ingest a file or directory into the knowledge base",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return kbIngest(args[0])
 		},
@@ -897,7 +897,7 @@ func newKbSearchCmd() *cobra.Command {
 		Use:          "search <query>",
 		Short:        "Run a raw similarity search against the knowledge base",
 		SilenceUsage: true,
-		Args:         cobra.MinimumNArgs(1),
+		Args:         argsUsage(cobra.MinimumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !kbExists() {
 				return fmt.Errorf("knowledge base is empty — run: iq kb ingest <path>")
@@ -974,7 +974,7 @@ func newKbRmCmd() *cobra.Command {
 		Use:          "rm <path>",
 		Short:        "Remove a source from the knowledge base",
 		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			abs, err := filepath.Abs(args[0])
 			if err != nil {
