@@ -193,11 +193,11 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 5 — INFERENCE LOOP.** Sends to the target sidecar via `POST /v1/chat/completions`. Non-tool path streams tokens to stdout by default.
 
-When tools are enabled, inference runs in a non-streaming tool loop (up to 5 iterations):
-1. Model generates a response (may contain `<tool_call>` blocks)
-2. Parser extracts tool calls — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON
-3. Each tool is executed; results are prefixed with "Use the tool result below to answer my original question." and injected as `<tool_result>` user messages
-4. Inference continues with the tool results in context
+When tools are enabled, inference runs in a non-streaming loop (up to 5 iterations) driven entirely by IQ's Go code:
+1. Model generates a response (may contain `<tool_call>` request blocks — the model does not execute anything)
+2. IQ's parser extracts tool calls — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON
+3. IQ validates and executes each tool; results are prefixed with "Use the tool result below to answer my original question." and injected as `<tool_result>` user messages
+4. IQ re-calls the model with tool results in context
 5. Loop ends when the model produces a response with no tool calls, or after 5 iterations
 
 **Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Non-streaming mode strips think blocks from the full response.
@@ -225,6 +225,8 @@ When tools are enabled, inference runs in a non-streaming tool loop (up to 5 ite
 
 ### Tools
 
+> **How tool use actually works.** The model never executes anything — it is a sandboxed token predictor with no OS access, no network, and no file system. What happens: IQ's system prompt gives the model a list of tool definitions (name, description, parameter schema). When the model decides a tool would help, it emits a structured `<tool_call>` block — not an execution, just a formatted request. IQ's Go code detects that syntax, validates the call, runs the actual function, and injects the result back into the conversation as a new message. The model then continues from there. The "agentic" behaviour is a loop IQ drives: call model → check for tool calls → execute tool → append result → call model again → repeat until the model emits a plain-text response. The model cannot initiate anything between turns, cannot run in the background, and cannot do anything IQ's harness code does not explicitly handle. This is why all tools are read-only and file paths are validated before execution — IQ is the one pulling the trigger.
+
 In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), seven read-only tools are available. All file-access tools enforce path security: only the current working directory and paths listed in `config.yaml` `tool_paths` are allowed. Paths are resolved through symlinks and checked via prefix matching.
 
 | Tool | Parameters | Description |
@@ -237,7 +239,7 @@ In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), seven read-only to
 | `search_text` | `pattern` (required), `path` | Regex search across files (max 50 matches, skips .git/vendor/etc.) |
 | `count_lines` | `path` (required) | Count lines in a file |
 
-The tool system prompt is appended to the system message when tools are active. It instructs the model to use `<tool_call>{"name": "...", "args": {...}}</tool_call>` format, provides examples, and lists all available tools with their parameters.
+The tool system prompt is appended to the system message when tools are active. It lists all available tools with their parameter schemas and instructs the model to use `<tool_call>{"name": "...", "args": {...}}</tool_call>` format.
 
 ### Raw Sidecar Access
 
