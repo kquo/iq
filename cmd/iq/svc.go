@@ -336,7 +336,7 @@ func startSidecar(tier, modelID string) error {
 		return fmt.Errorf("started (pid %d) but failed to write state: %w", cmd.Process.Pid, err)
 	}
 
-	fmt.Printf("  %-6s  pid %-7d  %s  ",
+	fmt.Printf("  %-11s  pid %-7d  %s  ",
 		tier, cmd.Process.Pid, sidecarEndpoint(port))
 	healthURL := fmt.Sprintf("%s/v1/models", sidecarEndpoint(port))
 	deadline := time.Now().Add(sidecarReadyTimeout)

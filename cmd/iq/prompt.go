@@ -618,6 +618,28 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		printStep1Classify(et)
 	}
 
+	// ── Step 1b: TOOL DETECT ──
+	useTools := false
+	var tt *toolClassifyTrace
+	switch opts.toolMode {
+	case "on":
+		useTools = true
+		tt = &toolClassifyTrace{Enabled: true, Reason: "forced"}
+	case "off":
+		useTools = false
+		tt = &toolClassifyTrace{Enabled: false, Reason: "forced"}
+	default:
+		useTools = hasFilePath(input)
+		if useTools {
+			tt = &toolClassifyTrace{Enabled: true, Reason: "file path"}
+		} else if et != nil && len(et.InputVec) > 0 {
+			useTools, tt = toolClassify(et.InputVec, et.Model)
+		}
+	}
+	if trace && tt != nil {
+		printStep1bToolDetect(tt)
+	}
+
 	// ── Step 2: RESOLVE ROUTE ──
 	var route *routeResult
 	t2 := time.Now()
@@ -665,28 +687,6 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 4: ASSEMBLE ──
 
-	// Determine whether tools are active.
-	useTools := false
-	var tt *toolClassifyTrace
-	switch opts.toolMode {
-	case "on":
-		useTools = true
-		tt = &toolClassifyTrace{Enabled: true, Reason: "forced"}
-	case "off":
-		useTools = false
-		tt = &toolClassifyTrace{Enabled: false, Reason: "forced"}
-	default:
-		useTools = hasFilePath(input)
-		if useTools {
-			tt = &toolClassifyTrace{Enabled: true, Reason: "file path"}
-		} else if et != nil && len(et.InputVec) > 0 {
-			useTools, tt = toolClassify(et.InputVec, et.Model)
-		}
-	}
-	if trace && tt != nil {
-		printStep1bToolDetect(tt)
-	}
-
 	var messages []chatMessage
 	if sess != nil && len(sess.Messages) > 0 {
 		messages = append(messages, sess.Messages...)
@@ -728,7 +728,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	}
 
 	// ── Step 4b: CACHE CHECK ──
-	useCache := !opts.noCache && sess == nil
+	useCache := !opts.noCache && sess == nil && !useTools
 	var cacheK string
 	cacheHit := false
 	var response string
@@ -777,11 +777,42 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
 			}
 
+			// Tool guard: if pass 1 has no tool calls but Step 1b detected
+			// a tool signal via embedding, reprompt once to force tool use.
+			guardFired := false
+			if tt != nil && tt.Reason == "embed" {
+				calls, _ := parseToolCalls(response)
+				if len(calls) == 0 {
+					expected := signalToolNames(tt.BestSignal)
+					if len(expected) > 0 {
+						guardFired = true
+						if trace {
+							traceField("guard", fmt.Sprintf("no tool call — reprompting for %s", strings.Join(expected, ", ")))
+						}
+						messages = append(messages, chatMessage{Role: "assistant", Content: response})
+						messages = append(messages, chatMessage{
+							Role:    "user",
+							Content: fmt.Sprintf("Your previous response answered directly instead of calling a tool. You MUST call one of these tools to answer: %s. Produce a <tool_call> block.", strings.Join(expected, ", ")),
+						})
+						response, err = callSidecar(route.Port, messages, false, 8192)
+						if err != nil {
+							return sess, err
+						}
+						if trace {
+							traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+						}
+					}
+				}
+			}
+
 			const maxToolIter = 5
 			for iter := range maxToolIter {
 				calls, remaining := parseToolCalls(response)
 				if len(calls) == 0 {
 					// No tool calls — final answer.
+					if guardFired && trace {
+						traceField("guard", "model still declined tool use — accepting response")
+					}
 					fmt.Println(remaining)
 					response = remaining
 					break

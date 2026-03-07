@@ -131,7 +131,7 @@ func startEmbedSidecar() error {
 		fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: failed to register embed model in manifest: "+err.Error()))
 	}
 
-	fmt.Printf("  %-9s  pid %-7d  %s  ", slug, cmd.Process.Pid, sidecarEndpoint(port))
+	fmt.Printf("  %-11s  pid %-7d  %s  ", slug, cmd.Process.Pid, sidecarEndpoint(port))
 	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
 	deadline := time.Now().Add(embedReadyTimeout)
 	client := &http.Client{Timeout: 2 * time.Second}

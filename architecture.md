@@ -189,16 +189,17 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 4 — ASSEMBLE.** Combines system prompt (from cue, plus tool instructions if tools enabled), session history (if any), and user message (with KB context prepended if any) into the structured message array sent to inference.
 
-**Step 4b — CACHE CHECK.** Computes an FNV64a hash over the assembled message array and model ID, then looks up the hash in `~/.config/iq/response_cache.json`. On a hit (entry exists and is within the 1-hour TTL), the cached response is returned immediately and inference is skipped entirely. Disabled in session mode (multi-turn context invalidates the cache) and via `--no-cache`.
+**Step 4b — CACHE CHECK.** Computes an FNV64a hash over the assembled message array and model ID, then looks up the hash in `~/.config/iq/response_cache.json`. On a hit (entry exists and is within the 1-hour TTL), the cached response is returned immediately and inference is skipped entirely. Disabled in session mode, when tools are enabled (tool results depend on live execution), and via `--no-cache`.
 
 **Step 5 — INFERENCE LOOP.** Sends to the target sidecar via `POST /v1/chat/completions`. Non-tool path streams tokens to stdout by default.
 
 When tools are enabled, inference runs in a non-streaming loop (up to 5 iterations) driven entirely by IQ's Go code:
 1. Model generates a response (may contain `<tool_call>` request blocks — the model does not execute anything)
-2. IQ's parser extracts tool calls — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON
-3. IQ validates and executes each tool; results are prefixed with "Use the tool result below to answer my original question." and injected as `<tool_result>` user messages
-4. IQ re-calls the model with tool results in context
-5. Loop ends when the model produces a response with no tool calls, or after 5 iterations
+2. **Tool guard** — if pass 1 contains no tool calls but Step 1b detected a tool signal via embedding, IQ reprompts once with a forceful instruction naming the expected tool(s). One retry only; if the model still declines, the response is accepted as-is
+3. IQ's parser extracts tool calls — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON
+4. IQ validates and executes each tool; results are prefixed with "Use the tool result below to answer my original question." and injected as `<tool_result>` user messages
+5. IQ re-calls the model with tool results in context
+6. Loop ends when the model produces a response with no tool calls, or after 5 iterations
 
 **Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Non-streaming mode strips think blocks from the full response.
 
@@ -369,7 +370,7 @@ STEP 4  ASSEMBLE
   user:      kb_context (if any) + input
     │
     ▼
-STEP 4b CACHE CHECK  (if !session && !--no-cache)
+STEP 4b CACHE CHECK  (if !session && !tools && !--no-cache)
   FNV64a hash of messages[] + model ID → lookup response_cache.json
   ├── hit (within 1h TTL): return cached response, skip to STEP 6
   └── miss: continue to inference
@@ -379,6 +380,7 @@ STEP 5  INFERENCE LOOP  (skipped on cache hit)
   ├── no tools: SSE stream → stdout (token by token)
   └── tools: non-streaming loop (up to 5 passes)
        pass 1: model response → parse <tool_call> blocks
+       tool guard: if no tool calls but Step 1b detected signal → reprompt once
        execute tools → inject <tool_result>
        pass N: re-infer with tool results
        loop until no tool calls remain
@@ -446,6 +448,12 @@ STEP 5  INFERENCE LOOP
   raw_resp      "The current time is..."
   elapsed       1200ms
 
+  # If pass 1 had no tool call but Step 1b detected a signal:
+  # guard         no tool call — reprompting for get_time
+  # raw_resp      "<tool_call>{...}</tool_call>"   (retry succeeded)
+  # — or —
+  # guard         model still declined tool use — accepting response
+
 STEP 5b CACHE WRITE
   task          Store response in cache
   key           a3f7c2e1deadbeef
@@ -510,4 +518,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.2   | Fix `iq pry` to resolve embed sidecar by model ID; reject embed models with clear error instead of 404 |
 | 0.5.3   | Response cache (Steps 4b/5b): FNV64a-keyed response cache with 1h TTL, --no-cache flag; rename Step 4→ASSEMBLE, Step 5→INFERENCE LOOP; capitalize all step names; add pass numbers to tool loop trace; add call trace for non-tool path |
 | 0.5.4   | Tune KB and tool thresholds: kbMinScore 0.50→0.72, kbDefaultK 5→3, toolMinScore 0.50→0.72; use kbDefaultK constant in all call sites; instruct model to use tool results on follow-up pass |
-| 0.5.5   | Arg validation UX: wrong/missing args now print yellow error + full command help instead of bare error message |
+| 0.5.5   | Arg validation UX: yellow error + command help on wrong args; move Step 1b before Step 2; tool guard reprompt on pass-1 simulation; disable cache when tools enabled; document tool execution model in architecture.md |

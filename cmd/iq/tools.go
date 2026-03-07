@@ -56,6 +56,16 @@ func init() {
 	}
 }
 
+// signalToolNames returns the tool names associated with a signal, or nil.
+func signalToolNames(signal string) []string {
+	for _, s := range toolSignals {
+		if s.Name == signal {
+			return s.Tools
+		}
+	}
+	return nil
+}
+
 // findTool returns the tool with the given name, or nil.
 func findTool(name string) *tool {
 	for i := range toolRegistry {
