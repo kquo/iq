@@ -226,6 +226,33 @@ func pickSidecar(tier string, preferSmallest bool) (*svcState, error) {
 	return candidates[0], nil
 }
 
+// isVisionModel checks a model's config.json for vision-language model
+// indicators. Returns true if the model has vision components that mlx_lm
+// cannot load.
+func isVisionModel(modelPath string) bool {
+	data, err := os.ReadFile(filepath.Join(modelPath, "config.json"))
+	if err != nil {
+		return false // can't read config — let mlx_lm decide
+	}
+	var cfg map[string]any
+	if json.Unmarshal(data, &cfg) != nil {
+		return false
+	}
+	// Check for known VLM indicators in top-level keys.
+	for _, key := range []string{"vision_config", "visual", "vision_tower", "image_size"} {
+		if _, ok := cfg[key]; ok {
+			return true
+		}
+	}
+	// Check model_type for known VLM types.
+	if mt, ok := cfg["model_type"].(string); ok {
+		if slices.Contains([]string{"qwen2_5_vl", "qwen2_vl", "llava", "idefics", "paligemma", "mllama"}, mt) {
+			return true
+		}
+	}
+	return false
+}
+
 // ── Process helpers ───────────────────────────────────────────────────────────
 
 func pidAlive(pid int) bool {
@@ -314,6 +341,12 @@ func startSidecar(tier, modelID string) error {
 		return fmt.Errorf("cannot resolve model path: %w", snapErr)
 	}
 
+	// Preempt: refuse to start vision-language models (VLMs). mlx_lm.load
+	// cannot handle vision_tower weights and will crash.
+	if isVisionModel(modelPath) {
+		return fmt.Errorf("model %s is a vision-language model (VLM) — IQ only supports text-only models", modelID)
+	}
+
 	pyPath, pyErr := mlxVenvPython()
 	if pyErr != nil {
 		return fmt.Errorf("cannot resolve Python interpreter: %w", pyErr)
@@ -344,6 +377,11 @@ func startSidecar(tier, modelID string) error {
 		return fmt.Errorf("started (pid %d) but failed to write state: %w", cmd.Process.Pid, err)
 	}
 
+	// Wait for the process in a goroutine so we can detect early crashes
+	// reliably (avoids zombie-pid false positives from signal-0 checks).
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
 	fmt.Printf("  %-11s  pid %-7d  %s  ",
 		tier, cmd.Process.Pid, sidecarEndpoint(port))
 	healthURL := fmt.Sprintf("%s/v1/models", sidecarEndpoint(port))
@@ -359,10 +397,12 @@ func startSidecar(tier, modelID string) error {
 				return nil
 			}
 		}
-		if !pidAlive(cmd.Process.Pid) {
+		select {
+		case <-exited:
 			fmt.Printf("%s\n", utl.Gra("failed"))
 			printLastLogLines(lf_path, 10)
 			return fmt.Errorf("sidecar process exited unexpectedly")
+		default:
 		}
 		fmt.Print(".")
 		time.Sleep(sidecarPollInterval)

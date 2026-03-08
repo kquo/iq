@@ -80,10 +80,11 @@ The **`iq svc`** command manages sidecar processes. Each sidecar runs as a detac
 Start sequence:
 1. Allocate next free port from 27001+
 2. Resolve HF snapshot directory (`snapshots/<hash>/`) — the `--model` path
-3. Locate Python interpreter from the `mlx-lm` pipx venv; write embedded `infer_server.py` to temp dir
-4. Spawn detached subprocess (`Setsid: true`)
-5. Poll `GET /v1/models` until 200 OK or 120s timeout
-6. On failure: print last 10 log lines + path
+3. **VLM guard** — read `config.json` and reject vision-language models (checks for `vision_config`, `vision_tower`, `image_size` keys and known VLM `model_type` values). `mlx_lm.load` cannot handle vision weights.
+4. Locate Python interpreter from the `mlx-lm` pipx venv; write embedded `infer_server.py` to temp dir
+5. Spawn detached subprocess (`Setsid: true`)
+6. Poll `GET /v1/models` until 200 OK or 120s timeout. A background goroutine calls `cmd.Wait()` to detect early crashes reliably (avoids zombie-pid false positives from signal-0 checks).
+7. On failure: print last 10 log lines + path
 
 `iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models). On first run with no tiers configured, `iq svc start` prints a recommended setup with example `iq lm get` and `iq svc tier add` commands.
 
@@ -522,3 +523,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.4   | Tune KB and tool thresholds: kbMinScore 0.50→0.72, kbDefaultK 5→3, toolMinScore 0.50→0.72; use kbDefaultK constant in all call sites; instruct model to use tool results on follow-up pass |
 | 0.5.5   | Arg validation UX: yellow error + command help on wrong args; move Step 1b before Step 2; tool guard reprompt on pass-1 simulation; disable cache when tools enabled; document tool execution model in architecture.md |
 | 0.5.7   | Routing grammar: replace mlx_lm.server with custom infer_server.py sidecar supporting constrained decoding via logits processors; routing grammar forces `<tool:NAME>` or `<no_tool>` prefix on pass 1; tool guard direct-calls tool when model picks `<no_tool>` despite embed signal; toolMinScore 0.72→0.66 |
+| 0.5.8   | VLM guard: reject vision-language models at svc start (checks config.json for vision indicators); early crash detection via cmd.Wait() goroutine replaces zombie-prone signal-0 check for immediate failure reporting |
