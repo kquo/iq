@@ -211,6 +211,13 @@ func traceStep(step, label string) {
 		utl.Gra(fmt.Sprintf("STEP %s %s", step, label)))
 }
 
+// tracePass prints a pass sub-header within a step: "  PASS N  description".
+func tracePass(n int, desc string) {
+	fmt.Fprintf(os.Stderr, "  %s  %s\n",
+		utl.Gra(fmt.Sprintf("%-12s", fmt.Sprintf("PASS %d", n))),
+		utl.Gre(desc))
+}
+
 // traceField prints "  label  value" with continuation lines indented to match.
 func traceField(label, value string) {
 	prefix := fmt.Sprintf("  %-12s  ", label)
@@ -308,6 +315,14 @@ func printStep1Classify(t *embedClassifyTrace) {
 // printStep1bToolDetect prints the tool detection trace.
 func printStep1bToolDetect(tt *toolClassifyTrace) {
 	traceStep("1b", "TOOL DETECT")
+	if tt.Reason == "file path" || tt.Reason == "forced" {
+		if tt.Enabled {
+			traceField("result", fmt.Sprintf("enabled (%s)", tt.Reason))
+		} else {
+			traceField("result", "disabled (forced)")
+		}
+		return
+	}
 	traceField("task", "Cosine-similarity match input vector against 4 tool signal descriptions")
 	traceField("best_signal", fmt.Sprintf("%s (score: %.2f)", tt.BestSignal, tt.BestScore))
 	if tt.Enabled {
@@ -786,8 +801,11 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			// The grammar forces the model to emit <tool:NAME> or <no_tool>
 			// as its very first tokens, then generates freely.
 			grammar := &routeGrammar{ToolNames: toolRegistryNames()}
+			var tPass time.Time
 			if trace {
-				traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass 1, routing grammar)", route.Port))
+				tracePass(1, "routing grammar")
+				traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
+				tPass = time.Now()
 			}
 			response, err = callSidecarWithGrammar(route.Port, messages, 8192, grammar)
 			if err != nil {
@@ -801,17 +819,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			routedTool, routeRest := parseRoutingPrefix(response)
 
 			// If the grammar routed to a tool, construct a toolCall and execute it.
+			toolDone := false
 			if routedTool != "" {
 				if trace {
 					traceField("route", fmt.Sprintf("<tool:%s>", routedTool))
 				}
 
 				// Try to parse JSON args from the text after the prefix.
-				var args map[string]any
-				argStr := strings.TrimSpace(routeRest)
-				if argStr != "" {
-					_ = json.Unmarshal([]byte(argStr), &args)
-				}
+				args := parseRoutingArgs(routeRest)
 				call := toolCall{Name: routedTool, Args: args}
 
 				if trace {
@@ -822,28 +837,41 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				r := executeTool(call)
 				if trace {
 					printToolResultTrace(r)
+					traceField("latency 1", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
 				}
 
-				// Inject result and continue to get the model's final answer.
-				messages = append(messages, chatMessage{Role: "assistant", Content: response})
-				messages = append(messages, chatMessage{
-					Role:    "user",
-					Content: "Use the tool result below to answer my original question.\n\n" + formatToolResult(r),
-				})
-				if trace {
-					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass 2)", route.Port))
-				}
-				response, err = callSidecar(route.Port, messages, false, 8192)
-				if err != nil {
-					return sess, err
-				}
-				if trace {
-					traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+				// If the tool succeeded, print output directly — don't ask the
+				// model to reproduce it (small models hallucinate on long output).
+				if r.Error == "" && r.Output != "" {
+					fmt.Println(r.Output)
+					response = r.Output
+					toolDone = true
+				} else {
+					// Tool failed or returned empty — let the model explain.
+					messages = append(messages, chatMessage{Role: "assistant", Content: response})
+					messages = append(messages, chatMessage{
+						Role:    "user",
+						Content: "Tool result below. Explain the result or error briefly.\n\n" + formatToolResult(r),
+					})
+					if trace {
+						tracePass(2, "explain tool result")
+						traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
+						tPass = time.Now()
+					}
+					response, err = callSidecar(route.Port, messages, false, 8192)
+					if err != nil {
+						return sess, err
+					}
+					if trace {
+						traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+						traceField("latency 2", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
+					}
 				}
 			} else {
 				// <no_tool> or no prefix — use tool guard as fallback.
 				if trace {
 					traceField("route", "<no_tool>")
+					traceField("latency 1", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
 				}
 				response = routeRest // strip the <no_tool> prefix
 
@@ -856,7 +884,9 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					if len(expected) > 0 {
 						guardTool := expected[0]
 						if trace {
-							traceField("guard", fmt.Sprintf("<no_tool> but signal=%s — direct-calling %s", tt.BestSignal, guardTool))
+							fmt.Fprintf(os.Stderr, "  %s  %s\n",
+								utl.Gra(fmt.Sprintf("%-12s", "GUARD")),
+								utl.Gre(fmt.Sprintf("<no_tool> but signal=%s — direct-calling %s", tt.BestSignal, guardTool)))
 						}
 						call := toolCall{Name: guardTool, Args: nil}
 						if trace {
@@ -868,29 +898,53 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						if trace {
 							printToolResultTrace(r)
 						}
-						messages = append(messages, chatMessage{Role: "assistant", Content: "Let me check that for you."})
-						messages = append(messages, chatMessage{
-							Role:    "user",
-							Content: "Use the tool result below to answer my original question.\n\n" + formatToolResult(r),
-						})
-						if trace {
-							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass 2, after guard)", route.Port))
-						}
-						response, err = callSidecar(route.Port, messages, false, 8192)
-						if err != nil {
-							return sess, err
-						}
-						if trace {
-							traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+						if r.Error == "" && r.Output != "" {
+							fmt.Println(r.Output)
+							response = r.Output
+							toolDone = true
+						} else {
+							messages = append(messages, chatMessage{Role: "assistant", Content: "Let me check that for you."})
+							messages = append(messages, chatMessage{
+								Role:    "user",
+								Content: "Tool result below. Explain the result or error briefly.\n\n" + formatToolResult(r),
+							})
+							if trace {
+								tracePass(2, "explain guard tool result")
+								traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
+								tPass = time.Now()
+							}
+							response, err = callSidecar(route.Port, messages, false, 8192)
+							if err != nil {
+								return sess, err
+							}
+							if trace {
+								traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+								traceField("latency 2", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
+							}
 						}
 					}
 				}
 			}
 
 			// ── Passes 2+: standard tool loop for multi-tool chains ──
+			// Skip if tool output was already printed directly.
 			const maxToolIter = 5
 			for iter := range maxToolIter {
+				if toolDone {
+					break
+				}
 				calls, remaining := parseToolCalls(response)
+
+				// Fallback: model may reuse <tool:NAME> routing prefix on
+				// follow-up passes instead of <tool_call> blocks.
+				if len(calls) == 0 {
+					if rTool, rRest := parseRoutingPrefix(response); rTool != "" {
+						args := parseRoutingArgs(rRest)
+						calls = []toolCall{{Name: rTool, Args: args}}
+						remaining = ""
+					}
+				}
+
 				if len(calls) == 0 {
 					// No tool calls — final answer.
 					fmt.Println(remaining)
@@ -908,6 +962,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 				// Execute each tool and collect results.
 				var resultBlock strings.Builder
+				allOK := true
 				for _, call := range calls {
 					if trace {
 						printToolCallTrace(call)
@@ -918,19 +973,34 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					if trace {
 						printToolResultTrace(r)
 					}
+					if r.Error == "" && r.Output != "" {
+						fmt.Println(r.Output)
+					} else {
+						allOK = false
+					}
 					resultBlock.WriteString(formatToolResult(r))
 					resultBlock.WriteByte('\n')
 				}
 
-				// Inject results as a user message.
+				// If all tools succeeded, we already printed the output — done.
+				if allOK {
+					response = strings.TrimSpace(resultBlock.String())
+					break
+				}
+
+				// Some tool failed — let the model explain.
 				messages = append(messages, chatMessage{
 					Role:    "user",
-					Content: "Use the tool result below to answer my original question.\n\n" + strings.TrimSpace(resultBlock.String()),
+					Content: "Tool result below. Explain the result or error briefly.\n\n" + strings.TrimSpace(resultBlock.String()),
 				})
 
 				// Continue inference with tool results.
+				passN := iter + 2
 				if trace {
-					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass %d)", route.Port, iter+2))
+					traceField(fmt.Sprintf("latency %d", passN-1), fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
+					tracePass(passN, "explain tool error")
+					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
+					tPass = time.Now()
 				}
 				response, err = callSidecar(route.Port, messages, false, 8192)
 				if err != nil {
@@ -938,6 +1008,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				}
 				if trace {
 					traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+					traceField(fmt.Sprintf("latency %d", passN), fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
 				}
 
 				// On the last iteration, strip any remaining tool calls and print.
@@ -951,7 +1022,8 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			// Non-tool path.
 			if opts.noStream {
 				if trace {
-					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (non-streaming)", route.Port))
+					traceField("mode", "non-streaming")
+					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 				}
 				response, err = callSidecar(route.Port, messages, false, 8192)
 				if err != nil {
@@ -960,7 +1032,8 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				fmt.Println(response)
 			} else {
 				if trace {
-					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (streaming)", route.Port))
+					traceField("mode", "streaming")
+					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 				}
 				response, err = streamSidecar(route.Port, messages)
 				if err != nil {

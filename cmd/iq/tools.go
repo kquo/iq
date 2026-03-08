@@ -411,6 +411,10 @@ func buildToolSystemPrompt() string {
 			}
 		}
 	}
+	if cwd, err := os.Getwd(); err == nil {
+		fmt.Fprintf(&b, "\nCurrent working directory: %s\n", cwd)
+		fmt.Fprintf(&b, "Use absolute paths based on this directory for file operations.\n")
+	}
 	return b.String()
 }
 
@@ -440,6 +444,10 @@ func buildRoutingToolPrompt() string {
 			}
 		}
 	}
+	if cwd, err := os.Getwd(); err == nil {
+		fmt.Fprintf(&b, "\nCurrent working directory: %s\n", cwd)
+		fmt.Fprintf(&b, "Use absolute paths based on this directory for file operations.\n")
+	}
 	return b.String()
 }
 
@@ -464,6 +472,70 @@ func parseRoutingPrefix(text string) (toolName string, rest string) {
 		return m[1], text[len(m[0]):]
 	}
 	return "", text // fallback: no prefix found
+}
+
+// parseRoutingArgs extracts tool arguments from the text after a routing prefix.
+// Models often emit broken JSON (unquoted keys, trailing garbage), so this
+// extracts the first {...} block and falls back to regex for known arg names.
+// Also handles CLI-flag formats like --path=/foo or --path "/foo".
+func parseRoutingArgs(text string) map[string]any {
+	s := strings.TrimSpace(text)
+	if s == "" {
+		return nil
+	}
+
+	// Try CLI flag format: --key=value or --key "value" (before JSON parsing).
+	flagRe := regexp.MustCompile(`--(\w+)[= ]"?([^\s"]+)"?`)
+	if flagMatches := flagRe.FindAllStringSubmatch(s, -1); len(flagMatches) > 0 {
+		args := make(map[string]any)
+		for _, m := range flagMatches {
+			args[m[1]] = m[2]
+		}
+		return args
+	}
+
+	// Extract the first {...} block (brace-balanced).
+	start := strings.IndexByte(s, '{')
+	if start < 0 {
+		return nil
+	}
+	depth := 0
+	end := -1
+outer:
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				end = i + 1
+				break outer
+			}
+		}
+	}
+	if end < 0 {
+		end = len(s) // unclosed — take everything
+	}
+	jsonStr := s[start:end]
+
+	// Try strict JSON first.
+	var args map[string]any
+	if json.Unmarshal([]byte(jsonStr), &args) == nil && len(args) > 0 {
+		return args
+	}
+
+	// Fallback: regex-extract known arg names (handles unquoted keys, = or : separators).
+	argRe := regexp.MustCompile(`(?:"?)(\w+)(?:"?)\s*[:=]\s*"([^"]*)"`)
+	matches := argRe.FindAllStringSubmatch(jsonStr, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	args = make(map[string]any)
+	for _, m := range matches {
+		args[m[1]] = m[2]
+	}
+	return args
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────

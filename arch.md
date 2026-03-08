@@ -202,9 +202,9 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 When tools are enabled, inference runs in a non-streaming loop driven entirely by IQ's Go code:
 1. **Pass 1 — routing grammar.** The request includes a `routing_grammar` field listing available tool names. The custom `infer_server.py` sidecar uses a `RoutingGrammarProcessor` (logits processor) to constrain the model's first tokens to one of `<tool:NAME>` or `<no_tool>`, then generates freely. This forces a structural routing decision before the model can fabricate an answer.
-2. **Route parse.** IQ parses the routing prefix with `parseRoutingPrefix()`. If `<tool:NAME>`, IQ constructs a `toolCall`, executes the tool, injects the result, and calls the model again (pass 2) to format the final answer.
-3. **Tool guard.** If the model chose `<no_tool>` but Step 1b detected a tool signal via embedding, IQ directly executes the expected tool (bypassing the model), injects the result, and calls the model to format the answer. This handles cases where small models pick `<no_tool>` despite clear tool intent.
-4. **Passes 2+ — standard tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON. IQ validates and executes each tool; results are injected as user messages. Loop ends when the model produces a response with no tool calls, or after 5 iterations.
+2. **Route parse.** IQ parses the routing prefix with `parseRoutingPrefix()`. If `<tool:NAME>`, arguments are extracted by `parseRoutingArgs()` which handles valid JSON, broken JSON (unquoted keys, `=` separators), and CLI flag formats (`--key=value`). IQ executes the tool; if it succeeds, output is printed directly to the user (no pass 2). If it fails, the error is injected and the model is called again (pass 2) to explain.
+3. **Tool guard.** If the model chose `<no_tool>` but Step 1b detected a tool signal via embedding, IQ directly executes the expected tool (bypassing the model) and prints the output. Only calls pass 2 if the tool returned an error. This handles cases where small models pick `<no_tool>` despite clear tool intent.
+4. **Passes 2+ — standard tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), `<tool:NAME>` routing prefix format on follow-up passes, unclosed tags, and markdown-fenced JSON. Successful tool output is printed directly; errors trigger another inference pass. Loop ends when no tool calls remain, or after 5 iterations.
 
 **Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Non-streaming mode strips think blocks from the full response.
 
@@ -245,7 +245,7 @@ In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), seven read-only to
 | `search_text` | `pattern` (required), `path` | Regex search across files (max 50 matches, skips .git/vendor/etc.) |
 | `count_lines` | `path` (required) | Count lines in a file |
 
-The tool system prompt (`buildRoutingToolPrompt`) is appended to the system message when tools are active. It lists all available tools with their parameter schemas and instructs the model to emit `<tool:TOOL_NAME>` (followed by JSON arguments) or `<no_tool>` (followed by a direct answer) as its first output. The routing grammar logits processor enforces this structurally.
+The tool system prompt (`buildRoutingToolPrompt`) is appended to the system message when tools are active. It lists all available tools with their parameter schemas, the current working directory, and instructs the model to emit `<tool:TOOL_NAME>` (followed by JSON arguments) or `<no_tool>` (followed by a direct answer) as its first output. The routing grammar logits processor enforces this structurally.
 
 ### Raw Sidecar Access
 
@@ -385,10 +385,10 @@ STEP 5  INFERENCE LOOP  (skipped on cache hit)
   ├── no tools: SSE stream → stdout (token by token)
   └── tools: non-streaming loop
        pass 1: routing grammar → model emits <tool:NAME> or <no_tool>
-       if <tool:NAME>: execute tool → inject result → pass 2 for final answer
-       if <no_tool> + embed signal: guard direct-calls tool → inject result → pass 2
-       passes 2+: parse <tool_call> blocks → execute → re-infer (up to 5 iterations)
-       loop until no tool calls remain
+       if <tool:NAME>: execute tool → print output directly (pass 2 only on error)
+       if <no_tool> + embed signal: guard direct-calls tool → print output directly
+       passes 2+: parse <tool_call>/<tool:NAME> blocks → execute → print or re-infer
+       loop until no tool calls remain (up to 5 iterations)
     │
     ▼
 STEP 5b CACHE WRITE  (on cache miss, stores response)
@@ -445,22 +445,28 @@ STEP 4b CACHE CHECK
 
 STEP 5  INFERENCE LOOP
   task          Send assembled messages to model sidecar for generation
-  call          POST localhost:27001/v1/chat/completions (pass 1, routing grammar)
+  PASS 1        routing grammar
+  call          POST localhost:27001/v1/chat/completions
   raw_resp      "<tool:get_time>"
   route         <tool:get_time>
   tool_call     get_time(null)
-  tool_result   2026-03-02 08:55:00 EST (Monday)
-  call          POST localhost:27001/v1/chat/completions (pass 2)
-  raw_resp      "The current time is..."
-  elapsed       1200ms
+  tool_result   2026-03-08 14:57:17 EDT (Sunday)
+  latency 1     320ms
+  elapsed       320ms
 
   # If grammar chose <no_tool> but Step 1b detected a signal:
+  # PASS 1        routing grammar
   # route         <no_tool>
-  # guard         <no_tool> but signal=time_date — direct-calling get_time
+  # latency 1     500ms
+  # GUARD         <no_tool> but signal=time_date — direct-calling get_time
   # tool_call     get_time(null)
-  # tool_result   2026-03-02 08:55:00 EST (Monday)
-  # call          POST localhost:27001/v1/chat/completions (pass 2, after guard)
-  # raw_resp      "The current time is..."
+  # tool_result   2026-03-08 14:57:17 EDT (Sunday)
+
+  # If tool fails, pass 2 is called to explain the error:
+  # PASS 2        explain tool result
+  # call          POST localhost:27001/v1/chat/completions
+  # raw_resp      "The file could not be read because..."
+  # latency 2     1200ms
 
 STEP 5b CACHE WRITE
   task          Store response in cache
@@ -536,3 +542,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.10  | Display raw HF pipeline_tag (lowercase with hyphens); local task inference from config.json as fallback when HF returns no tag (checks vision indicators before model_type) |
 | 0.5.11  | Flatten CLI: promote `iq svc` subcommands to root (`iq start/stop/status/doc/tier/embed`); `iq svc` kept as hidden backward-compat alias |
 | 0.6.0   | TASK label `feature-extraction` displayed as `embedding` (green); `lm rm` auto-stops sidecars and clears tier/embed assignments with yellow warnings instead of blocking; yellow confirmation prompt; README documents HF as official registry with token recommendation |
+| 0.6.1   | Robust tool arg parsing (broken JSON, unquoted keys, `=` separators, `--flag=value` CLI format); print successful tool output directly instead of pass 2 re-inference; inject cwd into tool system prompt; PASS/GUARD/latency debug trace format; parse `<tool:NAME>` routing prefix on follow-up passes |

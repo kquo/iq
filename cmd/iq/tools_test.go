@@ -322,6 +322,52 @@ func TestParseRoutingPrefix(t *testing.T) {
 	}
 }
 
+func TestParseRoutingArgs(t *testing.T) {
+	tests := []struct {
+		input string
+		want  map[string]string // check these key=value pairs exist
+	}{
+		// Valid JSON.
+		{`{"path":"/tmp/foo.go"}`, map[string]string{"path": "/tmp/foo.go"}},
+		// Unquoted keys (common from small models).
+		{`{ path: "/Users/tek1/main.go" }`, map[string]string{"path": "/Users/tek1/main.go"}},
+		// JSON with trailing garbage.
+		{`{"path":"/x.go"}\nHere is the file...`, map[string]string{"path": "/x.go"}},
+		// Unquoted keys with trailing garbage.
+		{"{ path: \"/x.go\" }\n```go\npackage main\n```", map[string]string{"path": "/x.go"}},
+		// Empty / no JSON.
+		{"", nil},
+		{"just some text", nil},
+		// Equals separator instead of colon.
+		{`{ path = "/Users/tek1/main.go" }`, map[string]string{"path": "/Users/tek1/main.go"}},
+		// CLI flag format.
+		{`  --path=/Users/tek1/code/iq/cmd/iq/main.go`, map[string]string{"path": "/Users/tek1/code/iq/cmd/iq/main.go"}},
+		// CLI flag with quoted value.
+		{`--path "/Users/tek1/main.go"`, map[string]string{"path": "/Users/tek1/main.go"}},
+		// Expression arg.
+		{`{"expression":"2+2"}`, map[string]string{"expression": "2+2"}},
+	}
+	for _, tt := range tests {
+		args := parseRoutingArgs(tt.input)
+		if tt.want == nil {
+			if args != nil {
+				t.Errorf("parseRoutingArgs(%q) = %v, want nil", tt.input, args)
+			}
+			continue
+		}
+		if args == nil {
+			t.Errorf("parseRoutingArgs(%q) = nil, want %v", tt.input, tt.want)
+			continue
+		}
+		for k, v := range tt.want {
+			got, _ := args[k].(string)
+			if got != v {
+				t.Errorf("parseRoutingArgs(%q)[%q] = %q, want %q", tt.input, k, got, v)
+			}
+		}
+	}
+}
+
 func TestToolRegistryNames(t *testing.T) {
 	names := toolRegistryNames()
 	if len(names) != len(toolRegistry) {
