@@ -72,7 +72,7 @@ func newProbeCmd() *cobra.Command {
 				if !kbExists() {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: knowledge base is empty — run: iq kb ingest <path>"))
 				} else if !embedSidecarAlive() {
-					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: embed sidecar not running — run: iq svc start"))
+					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: embed sidecar not running — run: iq start"))
 				} else {
 					results, kbErr := KBSearch(message, kbDefaultK)
 					if kbErr != nil {
@@ -119,7 +119,7 @@ func newProbeCmd() *cobra.Command {
 					}
 				}
 				if sidecar == nil || !pidAlive(sidecar.PID) {
-					return fmt.Errorf("%s is not running — run 'iq svc start %s' first", target, target)
+					return fmt.Errorf("%s is not running — run 'iq start %s' first", target, target)
 				}
 				if sidecar.Tier == "embed" {
 					return fmt.Errorf("%s is an embedding model — it does not support chat inference", target)

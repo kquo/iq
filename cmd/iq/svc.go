@@ -209,7 +209,7 @@ func pickSidecar(tier string, preferSmallest bool) (*svcState, error) {
 		}
 	}
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no running %s-tier sidecar — run 'iq svc start %s'", tier, tier)
+		return nil, fmt.Errorf("no running %s-tier sidecar — run 'iq start %s'", tier, tier)
 	}
 	if preferSmallest && len(candidates) > 1 {
 		best := candidates[0]
@@ -459,7 +459,7 @@ func resolveModels(arg string) ([]string, error) {
 	if arg == "" {
 		all := allAssignedModels()
 		if len(all) == 0 {
-			return nil, fmt.Errorf("no models assigned — run 'iq svc tier add <tier> <model>' first")
+			return nil, fmt.Errorf("no models assigned — run 'iq tier add <tier> <model>' first")
 		}
 		return all, nil
 	}
@@ -611,38 +611,25 @@ func printStatus() error {
 
 func printSvcHelp() {
 	n := program_name
-	fmt.Printf("Work with IQ service daemon.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
-	fmt.Printf("  %s svc <command> [tier|model]\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
-	fmt.Printf("  %-10s %s\n", "status", "Show running sidecar status and memory usage (alias: st)")
-	fmt.Printf("  %-10s %s\n", "start", "Start sidecars for all, a tier pool, or a specific model")
-	fmt.Printf("  %-10s %s\n", "stop", "Stop sidecars for all, a tier pool, or a specific model")
-	fmt.Printf("  %-10s %s\n", "tier", "Manage model tier pool assignments")
-	fmt.Printf("  %-10s %s\n", "embed", "Manage embed sidecar models")
-	fmt.Printf("  %-10s %s\n\n", "doc", "Check runtime dependencies and model readiness")
-	fmt.Printf("%s\n", utl.Whi2("NOTES"))
-	fmt.Printf("  The embed sidecar is started automatically with 'iq svc start'.\n")
-	fmt.Printf("  It requires mlx-embedding-models in the mlx-lm venv:\n")
-	fmt.Printf("  pipx inject mlx-lm mlx-embedding-models\n\n")
-	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
-	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s svc status\n", n)
-	fmt.Printf("  $ %s svc start\n", n)
-	fmt.Printf("  $ %s svc start fast\n", n)
-	fmt.Printf("  $ %s svc stop\n", n)
-	fmt.Printf("  $ %s svc tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
-	fmt.Printf("  $ %s svc embed set nomic-embed-text\n", n)
-	fmt.Printf("  $ %s svc doc\n\n", n)
+	fmt.Printf("Legacy alias — svc commands have moved to the root.\n\n")
+	fmt.Printf("%s\n", utl.Whi2("NEW USAGE"))
+	fmt.Printf("  %s start [tier|model]\n", n)
+	fmt.Printf("  %s stop [tier|model]\n", n)
+	fmt.Printf("  %s status\n", n)
+	fmt.Printf("  %s tier show|add|rm\n", n)
+	fmt.Printf("  %s embed show|set|rm\n", n)
+	fmt.Printf("  %s doc\n\n", n)
 }
 
 // ── Root svc command ──────────────────────────────────────────────────────────
 
+// newSvcCmd returns a hidden backward-compat alias that delegates to the
+// new root-level commands (start, stop, tier, embed, doc).
 func newSvcCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "svc",
-		Short:        "Work with IQ service daemon",
+		Hidden:       true,
+		Short:        "Legacy alias — use root-level commands instead",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printSvcHelp()
@@ -654,11 +641,11 @@ func newSvcCmd() *cobra.Command {
 	})
 	cmd.AddCommand(
 		newSvcStatusCmd(),
-		newSvcStartCmd(),
-		newSvcStopCmd(),
-		newSvcTierCmd(),
-		newSvcEmbedCmd(),
-		newSvcDocCmd(),
+		newStartCmd(),
+		newStopCmd(),
+		newTierCmd(),
+		newEmbedCmd(),
+		newDocCmd(),
 	)
 	return cmd
 }
@@ -679,7 +666,7 @@ func newSvcStatusCmd() *cobra.Command {
 
 // ── start ─────────────────────────────────────────────────────────────────────
 
-func newSvcStartCmd() *cobra.Command {
+func newStartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "start [tier|model]",
 		Short:        "Start sidecars for all, a tier pool, or a specific model",
@@ -706,11 +693,11 @@ func newSvcStartCmd() *cobra.Command {
 						fmt.Println("  iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit")
 						fmt.Println("  iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit")
 						fmt.Println()
-						fmt.Println("  iq svc embed set mlx-community/bge-small-en-v1.5-bf16")
-						fmt.Println("  iq svc tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
-						fmt.Println("  iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
+						fmt.Println("  iq embed set mlx-community/bge-small-en-v1.5-bf16")
+						fmt.Println("  iq tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
+						fmt.Println("  iq tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
 						fmt.Println()
-						fmt.Println("Then run 'iq svc start' again.")
+						fmt.Println("Then run 'iq start' again.")
 						return nil
 					}
 				}
@@ -724,10 +711,10 @@ func newSvcStartCmd() *cobra.Command {
 					fmt.Println("  iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit")
 					fmt.Println("  iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit")
 					fmt.Println()
-					fmt.Println("  iq svc tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
-					fmt.Println("  iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
+					fmt.Println("  iq tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
+					fmt.Println("  iq tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
 					fmt.Println()
-					fmt.Println("Then run 'iq svc start' again.")
+					fmt.Println("Then run 'iq start' again.")
 					return nil
 				}
 			}
@@ -792,7 +779,7 @@ func killOrphanSidecars() {
 
 // ── stop ──────────────────────────────────────────────────────────────────────
 
-func newSvcStopCmd() *cobra.Command {
+func newStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "stop [tier|model]",
 		Short:        "Stop sidecars for all, a tier pool, or a specific model",
@@ -826,11 +813,11 @@ func newSvcStopCmd() *cobra.Command {
 
 // ── tier ──────────────────────────────────────────────────────────────────────
 
-func printSvcTierHelp() {
+func printTierHelp() {
 	n := program_name
 	fmt.Printf("Manage model tier pool assignments.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
-	fmt.Printf("  %s svc tier <command> [flags]\n\n", n)
+	fmt.Printf("  %s tier <command> [flags]\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
 	fmt.Printf("  %-10s %s\n", "show", "Show current tier assignments")
 	fmt.Printf("  %-10s %s\n", "add", "Add a model to a tier pool")
@@ -839,30 +826,30 @@ func printSvcTierHelp() {
 	fmt.Printf("  %-8s %s\n", "fast", "Sub-2GB models — used for classification and quick tasks")
 	fmt.Printf("  %-8s %s\n\n", "slow", "2GB+ models — used for quality inference")
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s svc tier show\n", n)
-	fmt.Printf("  $ %s svc tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
-	fmt.Printf("  $ %s svc tier add slow mlx-community/Phi-4-mini-reasoning-4bit\n", n)
-	fmt.Printf("  $ %s svc tier rm fast mlx-community/SmolLM2-135M-Instruct-8bit\n\n", n)
+	fmt.Printf("  $ %s tier show\n", n)
+	fmt.Printf("  $ %s tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
+	fmt.Printf("  $ %s tier add slow mlx-community/Phi-4-mini-reasoning-4bit\n", n)
+	fmt.Printf("  $ %s tier rm fast mlx-community/SmolLM2-135M-Instruct-8bit\n\n", n)
 }
 
-func newSvcTierCmd() *cobra.Command {
+func newTierCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "tier",
 		Short:        "Manage model tier pool assignments",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			printSvcTierHelp()
+			printTierHelp()
 			return nil
 		},
 	}
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		printSvcTierHelp()
+		printTierHelp()
 	})
-	cmd.AddCommand(newSvcTierShowCmd(), newSvcTierAddCmd(), newSvcTierRmCmd())
+	cmd.AddCommand(newTierShowCmd(), newTierAddCmd(), newTierRmCmd())
 	return cmd
 }
 
-func newSvcTierShowCmd() *cobra.Command {
+func newTierShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "show",
 		Short:        "Show current tier assignments",
@@ -887,7 +874,7 @@ func newSvcTierShowCmd() *cobra.Command {
 	}
 }
 
-func newSvcTierAddCmd() *cobra.Command {
+func newTierAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "add <tier> <model>",
 		Short:        "Add a model to a tier pool",
@@ -928,7 +915,7 @@ func newSvcTierAddCmd() *cobra.Command {
 	}
 }
 
-func newSvcTierRmCmd() *cobra.Command {
+func newTierRmCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "rm <tier> <model>",
 		Short:        "Remove a model from a tier pool",
@@ -962,11 +949,11 @@ func newSvcTierRmCmd() *cobra.Command {
 
 // ── embed ─────────────────────────────────────────────────────────────────────
 
-func printSvcEmbedHelp() {
+func printEmbedHelp() {
 	n := program_name
 	fmt.Printf("Manage the MLX embed model for cue classification and KB retrieval.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
-	fmt.Printf("  %s svc embed <command>\n\n", n)
+	fmt.Printf("  %s embed <command>\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
 	fmt.Printf("  %-24s %s\n", "show", "Show the configured embed model")
 	fmt.Printf("  %-24s %s\n", "set <model>", "Set embed model and restart sidecar")
@@ -978,28 +965,28 @@ func printSvcEmbedHelp() {
 	fmt.Printf("%s\n", utl.Whi2("DEFAULT"))
 	fmt.Printf("  %s\n\n", utl.Gra(defaultEmbedModel))
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s svc embed show\n", n)
-	fmt.Printf("  $ %s svc embed set mlx-community/bge-small-en-v1.5-bf16\n\n", n)
+	fmt.Printf("  $ %s embed show\n", n)
+	fmt.Printf("  $ %s embed set mlx-community/bge-small-en-v1.5-bf16\n\n", n)
 }
 
-func newSvcEmbedCmd() *cobra.Command {
+func newEmbedCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "embed",
 		Short:        "Manage embed sidecar models",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			printSvcEmbedHelp()
+			printEmbedHelp()
 			return nil
 		},
 	}
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		printSvcEmbedHelp()
+		printEmbedHelp()
 	})
-	cmd.AddCommand(newSvcEmbedShowCmd(), newSvcEmbedSetCmd(), newSvcEmbedRmCmd())
+	cmd.AddCommand(newEmbedShowCmd(), newEmbedSetCmd(), newEmbedRmCmd())
 	return cmd
 }
 
-func newSvcEmbedShowCmd() *cobra.Command {
+func newEmbedShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "show",
 		Short:        "Show configured embed model",
@@ -1019,7 +1006,7 @@ func newSvcEmbedShowCmd() *cobra.Command {
 	}
 }
 
-func newSvcEmbedSetCmd() *cobra.Command {
+func newEmbedSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "set <model>",
 		Short:        "Set embed model and restart sidecar",
@@ -1049,7 +1036,7 @@ func newSvcEmbedSetCmd() *cobra.Command {
 	}
 }
 
-func newSvcEmbedRmCmd() *cobra.Command {
+func newEmbedRmCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "rm",
 		Short:        "Revert embed model to default and restart sidecar",
@@ -1127,7 +1114,7 @@ func checkCommand(name string, versionFlag string) (path, version string) {
 	return path, version
 }
 
-func newSvcDocCmd() *cobra.Command {
+func newDocCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "doc",
 		Short:        "Check runtime dependencies and model readiness",
@@ -1259,7 +1246,7 @@ func newSvcDocCmd() *cobra.Command {
 			}
 
 			if !allOK {
-				return fmt.Errorf("one or more checks failed — resolve the above before running 'iq svc start'")
+				return fmt.Errorf("one or more checks failed — resolve the above before running 'iq start'")
 			}
 			fmt.Printf("%s\n", utl.Gre("All checks passed."))
 			return nil

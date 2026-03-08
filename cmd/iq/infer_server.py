@@ -5,7 +5,7 @@ Replaces mlx_lm.server with a custom server that supports constrained decoding
 via a routing grammar for tool-use prompts. When no routing_grammar is present
 in the request, behaves identically to stock mlx_lm.server.
 
-Launched by `iq svc start` with --model <hf_model_id> and --port <n>.
+Launched by `iq start` with --model <hf_model_id> and --port <n>.
 Requires: pipx install mlx-lm
 """
 import argparse

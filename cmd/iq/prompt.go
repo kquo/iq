@@ -185,7 +185,7 @@ func resolveRoute(cueName string, cues []Cue) (*routeResult, error) {
 		}
 		sidecar, err = pickSidecar(other, false)
 		if err != nil {
-			return nil, fmt.Errorf("no running sidecars in %s or %s tier — run 'iq svc start'", tier, other)
+			return nil, fmt.Errorf("no running sidecars in %s or %s tier — run 'iq start'", tier, other)
 		}
 		tier = other
 		tierSource = "fallback"
@@ -411,7 +411,7 @@ func doSidecarCall(port int, req chatRequest) (string, error) {
 	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
 	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq svc start': %w", port, err)
+		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq start': %w", port, err)
 	}
 	defer resp.Body.Close()
 
@@ -457,7 +457,7 @@ func streamSidecar(port int, messages []chatMessage) (string, error) {
 	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
 	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq svc start': %w", port, err)
+		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq start': %w", port, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -611,7 +611,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			}
 		}
 		if !embedSidecarAlive() {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial cue (run: iq svc start)"))
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial cue (run: iq start)"))
 			cueName = "initial"
 		} else {
 			cfg2, cfgErr := loadConfig()

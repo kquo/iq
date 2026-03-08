@@ -10,8 +10,8 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                               iq CLI (Go)                                 │
 │                                                                           │
-│  iq lm    iq svc    iq cue    iq kb    iq ask       iq pry      iq perf   │
-│  (models) (service) (cues)   (RAG)    (infer/REPL) (raw debug) (bench)    │
+│  iq lm   iq start/stop  iq cue   iq kb   iq ask      iq pry     iq perf   │
+│  (models) (service)    (cues)  (RAG)   (infer/REPL) (raw debug) (bench)   │
 └────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬────────┘
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
@@ -40,7 +40,7 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 `iq lm search` queries the HF API, enriches results in parallel (one goroutine per model) to populate DISK and EST MEM, and displays TASK / DISK / PARAMS / EST MEM / DOWNLOADS. The TASK column shows the HuggingFace `pipeline_tag` as-is (e.g. `text-generation`, `image-text-to-text`) — green for supported text-generation models, red for unsupported types. Accepts an optional query string or a numeric count (e.g. `iq lm search 100`).
 
-`iq lm get` checks the model's task type before downloading; if it is not `text-generation`, a yellow warning is printed (download proceeds anyway). After download, the `pipeline_tag` is cached in the manifest for offline display. Infers a suggested tier from disk size (< 2GB → fast, else slow) and prints the `iq svc tier add` command to assign it.
+`iq lm get` checks the model's task type before downloading; if it is not `text-generation`, a yellow warning is printed (download proceeds anyway). After download, the `pipeline_tag` is cached in the manifest for offline display. Infers a suggested tier from disk size (< 2GB → fast, else slow) and prints the `iq tier add` command to assign it.
 
 `iq lm list` displays TASK alongside DISK / PULLED / PARAMS / EST MEM / TIER. On first display, missing task tags are backfilled from the HF API in parallel (with local `config.json` inference as fallback) and persisted to the manifest.
 
@@ -52,16 +52,16 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 ### Configuration
 
-Manages `~/.config/iq/config.yaml`. Configuration commands live under `iq svc` — there is no separate `iq cfg` command. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
+Manages `~/.config/iq/config.yaml`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
 
 ```
 fast    sub-2GB models — used for quick inference tasks
 slow    2GB+ models    — used for quality inference
 ```
 
-Tier commands: `iq svc tier show`, `iq svc tier add <tier> <model>`, `iq svc tier rm <tier> <model>`.
+Tier commands: `iq tier show`, `iq tier add <tier> <model>`, `iq tier rm <tier> <model>`.
 
-Embed model commands: `iq svc embed show`, `iq svc embed set <model>`, `iq svc embed rm`.
+Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
 Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
 
@@ -81,7 +81,7 @@ Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `s
 
 ### Service Daemon
 
-The **`iq svc`** command manages sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, written to a temp file at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
+The **`iq start`** / **`iq stop`** commands manage sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, written to a temp file at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
 
 Start sequence:
 1. Allocate next free port from 27001+
@@ -92,15 +92,15 @@ Start sequence:
 6. Poll `GET /v1/models` until 200 OK or 120s timeout. A background goroutine calls `cmd.Wait()` to detect early crashes reliably (avoids zombie-pid false positives from signal-0 checks).
 7. On failure: print last 10 log lines + path
 
-`iq svc start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models). On first run with no tiers configured, `iq svc start` prints a recommended setup with example `iq lm get` and `iq svc tier add` commands.
+`iq start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models). On first run with no tiers configured, `iq start` prints a recommended setup with example `iq lm get` and `iq tier add` commands.
 
 **Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
 
-`iq svc doc` checks runtime dependencies: `python3` available, `mlx_lm.server` found (needed for its venv Python) and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
+`iq doc` checks runtime dependencies: `python3` available, `mlx_lm.server` found (needed for its venv Python) and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
 
-**Embeddings** — handled by a single local Python sidecar (`embed_model`, port 27000) started with `iq svc start`. Serves cue classification, tool detection, and KB indexing/retrieval. Configure via `iq svc embed`.
+**Embeddings** — handled by a single local Python sidecar (`embed_model`, port 27000) started with `iq start`. Serves cue classification, tool detection, and KB indexing/retrieval. Configure via `iq embed`.
 
-`iq svc status` (also available as `iq status` / `iq st`) shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar row, IQ process memory, and combined total.
+`iq status` (alias: `iq st`) shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar row, IQ process memory, and combined total.
 
 ### Knowledge Base
 
@@ -497,6 +497,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
 | `search.go` | DuckDuckGo client library (infrastructure) |
+| `search_test.go` | Tests for DuckDuckGo search client |
 | `infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 | `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
@@ -533,3 +534,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.8   | VLM guard: reject vision-language models at svc start (checks config.json for vision indicators); early crash detection via cmd.Wait() goroutine replaces zombie-prone signal-0 check for immediate failure reporting |
 | 0.5.9   | Model task display: show HF pipeline_tag (TASK column) in lm search/list/show with green/red color coding; warn on non-text-generation downloads; cache task in manifest with parallel backfill |
 | 0.5.10  | Display raw HF pipeline_tag (lowercase with hyphens); local task inference from config.json as fallback when HF returns no tag (checks vision indicators before model_type) |
+| 0.5.11  | Flatten CLI: promote `iq svc` subcommands to root (`iq start/stop/status/doc/tier/embed`); `iq svc` kept as hidden backward-compat alias |

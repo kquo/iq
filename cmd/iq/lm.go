@@ -741,7 +741,7 @@ func newLmGetCmd() *cobra.Command {
 			tier := suggestTier(model)
 			fmt.Printf("\nSuggested tier: %s\n", utl.Gre(tier))
 			fmt.Printf("%s\n", utl.Gra(
-				fmt.Sprintf("  iq svc tier add %s %s", tier, model)))
+				fmt.Sprintf("  iq tier add %s %s", tier, model)))
 
 			return nil
 		},
@@ -967,7 +967,7 @@ func newLmShowCmd() *cobra.Command {
 				suggested := suggestTier(entry.ID)
 				fmt.Printf("%-12s %s\n", "TIER", utl.Gra("<unset>"))
 				fmt.Printf("%-12s %s\n", "",
-					utl.Gra(fmt.Sprintf("iq svc tier add %s %s", suggested, entry.ID)))
+					utl.Gra(fmt.Sprintf("iq tier add %s %s", suggested, entry.ID)))
 			} else {
 				fmt.Printf("%-12s %s\n", "TIER", utl.Gre(tier))
 			}
@@ -1004,10 +1004,10 @@ func newLmRmCmd() *cobra.Command {
 				s, _ := readState(embedSlugConst)
 				if s != nil && pidAlive(s.PID) {
 					return fmt.Errorf("%s is the embed model and its sidecar is running\n"+
-						"  Run 'iq svc stop' first", model)
+						"  Run 'iq stop' first", model)
 				}
 				return fmt.Errorf("%s is the embed model\n"+
-					"  Run 'iq svc embed rm' to revert it before removing", model)
+					"  Run 'iq embed rm' to revert it before removing", model)
 			}
 
 			// Refuse to remove a model that is assigned to a tier.
@@ -1016,10 +1016,10 @@ func newLmRmCmd() *cobra.Command {
 				state, _ := readState(model)
 				if state != nil && pidAlive(state.PID) {
 					return fmt.Errorf("%s is in the %s tier and its sidecar is running\n"+
-						"  Run 'iq svc stop %s' then 'iq svc tier rm %s %s' before removing", model, t, model, t, model)
+						"  Run 'iq stop %s' then 'iq tier rm %s %s' before removing", model, t, model, t, model)
 				}
 				return fmt.Errorf("%s is in the %s tier\n"+
-					"  Run 'iq svc tier rm %s %s' before removing", model, t, t, model)
+					"  Run 'iq tier rm %s %s' before removing", model, t, t, model)
 			}
 
 			if !force {

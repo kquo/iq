@@ -11,7 +11,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.5.10"
+	program_version = "0.5.11"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -34,17 +34,22 @@ func printRootHelp() {
 	fmt.Printf("%s v%s\n", n, program_version)
 	fmt.Printf("Work with IQ from the command line.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
-	fmt.Printf("  %s <command> <subcommand> [flags]\n", n)
+	fmt.Printf("  %s <command> [subcommand] [flags]\n", n)
 	fmt.Printf("  %s [flags] <message>\n\n", n)
+	fmt.Printf("%s\n", utl.Whi2("SERVICE"))
+	fmt.Printf("  %-24s %s\n", "start [tier|model]", "Start sidecars")
+	fmt.Printf("  %-24s %s\n", "stop [tier|model]", "Stop sidecars")
+	fmt.Printf("  %-24s %s\n", "status", "Show running sidecar status (alias: st)")
+	fmt.Printf("  %-24s %s\n", "doc", "Check runtime dependencies and model readiness")
+	fmt.Printf("  %-24s %s\n", "tier", "Manage model tier pool assignments")
+	fmt.Printf("  %-24s %s\n\n", "embed", "Manage embed sidecar model")
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
-	fmt.Printf("  %-24s %s\n", "svc", "Work with IQ service daemon")
 	fmt.Printf("  %-24s %s\n", "lm", "Work with IQ language models")
 	fmt.Printf("  %-24s %s\n", "ask", "Interactive REPL and prompt aliases")
 	fmt.Printf("  %-24s %s\n", "cue", "Work with IQ cues")
 	fmt.Printf("  %-24s %s\n", "kb", "Work with IQ knowledge base")
 	fmt.Printf("  %-24s %s\n", "perf", "Benchmark IQ model performance")
 	fmt.Printf("  %-24s %s\n", "pry", "Send a raw message directly to a model sidecar")
-	fmt.Printf("  %-24s %s\n", "status", "Show running sidecar status (alias: st)")
 	fmt.Printf("  %-24s %s\n\n", "version", "Show the current IQ version")
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
 	fmt.Printf("  %-24s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
@@ -63,7 +68,11 @@ func printRootHelp() {
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s -d \"explain transformers\"\n", n)
-	fmt.Printf("  $ %s ask\n\n", n)
+	fmt.Printf("  $ %s ask\n", n)
+	fmt.Printf("  $ %s start\n", n)
+	fmt.Printf("  $ %s stop\n", n)
+	fmt.Printf("  $ %s st\n", n)
+	fmt.Printf("  $ %s doc\n\n", n)
 }
 
 func newVersionCmd() *cobra.Command {
@@ -81,13 +90,12 @@ func newVersionCmd() *cobra.Command {
 	return cmd
 }
 
-// newStatusCmd returns a top-level `iq status` / `iq st` command that delegates
-// to the same printStatus() logic as `iq svc status`.
+// newStatusCmd returns a top-level `iq status` / `iq st` command.
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "status",
 		Aliases:      []string{"st"},
-		Short:        "Show running sidecar status (shortcut for 'iq svc status')",
+		Short:        "Show running sidecar status",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return printStatus()
@@ -146,14 +154,19 @@ func runCLI() {
 
 	root.AddCommand(
 		newVersionCmd(),
-		newSvcCmd(),
+		newStartCmd(),
+		newStopCmd(),
+		newStatusCmd(),
+		newDocCmd(),
+		newTierCmd(),
+		newEmbedCmd(),
 		newLmCmd(),
 		newPromptCmd(),
 		newCueCmd(),
 		newKbCmd(),
 		newPerfCmd(),
 		newProbeCmd(),
-		newStatusCmd(),
+		newSvcCmd(), // hidden backward-compat alias
 	)
 
 	root.SilenceErrors = true

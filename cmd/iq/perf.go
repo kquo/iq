@@ -677,7 +677,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	state, err := readState(modelID)
 	if err != nil || state == nil || !pidAlive(state.PID) {
-		return BenchResult{}, fmt.Errorf("model %q sidecar not running — run: iq svc start %q", modelID, modelID)
+		return BenchResult{}, fmt.Errorf("model %q sidecar not running — run: iq start %q", modelID, modelID)
 	}
 
 	fmt.Fprintf(os.Stderr, "  sidecar     %s pid %d on :%d (tier:%s)\n",

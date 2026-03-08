@@ -243,7 +243,7 @@ func embedTextsOnPort(texts []string, model string, port int, task string) ([][]
 func embedTexts(texts []string, task string) ([][]float32, error) {
 	state, err := readState(embedSlugConst)
 	if err != nil || state == nil || !pidAlive(state.PID) {
-		return nil, fmt.Errorf("embed sidecar not running — run: iq svc start")
+		return nil, fmt.Errorf("embed sidecar not running — run: iq start")
 	}
 
 	cfg, err := loadConfig()

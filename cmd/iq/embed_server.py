@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """IQ embedding sidecar — serves POST /embed and GET /health.
 
-Launched by `iq svc start` with --model <hf_model_id> and --port <n>.
+Launched by `iq start` with --model <hf_model_id> and --port <n>.
 Requires: pipx inject mlx-lm mlx-embedding-models
 """
 import argparse

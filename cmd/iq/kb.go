@@ -668,7 +668,7 @@ func KBContext(results []kbResult) string {
 
 func kbIngest(root string) error {
 	if !embedSidecarAlive() {
-		return fmt.Errorf("embed sidecar not running — run: iq svc start")
+		return fmt.Errorf("embed sidecar not running — run: iq start")
 	}
 
 	abs, err := filepath.Abs(root)
@@ -903,7 +903,7 @@ func newKbSearchCmd() *cobra.Command {
 				return fmt.Errorf("knowledge base is empty — run: iq kb ingest <path>")
 			}
 			if !embedSidecarAlive() {
-				return fmt.Errorf("embed sidecar not running — run: iq svc start")
+				return fmt.Errorf("embed sidecar not running — run: iq start")
 			}
 			query := strings.Join(args, " ")
 
