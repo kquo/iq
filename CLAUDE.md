@@ -17,9 +17,9 @@
 
 ## Pre-Commit Checklist
 Before offering to run a release commit, always complete these steps in order:
-1. Audit `architecture.md` against the code — grep thresholds, constants, counts,
+1. Audit `arch.md` against the code — grep thresholds, constants, counts,
    formats, and field orders in source files and fix any drift.
-2. Also add version row to `architecture.md` with a one-line summary of the changes
+2. Also add version row to `arch.md` with a one-line summary of the changes
 3. Bump `program_version` in `cmd/iq/main.go` to the new version string
 4. Report to user they must now run `./build.sh <tag> "<message>"`
 

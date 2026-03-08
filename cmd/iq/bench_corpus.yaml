@@ -766,7 +766,7 @@ kb_docs:
 
   - id: md_arch_overview
     text: |
-      File: docs/architecture.md
+      File: docs/arch.md
       Architecture
 
       ## Architecture Overview
@@ -786,7 +786,7 @@ kb_docs:
 
   - id: md_arch_auth
     text: |
-      File: docs/architecture.md
+      File: docs/arch.md
       Architecture > Authentication
 
       ## Authentication
@@ -805,7 +805,7 @@ kb_docs:
 
   - id: md_arch_database
     text: |
-      File: docs/architecture.md
+      File: docs/arch.md
       Architecture > Database
 
       ## Database Design
@@ -822,7 +822,7 @@ kb_docs:
 
   - id: md_arch_errors
     text: |
-      File: docs/architecture.md
+      File: docs/arch.md
       Architecture > Error Handling
 
       ## Error Handling
