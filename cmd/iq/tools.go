@@ -399,7 +399,7 @@ func buildToolSystemPrompt() string {
 	b.WriteString("<tool_call>{\"name\": \"get_time\", \"args\": {}}</tool_call>\n\n")
 	b.WriteString("Available tools:\n")
 	for _, t := range toolRegistry {
-		b.WriteString(fmt.Sprintf("\n- %s: %s\n", t.Name, t.Description))
+		fmt.Fprintf(&b, "\n- %s: %s\n", t.Name, t.Description)
 		if len(t.Params) > 0 {
 			b.WriteString("  Parameters:\n")
 			for _, p := range t.Params {
@@ -407,11 +407,63 @@ func buildToolSystemPrompt() string {
 				if p.Required {
 					req = " (required)"
 				}
-				b.WriteString(fmt.Sprintf("    - %s (%s): %s%s\n", p.Name, p.Type, p.Description, req))
+				fmt.Fprintf(&b, "    - %s (%s): %s%s\n", p.Name, p.Type, p.Description, req)
 			}
 		}
 	}
 	return b.String()
+}
+
+// buildRoutingToolPrompt returns a system prompt for routing-grammar-aware inference.
+// The grammar constrains the model's first output to a routing prefix, so the
+// prompt only needs to explain the semantics.
+func buildRoutingToolPrompt() string {
+	var b strings.Builder
+	b.WriteString("\n[tools]\n")
+	b.WriteString("You have access to read-only tools. When a question can be answered by calling a tool, you MUST call the tool — never guess or fabricate the answer.\n\n")
+	b.WriteString("Your first output MUST be one of:\n")
+	b.WriteString("  <tool:TOOL_NAME>  — to call a tool, followed by JSON arguments\n")
+	b.WriteString("  <no_tool>         — to respond without using a tool, followed by your answer\n\n")
+	b.WriteString("Use <no_tool> ONLY for questions that no tool can answer (general knowledge, explanations, etc.).\n")
+	b.WriteString("Do not produce any text before the routing prefix.\n\n")
+	b.WriteString("Available tools:\n")
+	for _, t := range toolRegistry {
+		fmt.Fprintf(&b, "\n- %s: %s\n", t.Name, t.Description)
+		if len(t.Params) > 0 {
+			b.WriteString("  Parameters:\n")
+			for _, p := range t.Params {
+				req := ""
+				if p.Required {
+					req = " (required)"
+				}
+				fmt.Fprintf(&b, "    - %s (%s): %s%s\n", p.Name, p.Type, p.Description, req)
+			}
+		}
+	}
+	return b.String()
+}
+
+// toolRegistryNames returns the names of all registered tools.
+func toolRegistryNames() []string {
+	names := make([]string, len(toolRegistry))
+	for i, t := range toolRegistry {
+		names[i] = t.Name
+	}
+	return names
+}
+
+// parseRoutingPrefix extracts the routing decision from a grammar-constrained response.
+// Returns the tool name (empty string for <no_tool>) and the remainder of the response.
+func parseRoutingPrefix(text string) (toolName string, rest string) {
+	if after, ok := strings.CutPrefix(text, "<no_tool>"); ok {
+		return "", after
+	}
+	re := regexp.MustCompile(`^<tool:(\w+)>`)
+	m := re.FindStringSubmatch(text)
+	if m != nil {
+		return m[1], text[len(m[0]):]
+	}
+	return "", text // fallback: no prefix found
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -706,7 +758,7 @@ var toolSignals = []toolSignal{
 
 const (
 	toolCacheFile         = "tool_embeddings.json"
-	toolMinScore  float32 = 0.72
+	toolMinScore  float32 = 0.66
 )
 
 // ── Tool embedding cache ─────────────────────────────────────────────────────

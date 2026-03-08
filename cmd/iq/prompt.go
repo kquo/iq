@@ -30,6 +30,11 @@ type chatRequest struct {
 	Stream            bool          `json:"stream"`
 	MaxTokens         int           `json:"max_tokens,omitempty"`
 	RepetitionPenalty float64       `json:"repetition_penalty,omitempty"`
+	RoutingGrammar    *routeGrammar `json:"routing_grammar,omitempty"`
+}
+
+type routeGrammar struct {
+	ToolNames []string `json:"tool_names"`
 }
 
 type chatStreamChunk struct {
@@ -398,8 +403,7 @@ func stripThinkBlocks(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int) (string, error) {
-	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: 1.3}
+func doSidecarCall(port int, req chatRequest) (string, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err
@@ -431,6 +435,17 @@ func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int) (
 	}
 	content := result.Choices[0].Message.Content
 	return stripThinkBlocks(content), nil
+}
+
+func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int) (string, error) {
+	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: 1.3}
+	return doSidecarCall(port, req)
+}
+
+// callSidecarWithGrammar sends an inference request with an optional routing grammar.
+func callSidecarWithGrammar(port int, messages []chatMessage, maxTokens int, grammar *routeGrammar) (string, error) {
+	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: 1.3, RoutingGrammar: grammar}
+	return doSidecarCall(port, req)
 }
 
 func streamSidecar(port int, messages []chatMessage) (string, error) {
@@ -692,7 +707,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		messages = append(messages, sess.Messages...)
 		// If tools active, inject tool prompt into existing system message.
 		if useTools && len(messages) > 0 && messages[0].Role == "system" {
-			messages[0].Content += buildToolSystemPrompt()
+			messages[0].Content += buildRoutingToolPrompt()
 		}
 		messages = append(messages, chatMessage{Role: "user", Content: input})
 	} else if kbContext != "" {
@@ -705,7 +720,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			sysprompt = "You are a helpful assistant."
 		}
 		if useTools {
-			sysprompt += buildToolSystemPrompt()
+			sysprompt += buildRoutingToolPrompt()
 		}
 		userContent := kbContext + "\n\n" + input
 		messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
@@ -716,7 +731,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			if sysprompt == "" {
 				sysprompt = "You are a helpful assistant."
 			}
-			sysprompt += buildToolSystemPrompt()
+			sysprompt += buildRoutingToolPrompt()
 		}
 		if sysprompt != "" {
 			messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
@@ -766,10 +781,15 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		if useTools {
 			// Tool-enabled path always uses non-streaming so we can intercept
 			// tool_call blocks before they reach the user's terminal.
+
+			// ── Pass 1: routing-grammar-constrained inference ──
+			// The grammar forces the model to emit <tool:NAME> or <no_tool>
+			// as its very first tokens, then generates freely.
+			grammar := &routeGrammar{ToolNames: toolRegistryNames()}
 			if trace {
-				traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass 1, tools)", route.Port))
+				traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass 1, routing grammar)", route.Port))
 			}
-			response, err = callSidecar(route.Port, messages, false, 8192)
+			response, err = callSidecarWithGrammar(route.Port, messages, 8192, grammar)
 			if err != nil {
 				return sess, err
 			}
@@ -777,23 +797,85 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
 			}
 
-			// Tool guard: if pass 1 has no tool calls but Step 1b detected
-			// a tool signal via embedding, reprompt once to force tool use.
-			guardFired := false
-			if tt != nil && tt.Reason == "embed" {
-				calls, _ := parseToolCalls(response)
-				if len(calls) == 0 {
+			// Parse the routing prefix from the grammar-constrained response.
+			routedTool, routeRest := parseRoutingPrefix(response)
+
+			// If the grammar routed to a tool, construct a toolCall and execute it.
+			if routedTool != "" {
+				if trace {
+					traceField("route", fmt.Sprintf("<tool:%s>", routedTool))
+				}
+
+				// Try to parse JSON args from the text after the prefix.
+				var args map[string]any
+				argStr := strings.TrimSpace(routeRest)
+				if argStr != "" {
+					_ = json.Unmarshal([]byte(argStr), &args)
+				}
+				call := toolCall{Name: routedTool, Args: args}
+
+				if trace {
+					printToolCallTrace(call)
+				} else {
+					printToolStatus(call)
+				}
+				r := executeTool(call)
+				if trace {
+					printToolResultTrace(r)
+				}
+
+				// Inject result and continue to get the model's final answer.
+				messages = append(messages, chatMessage{Role: "assistant", Content: response})
+				messages = append(messages, chatMessage{
+					Role:    "user",
+					Content: "Use the tool result below to answer my original question.\n\n" + formatToolResult(r),
+				})
+				if trace {
+					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass 2)", route.Port))
+				}
+				response, err = callSidecar(route.Port, messages, false, 8192)
+				if err != nil {
+					return sess, err
+				}
+				if trace {
+					traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+				}
+			} else {
+				// <no_tool> or no prefix — use tool guard as fallback.
+				if trace {
+					traceField("route", "<no_tool>")
+				}
+				response = routeRest // strip the <no_tool> prefix
+
+				// Tool guard: if Step 1b detected a tool signal via embedding
+				// but the grammar chose <no_tool>, directly execute the first
+				// expected tool. Small models can't be reprompted into compliance,
+				// so we trust the embed signal and call the tool ourselves.
+				if tt != nil && tt.Reason == "embed" {
 					expected := signalToolNames(tt.BestSignal)
 					if len(expected) > 0 {
-						guardFired = true
+						guardTool := expected[0]
 						if trace {
-							traceField("guard", fmt.Sprintf("no tool call — reprompting for %s", strings.Join(expected, ", ")))
+							traceField("guard", fmt.Sprintf("<no_tool> but signal=%s — direct-calling %s", tt.BestSignal, guardTool))
 						}
-						messages = append(messages, chatMessage{Role: "assistant", Content: response})
+						call := toolCall{Name: guardTool, Args: nil}
+						if trace {
+							printToolCallTrace(call)
+						} else {
+							printToolStatus(call)
+						}
+						r := executeTool(call)
+						if trace {
+							printToolResultTrace(r)
+						}
+						messages = append(messages, chatMessage{Role: "assistant", Content: "Let me check that for you."})
 						messages = append(messages, chatMessage{
 							Role:    "user",
-							Content: fmt.Sprintf("Your previous response answered directly instead of calling a tool. You MUST call one of these tools to answer: %s. Produce a <tool_call> block.", strings.Join(expected, ", ")),
+							Content: "Use the tool result below to answer my original question.\n\n" + formatToolResult(r),
 						})
+						if trace {
+							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions (pass 2, after guard)", route.Port))
+						}
 						response, err = callSidecar(route.Port, messages, false, 8192)
 						if err != nil {
 							return sess, err
@@ -805,14 +887,12 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				}
 			}
 
+			// ── Passes 2+: standard tool loop for multi-tool chains ──
 			const maxToolIter = 5
 			for iter := range maxToolIter {
 				calls, remaining := parseToolCalls(response)
 				if len(calls) == 0 {
 					// No tool calls — final answer.
-					if guardFired && trace {
-						traceField("guard", "model still declined tool use — accepting response")
-					}
 					fmt.Println(remaining)
 					response = remaining
 					break

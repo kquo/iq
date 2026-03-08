@@ -300,6 +300,40 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestParseRoutingPrefix(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantTool string
+		wantRest string
+	}{
+		{"<tool:get_time>{}", "get_time", "{}"},
+		{`<tool:read_file>{"path":"/x"}`, "read_file", `{"path":"/x"}`},
+		{"<no_tool>The answer is 42.", "", "The answer is 42."},
+		{"plain text with no prefix", "", "plain text with no prefix"},
+		{"<tool:calc>", "calc", ""},
+		{"<no_tool>", "", ""},
+	}
+	for _, tt := range tests {
+		tool, rest := parseRoutingPrefix(tt.input)
+		if tool != tt.wantTool || rest != tt.wantRest {
+			t.Errorf("parseRoutingPrefix(%q) = (%q, %q), want (%q, %q)",
+				tt.input, tool, rest, tt.wantTool, tt.wantRest)
+		}
+	}
+}
+
+func TestToolRegistryNames(t *testing.T) {
+	names := toolRegistryNames()
+	if len(names) != len(toolRegistry) {
+		t.Fatalf("toolRegistryNames returned %d names, want %d", len(names), len(toolRegistry))
+	}
+	for i, name := range names {
+		if name != toolRegistry[i].Name {
+			t.Errorf("toolRegistryNames()[%d] = %q, want %q", i, name, toolRegistry[i].Name)
+		}
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }

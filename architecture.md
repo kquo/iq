@@ -16,7 +16,7 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
 ┌─────────┐ ┌──────┐ ┌────────┐ ┌──────────────────────┐ ┌──────────────────┐
-│ HF      │ │config│ │cues    │ │ mlx_lm.server        │ │ sessions/        │
+│ HF      │ │config│ │cues    │ │ infer_server.py      │ │ sessions/        │
 │ cache   │ │.yaml │ │.yaml   │ │ sidecars (pool)      │ │ <id>.yaml        │
 │         │ │      │ │        │ │                      │ │                  │
 │~/.cache/│ │tiers:│ │name    │ │ fast pool :27001+    │ │ kb.json          │
@@ -75,12 +75,12 @@ Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `s
 
 ### Service Daemon
 
-The **`iq svc`** command manages sidecar processes. Each sidecar runs as a detached `mlx_lm.server` process. Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
+The **`iq svc`** command manages sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, written to a temp file at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
 
 Start sequence:
 1. Allocate next free port from 27001+
-2. Resolve HF snapshot directory (`snapshots/<hash>/`) — the path `mlx_lm.server --model` requires
-3. Locate `mlx_lm.server` binary via augmented PATH (covers pipx, homebrew, venv installs)
+2. Resolve HF snapshot directory (`snapshots/<hash>/`) — the `--model` path
+3. Locate Python interpreter from the `mlx-lm` pipx venv; write embedded `infer_server.py` to temp dir
 4. Spawn detached subprocess (`Setsid: true`)
 5. Poll `GET /v1/models` until 200 OK or 120s timeout
 6. On failure: print last 10 log lines + path
@@ -89,7 +89,7 @@ Start sequence:
 
 **Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
 
-`iq svc doc` checks runtime dependencies: `python3` available, `mlx_lm.server` found and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
+`iq svc doc` checks runtime dependencies: `python3` available, `mlx_lm.server` found (needed for its venv Python) and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
 
 **Embeddings** — handled by a single local Python sidecar (`embed_model`, port 27000) started with `iq svc start`. Serves cue classification, tool detection, and KB indexing/retrieval. Configure via `iq svc embed`.
 
@@ -170,7 +170,7 @@ The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first u
 
 1. **Forced** — `-T` flag forces tools on; `--no-tools` forces them off.
 2. **File-path heuristic** — deterministic check for slash-separated paths (excluding URLs) or words ending in known source-code extensions (`.go`, `.py`, `.md`, `.json`, etc.).
-3. **Embed-based signal matching** — reuses the input vector already computed in Step 1 (zero extra API calls). Compares against 4 pre-embedded tool signal descriptions via cosine similarity. If the best match exceeds the tool threshold (0.72), tools are enabled.
+3. **Embed-based signal matching** — reuses the input vector already computed in Step 1 (zero extra API calls). Compares against 4 pre-embedded tool signal descriptions via cosine similarity. If the best match exceeds the tool threshold (0.66), tools are enabled.
 
 The 4 tool signals and the tools they cover:
 
@@ -193,13 +193,11 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 5 — INFERENCE LOOP.** Sends to the target sidecar via `POST /v1/chat/completions`. Non-tool path streams tokens to stdout by default.
 
-When tools are enabled, inference runs in a non-streaming loop (up to 5 iterations) driven entirely by IQ's Go code:
-1. Model generates a response (may contain `<tool_call>` request blocks — the model does not execute anything)
-2. **Tool guard** — if pass 1 contains no tool calls but Step 1b detected a tool signal via embedding, IQ reprompts once with a forceful instruction naming the expected tool(s). One retry only; if the model still declines, the response is accepted as-is
-3. IQ's parser extracts tool calls — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON
-4. IQ validates and executes each tool; results are prefixed with "Use the tool result below to answer my original question." and injected as `<tool_result>` user messages
-5. IQ re-calls the model with tool results in context
-6. Loop ends when the model produces a response with no tool calls, or after 5 iterations
+When tools are enabled, inference runs in a non-streaming loop driven entirely by IQ's Go code:
+1. **Pass 1 — routing grammar.** The request includes a `routing_grammar` field listing available tool names. The custom `infer_server.py` sidecar uses a `RoutingGrammarProcessor` (logits processor) to constrain the model's first tokens to one of `<tool:NAME>` or `<no_tool>`, then generates freely. This forces a structural routing decision before the model can fabricate an answer.
+2. **Route parse.** IQ parses the routing prefix with `parseRoutingPrefix()`. If `<tool:NAME>`, IQ constructs a `toolCall`, executes the tool, injects the result, and calls the model again (pass 2) to format the final answer.
+3. **Tool guard.** If the model chose `<no_tool>` but Step 1b detected a tool signal via embedding, IQ directly executes the expected tool (bypassing the model), injects the result, and calls the model to format the answer. This handles cases where small models pick `<no_tool>` despite clear tool intent.
+4. **Passes 2+ — standard tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), unclosed tags, and markdown-fenced JSON. IQ validates and executes each tool; results are injected as user messages. Loop ends when the model produces a response with no tool calls, or after 5 iterations.
 
 **Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Non-streaming mode strips think blocks from the full response.
 
@@ -240,7 +238,7 @@ In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), seven read-only to
 | `search_text` | `pattern` (required), `path` | Regex search across files (max 50 matches, skips .git/vendor/etc.) |
 | `count_lines` | `path` (required) | Count lines in a file |
 
-The tool system prompt is appended to the system message when tools are active. It lists all available tools with their parameter schemas and instructs the model to use `<tool_call>{"name": "...", "args": {...}}</tool_call>` format.
+The tool system prompt (`buildRoutingToolPrompt`) is appended to the system message when tools are active. It lists all available tools with their parameter schemas and instructs the model to emit `<tool:TOOL_NAME>` (followed by JSON arguments) or `<no_tool>` (followed by a direct answer) as its first output. The routing grammar logits processor enforces this structurally.
 
 ### Raw Sidecar Access
 
@@ -349,7 +347,7 @@ STEP 1b  TOOL DETECT
   -T/--no-tools flag? → forced
   hasFilePath(input)? → enabled (deterministic)
   else: cosine_similarity(input_vec, tool_signal_vecs[])
-  best score ≥ 0.72 → tools enabled
+  best score ≥ 0.66 → tools enabled
     │
     ▼
 STEP 2  RESOLVE ROUTE
@@ -378,11 +376,11 @@ STEP 4b CACHE CHECK  (if !session && !tools && !--no-cache)
     ▼
 STEP 5  INFERENCE LOOP  (skipped on cache hit)
   ├── no tools: SSE stream → stdout (token by token)
-  └── tools: non-streaming loop (up to 5 passes)
-       pass 1: model response → parse <tool_call> blocks
-       tool guard: if no tool calls but Step 1b detected signal → reprompt once
-       execute tools → inject <tool_result>
-       pass N: re-infer with tool results
+  └── tools: non-streaming loop
+       pass 1: routing grammar → model emits <tool:NAME> or <no_tool>
+       if <tool:NAME>: execute tool → inject result → pass 2 for final answer
+       if <no_tool> + embed signal: guard direct-calls tool → inject result → pass 2
+       passes 2+: parse <tool_call> blocks → execute → re-infer (up to 5 iterations)
        loop until no tool calls remain
     │
     ▼
@@ -440,19 +438,22 @@ STEP 4b CACHE CHECK
 
 STEP 5  INFERENCE LOOP
   task          Send assembled messages to model sidecar for generation
-  call          POST localhost:27001/v1/chat/completions (pass 1, tools)
-  raw_resp      "<tool_call>{...}</tool_call>"
-  tool_call     get_time({})
+  call          POST localhost:27001/v1/chat/completions (pass 1, routing grammar)
+  raw_resp      "<tool:get_time>"
+  route         <tool:get_time>
+  tool_call     get_time(null)
   tool_result   2026-03-02 08:55:00 EST (Monday)
   call          POST localhost:27001/v1/chat/completions (pass 2)
   raw_resp      "The current time is..."
   elapsed       1200ms
 
-  # If pass 1 had no tool call but Step 1b detected a signal:
-  # guard         no tool call — reprompting for get_time
-  # raw_resp      "<tool_call>{...}</tool_call>"   (retry succeeded)
-  # — or —
-  # guard         model still declined tool use — accepting response
+  # If grammar chose <no_tool> but Step 1b detected a signal:
+  # route         <no_tool>
+  # guard         <no_tool> but signal=time_date — direct-calling get_time
+  # tool_call     get_time(null)
+  # tool_result   2026-03-02 08:55:00 EST (Monday)
+  # call          POST localhost:27001/v1/chat/completions (pass 2, after guard)
+  # raw_resp      "The current time is..."
 
 STEP 5b CACHE WRITE
   task          Store response in cache
@@ -489,6 +490,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
 | `search.go` | DuckDuckGo client library (infrastructure) |
+| `infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 | `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
 | `bench_corpus.yaml` | Benchmark test data (embedded in binary) |
@@ -519,3 +521,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.3   | Response cache (Steps 4b/5b): FNV64a-keyed response cache with 1h TTL, --no-cache flag; rename Step 4→ASSEMBLE, Step 5→INFERENCE LOOP; capitalize all step names; add pass numbers to tool loop trace; add call trace for non-tool path |
 | 0.5.4   | Tune KB and tool thresholds: kbMinScore 0.50→0.72, kbDefaultK 5→3, toolMinScore 0.50→0.72; use kbDefaultK constant in all call sites; instruct model to use tool results on follow-up pass |
 | 0.5.5   | Arg validation UX: yellow error + command help on wrong args; move Step 1b before Step 2; tool guard reprompt on pass-1 simulation; disable cache when tools enabled; document tool execution model in architecture.md |
+| 0.5.7   | Routing grammar: replace mlx_lm.server with custom infer_server.py sidecar supporting constrained decoding via logits processors; routing grammar forces `<tool:NAME>` or `<no_tool>` prefix on pass 1; tool guard direct-calls tool when model picks `<no_tool>` despite embed signal; toolMinScore 0.72→0.66 |

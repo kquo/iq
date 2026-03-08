@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,6 +19,9 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 )
+
+//go:embed infer_server.py
+var inferServerPy string
 
 // ── Sidecar constants ─────────────────────────────────────────────────────────
 
@@ -288,8 +292,8 @@ func printLastLogLines(logFile string, n int) {
 	fmt.Fprintln(os.Stderr)
 }
 
-// startSidecar spawns an mlx_lm.server for the given tier/model, assigns a
-// dynamic port, writes a state file, then polls /v1/models until ready.
+// startSidecar spawns the infer_server.py sidecar for the given tier/model,
+// assigns a dynamic port, writes a state file, then polls /v1/models until ready.
 func startSidecar(tier, modelID string) error {
 	port, err := nextAvailablePort()
 	if err != nil {
@@ -310,11 +314,15 @@ func startSidecar(tier, modelID string) error {
 		return fmt.Errorf("cannot resolve model path: %w", snapErr)
 	}
 
-	serverPath, _ := checkCommand("mlx_lm.server", "")
-	if serverPath == "" {
-		return fmt.Errorf("mlx_lm.server not found — run 'iq svc doc' for details")
+	pyPath, pyErr := mlxVenvPython()
+	if pyErr != nil {
+		return fmt.Errorf("cannot resolve Python interpreter: %w", pyErr)
 	}
-	cmd := exec.Command(serverPath, "--model", modelPath, "--port", strconv.Itoa(port))
+	scriptPath := filepath.Join(os.TempDir(), "infer_server.py")
+	if err := os.WriteFile(scriptPath, []byte(inferServerPy), 0755); err != nil {
+		return fmt.Errorf("failed to write infer script: %w", err)
+	}
+	cmd := exec.Command(pyPath, scriptPath, "--model", modelPath, "--port", strconv.Itoa(port))
 	cmd.Env = os.Environ()
 	cmd.Stdout = lf
 	cmd.Stderr = lf
@@ -704,12 +712,12 @@ func newSvcStartCmd() *cobra.Command {
 	}
 }
 
-// killOrphanSidecars scans for any mlx_lm.server or embed_server.py
+// killOrphanSidecars scans for any infer_server.py, mlx_lm.server, or embed_server.py
 // processes on iq ports and kills them regardless of whether they have a state file.
 // This catches processes started during manual testing or left behind by
 // interrupted starts where no state file was written.
 func killOrphanSidecars() {
-	patterns := []string{"mlx_lm.server", "embed_server.py"}
+	patterns := []string{"infer_server.py", "mlx_lm.server", "embed_server.py"}
 	for _, pattern := range patterns {
 		out, err := exec.Command("pgrep", "-f", pattern).Output()
 		if err != nil {
