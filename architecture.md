@@ -38,13 +38,15 @@ The **`iq lm`** command handles the full model lifecycle. Models are downloaded 
 
 Key operations: `search`, `get`, `list`, `show`, `rm`.
 
-`iq lm search` queries the HF API, enriches results in parallel (one goroutine per model) to populate DISK and EST MEM, and displays TASK / DISK / PARAMS / EST MEM / DOWNLOADS. The TASK column shows the HuggingFace `pipeline_tag` (e.g. "Text Generation", "Image Text To Text") — green for supported text-generation models, red for unsupported types. Accepts an optional query string or a numeric count (e.g. `iq lm search 100`).
+`iq lm search` queries the HF API, enriches results in parallel (one goroutine per model) to populate DISK and EST MEM, and displays TASK / DISK / PARAMS / EST MEM / DOWNLOADS. The TASK column shows the HuggingFace `pipeline_tag` as-is (e.g. `text-generation`, `image-text-to-text`) — green for supported text-generation models, red for unsupported types. Accepts an optional query string or a numeric count (e.g. `iq lm search 100`).
 
 `iq lm get` checks the model's task type before downloading; if it is not `text-generation`, a yellow warning is printed (download proceeds anyway). After download, the `pipeline_tag` is cached in the manifest for offline display. Infers a suggested tier from disk size (< 2GB → fast, else slow) and prints the `iq svc tier add` command to assign it.
 
-`iq lm list` displays TASK alongside DISK / PULLED / PARAMS / EST MEM / TIER. On first display, missing task tags are backfilled from the HF API in parallel and persisted to the manifest.
+`iq lm list` displays TASK alongside DISK / PULLED / PARAMS / EST MEM / TIER. On first display, missing task tags are backfilled from the HF API in parallel (with local `config.json` inference as fallback) and persisted to the manifest.
 
-`iq lm show` displays the TASK field (backfilled from HF API if not cached).
+`iq lm show` displays the TASK field (backfilled from HF API or local `config.json` inference if not cached).
+
+**Local task inference** (`inferTaskFromConfig`) — when the HF API returns no `pipeline_tag`, IQ reads the model's local `config.json` and infers the task: vision indicator keys (`vision_config`, `visual`, `vision_tower`, `image_size`) or known VLM `model_type` values → `image-text-to-text`; known text-generation `model_type` values (only after confirming no vision indicators) → `text-generation`.
 
 `iq lm rm` refuses to remove a model assigned to a tier or whose sidecar is running.
 
@@ -529,3 +531,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.7   | Routing grammar: replace mlx_lm.server with custom infer_server.py sidecar supporting constrained decoding via logits processors; routing grammar forces `<tool:NAME>` or `<no_tool>` prefix on pass 1; tool guard direct-calls tool when model picks `<no_tool>` despite embed signal; toolMinScore 0.72→0.66 |
 | 0.5.8   | VLM guard: reject vision-language models at svc start (checks config.json for vision indicators); early crash detection via cmd.Wait() goroutine replaces zombie-prone signal-0 check for immediate failure reporting |
 | 0.5.9   | Model task display: show HF pipeline_tag (TASK column) in lm search/list/show with green/red color coding; warn on non-text-generation downloads; cache task in manifest with parallel backfill |
+| 0.5.10  | Display raw HF pipeline_tag (lowercase with hyphens); local task inference from config.json as fallback when HF returns no tag (checks vision indicators before model_type) |

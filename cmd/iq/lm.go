@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -424,29 +425,16 @@ func parseParamsM(id string) string {
 	return raw
 }
 
-// taskTitle converts a HF pipeline_tag to title case.
-// e.g. "text-generation" → "Text Generation", "image-text-to-text" → "Image Text To Text"
-func taskTitle(tag string) string {
-	words := strings.Split(tag, "-")
-	for i, w := range words {
-		if len(w) > 0 {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
-		}
-	}
-	return strings.Join(words, " ")
-}
-
-// formatTask returns a colored, title-cased task label for single-line display.
+// formatTask returns a colored task label for single-line display.
 // "text-generation" is green (supported); everything else is red.
 func formatTask(tag string) string {
 	if tag == "" {
 		return utl.Gra("-")
 	}
-	display := taskTitle(tag)
 	if tag == "text-generation" {
-		return utl.Gre(display)
+		return utl.Gre(tag)
 	}
-	return utl.Red(display)
+	return utl.Red(tag)
 }
 
 // formatTaskCol returns a fixed-width (24-char), colored task string for table columns.
@@ -455,7 +443,7 @@ func formatTaskCol(tag string) string {
 	if raw == "" {
 		raw = "-"
 	}
-	display := taskTitle(raw)
+	display := raw
 	if len(display) > 24 {
 		display = display[:23] + "…"
 	}
@@ -467,6 +455,69 @@ func formatTaskCol(tag string) string {
 		return utl.Red(padded)
 	}
 	return utl.Gra(padded)
+}
+
+// inferTaskFromConfig reads a local model's config.json and infers the
+// pipeline_tag from model_type. Returns "" if it cannot determine the task.
+func inferTaskFromConfig(modelID string) string {
+	cacheDir := hfCacheDir(modelID)
+	snapshotsDir := filepath.Join(cacheDir, "snapshots")
+	entries, err := os.ReadDir(snapshotsDir)
+	if err != nil {
+		return ""
+	}
+	var snapDir string
+	for _, e := range entries {
+		if e.IsDir() {
+			snapDir = filepath.Join(snapshotsDir, e.Name())
+		}
+	}
+	if snapDir == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(snapDir, "config.json"))
+	if err != nil {
+		return ""
+	}
+	var cfg map[string]any
+	if json.Unmarshal(data, &cfg) != nil {
+		return ""
+	}
+
+	// VLM indicators → image-text-to-text
+	for _, key := range []string{"vision_config", "visual", "vision_tower", "image_size"} {
+		if _, ok := cfg[key]; ok {
+			return "image-text-to-text"
+		}
+	}
+
+	mt, _ := cfg["model_type"].(string)
+	if mt == "" {
+		return ""
+	}
+
+	// Known VLM model_type values
+	if slices.Contains([]string{
+		"qwen2_5_vl", "qwen2_vl", "llava", "idefics", "paligemma", "mllama",
+	}, mt) {
+		return "image-text-to-text"
+	}
+
+	// Known text-generation model_type values
+	if slices.Contains([]string{
+		"gemma", "gemma2", "gemma3",
+		"llama", "mistral", "mixtral",
+		"phi", "phi3", "phimoe",
+		"qwen2", "qwen3",
+		"starcoder2", "codellama",
+		"deepseek_v2", "deepseek_v3",
+		"cohere", "cohere2",
+		"stablelm",
+	}, mt) {
+		return "text-generation"
+	}
+
+	return ""
 }
 
 // hfFetchTags fetches pipeline_tag for manifest entries that have no Task cached.
@@ -493,9 +544,13 @@ func hfFetchTags(entries []manifestEntry) bool {
 		wg.Add(1)
 		go func(i int, id string) {
 			defer wg.Done()
-			m, err := hfFetchModel(id)
-			if err == nil && m.PipelineTag != "" {
+			// Try HF API first, fall back to local config.json inference.
+			if m, err := hfFetchModel(id); err == nil && m.PipelineTag != "" {
 				ch <- result{i, m.PipelineTag}
+				return
+			}
+			if tag := inferTaskFromConfig(id); tag != "" {
+				ch <- result{i, tag}
 			}
 		}(idx, entries[idx].ID)
 	}
@@ -633,7 +688,7 @@ func newLmGetCmd() *cobra.Command {
 			// Check task type before downloading.
 			if m, err := hfFetchModel(model); err == nil && m.PipelineTag != "" && m.PipelineTag != "text-generation" {
 				fmt.Fprintf(os.Stderr, "%s\n",
-					utl.Yel(fmt.Sprintf("Warning: model task is %q — IQ only supports Text Generation", taskTitle(m.PipelineTag))))
+					utl.Yel(fmt.Sprintf("Warning: model task is %q — IQ only supports text-generation", m.PipelineTag)))
 			}
 
 			// Run via shell so it inherits the user's full PATH
@@ -668,8 +723,14 @@ func newLmGetCmd() *cobra.Command {
 			if entries, err := loadManifest(); err == nil {
 				for i, e := range entries {
 					if e.ID == model && e.Task == "" {
+						tag := ""
 						if m, err := hfFetchModel(model); err == nil && m.PipelineTag != "" {
-							entries[i].Task = m.PipelineTag
+							tag = m.PipelineTag
+						} else {
+							tag = inferTaskFromConfig(model)
+						}
+						if tag != "" {
+							entries[i].Task = tag
 							_ = saveManifest(entries)
 						}
 						break
@@ -842,13 +903,19 @@ func newLmShowCmd() *cobra.Command {
 				return fmt.Errorf("model %q not found in manifest", id)
 			}
 
-			// Backfill task tag if missing.
+			// Backfill task tag if missing — try HF API, then local config.json.
 			if entry.Task == "" {
+				tag := ""
 				if m, err := hfFetchModel(entry.ID); err == nil && m.PipelineTag != "" {
-					entry.Task = m.PipelineTag
+					tag = m.PipelineTag
+				} else {
+					tag = inferTaskFromConfig(entry.ID)
+				}
+				if tag != "" {
+					entry.Task = tag
 					for i := range entries {
 						if entries[i].ID == entry.ID {
-							entries[i].Task = m.PipelineTag
+							entries[i].Task = tag
 							break
 						}
 					}
