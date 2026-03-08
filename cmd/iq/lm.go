@@ -26,6 +26,7 @@ const hfAPIBase = "https://huggingface.co/api/models"
 
 type hfModel struct {
 	ID           string      `json:"id"`
+	PipelineTag  string      `json:"pipeline_tag"`
 	Downloads    int         `json:"downloads"`
 	LastModified string      `json:"lastModified"`
 	Siblings     []hfSibling `json:"siblings"`
@@ -121,6 +122,9 @@ func hfEnrichModels(models []hfModel) {
 			defer wg.Done()
 			full, err := hfFetchModel(id)
 			if err == nil {
+				if full.PipelineTag != "" {
+					enriched[idx].PipelineTag = full.PipelineTag
+				}
 				if full.UsedStorage > 0 {
 					enriched[idx].UsedStorage = full.UsedStorage
 				}
@@ -158,6 +162,7 @@ type manifestEntry struct {
 	ID       string `json:"id"`
 	PulledAt string `json:"pulled_at"`
 	HFCache  string `json:"hf_cache_path"`
+	Task     string `json:"task,omitempty"`
 }
 
 func loadManifest() ([]manifestEntry, error) {
@@ -419,6 +424,92 @@ func parseParamsM(id string) string {
 	return raw
 }
 
+// taskTitle converts a HF pipeline_tag to title case.
+// e.g. "text-generation" → "Text Generation", "image-text-to-text" → "Image Text To Text"
+func taskTitle(tag string) string {
+	words := strings.Split(tag, "-")
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// formatTask returns a colored, title-cased task label for single-line display.
+// "text-generation" is green (supported); everything else is red.
+func formatTask(tag string) string {
+	if tag == "" {
+		return utl.Gra("-")
+	}
+	display := taskTitle(tag)
+	if tag == "text-generation" {
+		return utl.Gre(display)
+	}
+	return utl.Red(display)
+}
+
+// formatTaskCol returns a fixed-width (24-char), colored task string for table columns.
+func formatTaskCol(tag string) string {
+	raw := tag
+	if raw == "" {
+		raw = "-"
+	}
+	display := taskTitle(raw)
+	if len(display) > 24 {
+		display = display[:23] + "…"
+	}
+	padded := fmt.Sprintf("%-24s", display)
+	if raw == "text-generation" {
+		return utl.Gre(padded)
+	}
+	if raw != "-" {
+		return utl.Red(padded)
+	}
+	return utl.Gra(padded)
+}
+
+// hfFetchTags fetches pipeline_tag for manifest entries that have no Task cached.
+// It updates the entries in place and returns true if any were updated.
+func hfFetchTags(entries []manifestEntry) bool {
+	// Collect indices that need fetching.
+	var need []int
+	for i, e := range entries {
+		if e.Task == "" {
+			need = append(need, i)
+		}
+	}
+	if len(need) == 0 {
+		return false
+	}
+
+	var wg sync.WaitGroup
+	type result struct {
+		idx int
+		tag string
+	}
+	ch := make(chan result, len(need))
+	for _, idx := range need {
+		wg.Add(1)
+		go func(i int, id string) {
+			defer wg.Done()
+			m, err := hfFetchModel(id)
+			if err == nil && m.PipelineTag != "" {
+				ch <- result{i, m.PipelineTag}
+			}
+		}(idx, entries[idx].ID)
+	}
+	wg.Wait()
+	close(ch)
+
+	updated := false
+	for r := range ch {
+		entries[r.idx].Task = r.tag
+		updated = true
+	}
+	return updated
+}
+
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printLmHelp() {
@@ -503,16 +594,17 @@ func newLmSearchCmd() *cobra.Command {
 			}
 			hfEnrichModels(models)
 
-			fmt.Printf("%-60s  %10s  %10s  %12s  %12s\n",
-				"MODEL", "DISK", "PARAMS", "EST MEM", "DOWNLOADS")
+			fmt.Printf("%-60s  %-24s  %10s  %10s  %12s  %12s\n",
+				"MODEL", "TASK", "DISK", "PARAMS", "EST MEM", "DOWNLOADS")
 			for _, m := range models {
 				disk := m.totalSize()
 				name := m.ID
 				if len(name) > 60 {
 					name = name[:59] + "…"
 				}
-				fmt.Printf("%-60s  %10s  %10s  %12s  %12s\n",
+				fmt.Printf("%-60s  %s  %10s  %10s  %12s  %12s\n",
 					name,
+					formatTaskCol(m.PipelineTag),
 					formatMB(disk),
 					parseParamsM(m.ID),
 					estMemMB(disk),
@@ -537,6 +629,12 @@ func newLmGetCmd() *cobra.Command {
 		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			model := args[0]
+
+			// Check task type before downloading.
+			if m, err := hfFetchModel(model); err == nil && m.PipelineTag != "" && m.PipelineTag != "text-generation" {
+				fmt.Fprintf(os.Stderr, "%s\n",
+					utl.Yel(fmt.Sprintf("Warning: model task is %q — IQ only supports Text Generation", taskTitle(m.PipelineTag))))
+			}
 
 			// Run via shell so it inherits the user's full PATH
 			// (hf is often installed in a pip user bin dir not visible to exec directly).
@@ -566,6 +664,19 @@ func newLmGetCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: failed to update manifest: "+err.Error()))
 			}
 
+			// Cache the pipeline_tag in the manifest.
+			if entries, err := loadManifest(); err == nil {
+				for i, e := range entries {
+					if e.ID == model && e.Task == "" {
+						if m, err := hfFetchModel(model); err == nil && m.PipelineTag != "" {
+							entries[i].Task = m.PipelineTag
+							_ = saveManifest(entries)
+						}
+						break
+					}
+				}
+			}
+
 			tier := suggestTier(model)
 			fmt.Printf("\nSuggested tier: %s\n", utl.Gre(tier))
 			fmt.Printf("%s\n", utl.Gra(
@@ -593,8 +704,14 @@ func newLmListCmd() *cobra.Command {
 				fmt.Println("No models. Use 'iq lm get <model>' to download one.")
 				return nil
 			}
-			fmt.Printf("%-55s  %8s  %-10s  %8s  %10s  %s\n",
-				"MODEL", "DISK", "PULLED", "PARAMS", "EST MEM", "TIER")
+
+			// Backfill task tags from HF API for entries that don't have one cached.
+			if hfFetchTags(entries) {
+				_ = saveManifest(entries)
+			}
+
+			fmt.Printf("%-55s  %-24s  %8s  %-10s  %8s  %10s  %s\n",
+				"MODEL", "TASK", "DISK", "PULLED", "PARAMS", "EST MEM", "TIER")
 			cfg, _ := loadConfig()
 			emM := embedModel(cfg)
 			for _, e := range entries {
@@ -603,8 +720,6 @@ func newLmListCmd() *cobra.Command {
 				if t, err := time.Parse(time.RFC3339, e.PulledAt); err == nil {
 					pulled = t.Format("2006-01-02")
 				}
-				// Pad raw strings to width before colorizing, so ANSI codes
-				// don't corrupt column alignment.
 				var tierDisplay string
 				if e.ID == emM {
 					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "embed"))
@@ -619,8 +734,9 @@ func newLmListCmd() *cobra.Command {
 						tierDisplay = utl.Gre(fmt.Sprintf("%-6s", tierRaw))
 					}
 				}
-				fmt.Printf("%-55s  %8s  %-10s  %8s  %10s  %s\n",
+				fmt.Printf("%-55s  %s  %8s  %-10s  %8s  %10s  %s\n",
 					e.ID,
+					formatTaskCol(e.Task),
 					formatMB(disk),
 					pulled,
 					parseParamsM(e.ID),
@@ -726,6 +842,20 @@ func newLmShowCmd() *cobra.Command {
 				return fmt.Errorf("model %q not found in manifest", id)
 			}
 
+			// Backfill task tag if missing.
+			if entry.Task == "" {
+				if m, err := hfFetchModel(entry.ID); err == nil && m.PipelineTag != "" {
+					entry.Task = m.PipelineTag
+					for i := range entries {
+						if entries[i].ID == entry.ID {
+							entries[i].Task = m.PipelineTag
+							break
+						}
+					}
+					_ = saveManifest(entries)
+				}
+			}
+
 			cacheDir := hfCacheDir(entry.ID)
 			disk := diskUsage(cacheDir)
 			pulled := ""
@@ -734,6 +864,7 @@ func newLmShowCmd() *cobra.Command {
 			}
 
 			fmt.Printf("%-12s %s\n", "MODEL", entry.ID)
+			fmt.Printf("%-12s %s\n", "TASK", formatTask(entry.Task))
 
 			// ── PERFORMANCE ───────────────────────────────────────────
 			bs, bsErr := loadBenchStore()
