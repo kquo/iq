@@ -16,6 +16,14 @@ A personal tool for experimenting with LLM orchestration directly from the Mac t
 - `hf` CLI (`pipx install huggingface_hub`)
 - `mlx-embedding-models` in the mlx-lm venv (`pipx inject mlx-lm mlx-embedding-models`) — used for embeddings (classification + RAG)
 
+IQ uses [Hugging Face](https://huggingface.co) as the official model registry. All model downloads (`iq lm get`, `iq lm search`) pull from HF. For access to gated models and to avoid rate limits, set a Hugging Face token:
+
+```bash
+export HF_TOKEN=hf_k7mX2pQ9nRvL4wD8fYcJ3tBsH6eA1gNuZ5iW   # replace with your token
+```
+
+You can create a token at <https://huggingface.co/settings/tokens>.
+
 ## Getting Started
 
 Requires Go installed with `$GOPATH/bin` in your `$PATH`.

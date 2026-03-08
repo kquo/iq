@@ -426,13 +426,16 @@ func parseParamsM(id string) string {
 }
 
 // formatTask returns a colored task label for single-line display.
-// "text-generation" is green (supported); everything else is red.
+// "text-generation" and "feature-extraction" (shown as "embedding") are green; everything else is red.
 func formatTask(tag string) string {
 	if tag == "" {
 		return utl.Gra("-")
 	}
 	if tag == "text-generation" {
 		return utl.Gre(tag)
+	}
+	if tag == "feature-extraction" {
+		return utl.Gre("embedding")
 	}
 	return utl.Red(tag)
 }
@@ -444,11 +447,14 @@ func formatTaskCol(tag string) string {
 		raw = "-"
 	}
 	display := raw
+	if raw == "feature-extraction" {
+		display = "embedding"
+	}
 	if len(display) > 24 {
 		display = display[:23] + "…"
 	}
 	padded := fmt.Sprintf("%-24s", display)
-	if raw == "text-generation" {
+	if raw == "text-generation" || raw == "feature-extraction" {
 		return utl.Gre(padded)
 	}
 	if raw != "-" {
@@ -998,33 +1004,51 @@ func newLmRmCmd() *cobra.Command {
 			model := args[0]
 			cacheDir := hfCacheDir(model)
 
-			// Refuse to remove a model assigned as the embed model.
+			// Warn and auto-clear if model is the embed model.
 			cfg, _ := loadConfig()
 			if cfg != nil && model == embedModel(cfg) {
 				s, _ := readState(embedSlugConst)
 				if s != nil && pidAlive(s.PID) {
-					return fmt.Errorf("%s is the embed model and its sidecar is running\n"+
-						"  Run 'iq stop' first", model)
+					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping embed sidecar"))
+					if err := stopSidecar(embedSlugConst); err != nil {
+						return fmt.Errorf("failed to stop embed sidecar: %w", err)
+					}
 				}
-				return fmt.Errorf("%s is the embed model\n"+
-					"  Run 'iq embed rm' to revert it before removing", model)
+				fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: clearing embed_model assignment"))
+				cfg.EmbedModel = ""
+				if err := saveConfig(cfg); err != nil {
+					return fmt.Errorf("failed to update config: %w", err)
+				}
 			}
 
-			// Refuse to remove a model that is assigned to a tier.
+			// Warn and auto-clear if model is assigned to a tier.
 			if t := tierForModel(model); t != "" {
-				// Also check if the sidecar is running.
 				state, _ := readState(model)
 				if state != nil && pidAlive(state.PID) {
-					return fmt.Errorf("%s is in the %s tier and its sidecar is running\n"+
-						"  Run 'iq stop %s' then 'iq tier rm %s %s' before removing", model, t, model, t, model)
+					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping "+model+" sidecar"))
+					if err := stopSidecar(model); err != nil {
+						return fmt.Errorf("failed to stop sidecar: %w", err)
+					}
 				}
-				return fmt.Errorf("%s is in the %s tier\n"+
-					"  Run 'iq tier rm %s %s' before removing", model, t, t, model)
+				fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: removing "+model+" from "+t+" tier"))
+				// Reload config in case it was modified above.
+				cfg, _ = loadConfig()
+				if cfg != nil {
+					for i, m := range cfg.Tiers[t] {
+						if m == model {
+							cfg.Tiers[t] = append(cfg.Tiers[t][:i], cfg.Tiers[t][i+1:]...)
+							break
+						}
+					}
+					if err := saveConfig(cfg); err != nil {
+						return fmt.Errorf("failed to update config: %w", err)
+					}
+				}
 			}
 
 			if !force {
 				disk := diskUsage(cacheDir)
-				fmt.Printf("Remove %s (%s)? [y/N] ", model, formatMB(disk))
+				fmt.Printf("%s [y/N] ", utl.Yel(fmt.Sprintf("Remove %s (%s)?", model, formatMB(disk))))
 				var resp string
 				fmt.Scanln(&resp)
 				if strings.ToLower(strings.TrimSpace(resp)) != "y" {
