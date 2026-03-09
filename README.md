@@ -71,16 +71,55 @@ iq pry fast "hello"
 iq pry slow "explain attention" -s "You are a terse assistant."
 ```
 
-## Commands
+## Usage
 
-| Command | Description |
-|---------|-------------|
-| `iq lm` | Search, download, list, and manage local models |
-| `iq svc` | Start, stop, monitor sidecars; manage tier and embed config |
-| `iq ask` | Interactive REPL and prompt aliases (`iq "msg"` also works) |
-| `iq pry` | Send raw messages directly to a model sidecar |
-| `iq cue` | Manage the cue library |
-| `iq kb` | Manage the knowledge base for RAG retrieval |
-| `iq status` | Show running sidecar status (alias: `iq st`) |
+```bash
+$ iq
+iq v0.6.2
+Work with IQ from the command line.
 
-Run `iq <command> --help` for details on any command.
+USAGE
+  iq <command> [subcommand] [flags]
+  iq [flags] <message>
+
+SERVICE
+  start [tier|model]       Start sidecars
+  stop [tier|model]        Stop sidecars
+  status                   Show running sidecar status (alias: st)
+  doc                      Check runtime dependencies and model readiness
+  tier                     Manage model tier pool assignments
+  embed                    Manage embed sidecar model
+
+COMMANDS
+  lm                       Work with IQ language models
+  ask                      Interactive REPL and prompt aliases
+  cue                      Work with IQ cues
+  kb                       Work with IQ knowledge base
+  perf                     Benchmark IQ model performance
+  pry                      Send a raw message directly to a model sidecar
+  version                  Show the current IQ version
+
+FLAGS
+  -r, --cue <n>            Skip classification, use this cue
+  -c, --category <n>       Classify within a category only
+      --tier <n>           Override tier directly, bypass cue system
+  -s, --session <id>       Load/continue a session by ID
+  -n, --dry-run            Trace steps 1–4, skip inference
+  -d, --debug              Trace all steps including inference
+  -K, --no-kb              Disable knowledge base retrieval for this prompt
+      --no-cache           Disable response cache
+  -T, --tools              Force enable read-only tool use
+      --no-tools           Disable tool use
+      --no-stream          Collect full response before printing
+  -h, -?, --help           Show this help output or the help for a specified subcommand.
+  -v, --version            An alias for the "version" subcommand.
+
+EXAMPLES
+  $ iq "explain transformers"
+  $ iq -d "explain transformers"
+  $ iq ask
+  $ iq start
+  $ iq stop
+  $ iq st
+  $ iq doc
+```
