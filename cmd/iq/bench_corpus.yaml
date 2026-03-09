@@ -1412,3 +1412,11 @@ tool_prompts:
   - id: tool_count_lines_2
     text: "Count the lines in go.mod"
     expected_tool: count_lines
+
+  - id: tool_web_search_1
+    text: "What were the results of yesterday's NBA games?"
+    expected_tool: web_search
+
+  - id: tool_web_search_2
+    text: "Look up the current price of Bitcoin"
+    expected_tool: web_search

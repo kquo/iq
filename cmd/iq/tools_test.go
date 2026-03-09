@@ -259,7 +259,7 @@ func TestHasFilePathNegative(t *testing.T) {
 // ── Tool registry tests ─────────────────────────────────────────────────────
 
 func TestFindTool(t *testing.T) {
-	for _, name := range []string{"get_time", "read_file", "list_dir", "file_info", "calc", "search_text", "count_lines"} {
+	for _, name := range []string{"get_time", "read_file", "list_dir", "file_info", "calc", "search_text", "count_lines", "web_search"} {
 		if findTool(name) == nil {
 			t.Errorf("findTool(%q) returned nil", name)
 		}
@@ -293,7 +293,7 @@ func TestBuildToolSystemPrompt(t *testing.T) {
 		t.Error("system prompt should contain <tool_call> instruction")
 	}
 	// Should list all tools.
-	for _, name := range []string{"get_time", "read_file", "list_dir", "file_info", "calc", "search_text", "count_lines"} {
+	for _, name := range []string{"get_time", "read_file", "list_dir", "file_info", "calc", "search_text", "count_lines", "web_search"} {
 		if !contains(prompt, name) {
 			t.Errorf("system prompt should mention tool %q", name)
 		}

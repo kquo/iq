@@ -177,9 +177,9 @@ The cue embedding cache (`~/.config/iq/cue_embeddings.json`) is built on first u
 
 1. **Forced** — `-T` flag forces tools on; `--no-tools` forces them off.
 2. **File-path heuristic** — deterministic check for slash-separated paths (excluding URLs) or words ending in known source-code extensions (`.go`, `.py`, `.md`, `.json`, etc.).
-3. **Embed-based signal matching** — reuses the input vector already computed in Step 1 (zero extra API calls). Compares against 4 pre-embedded tool signal descriptions via cosine similarity. If the best match exceeds the tool threshold (0.66), tools are enabled.
+3. **Embed-based signal matching** — reuses the input vector already computed in Step 1 (zero extra API calls). Compares against 5 pre-embedded tool signal descriptions via cosine similarity. If the best match exceeds the tool threshold (0.60), tools are enabled.
 
-The 4 tool signals and the tools they cover:
+The 5 tool signals and the tools they cover:
 
 | Signal | Tools | Description |
 |--------|-------|-------------|
@@ -187,6 +187,7 @@ The 4 tool signals and the tools they cover:
 | `file_access` | `read_file`, `list_dir`, `file_info` | Read/list files, file metadata |
 | `file_search` | `search_text`, `count_lines` | Search for text in files, count lines |
 | `calculation` | `calc` | Math expressions, percentages, arithmetic |
+| `web_search` | `web_search` | Current events, latest news, up-to-date facts, live web lookup |
 
 Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and versioned with an FNV32a hash over signal names and descriptions so they auto-refresh when signals change.
 
@@ -233,7 +234,7 @@ When tools are enabled, inference runs in a non-streaming loop driven entirely b
 
 > **How tool use actually works.** The model never executes anything — it is a sandboxed token predictor with no OS access, no network, and no file system. What happens: IQ's system prompt gives the model a list of tool definitions (name, description, parameter schema). When the model decides a tool would help, it emits a structured `<tool_call>` block — not an execution, just a formatted request. IQ's Go code detects that syntax, validates the call, runs the actual function, and injects the result back into the conversation as a new message. The model then continues from there. The "agentic" behaviour is a loop IQ drives: call model → check for tool calls → execute tool → append result → call model again → repeat until the model emits a plain-text response. The model cannot initiate anything between turns, cannot run in the background, and cannot do anything IQ's harness code does not explicitly handle. This is why all tools are read-only and file paths are validated before execution — IQ is the one pulling the trigger.
 
-In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), seven read-only tools are available. All file-access tools enforce path security: only the current working directory and paths listed in `config.yaml` `tool_paths` are allowed. Paths are resolved through symlinks and checked via prefix matching.
+In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), eight read-only tools are available. All file-access tools enforce path security: only the current working directory and paths listed in `config.yaml` `tool_paths` are allowed. Paths are resolved through symlinks and checked via prefix matching.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
@@ -244,6 +245,7 @@ In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), seven read-only to
 | `calc` | `expression` (required) | Evaluate math: `+`, `-`, `*`, `/`, `%`, parentheses, decimals |
 | `search_text` | `pattern` (required), `path` | Regex search across files (max 50 matches, skips .git/vendor/etc.) |
 | `count_lines` | `path` (required) | Count lines in a file |
+| `web_search` | `query` (required), `count` | Search the web via DuckDuckGo (default 3 results, max 20) |
 
 The tool system prompt (`buildRoutingToolPrompt`) is appended to the system message when tools are active. It lists all available tools with their parameter schemas, the current working directory, and instructs the model to emit `<tool:TOOL_NAME>` (followed by JSON arguments) or `<no_tool>` (followed by a direct answer) as its first output. The routing grammar logits processor enforces this structurally.
 
@@ -497,13 +499,13 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `cue.go` | Cue CRUD, defaults, sync, embedded `cues_default.yaml` |
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
 | `cache.go` | Response cache with FNV64a hashing, TTL expiry, load/save/check/write |
-| `tools.go` | Tool registry (7 tools), parser, executor, tool signals, embed-based detection |
+| `tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
 | `tools_test.go` | Tests for calc, parseToolCalls, validatePath, hasFilePath, tool registry |
 | `kb.go` | KB index, structure-aware chunking, hybrid search, ingest, CLI commands |
 | `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
-| `search.go` | DuckDuckGo client library (infrastructure) |
+| `search.go` | DuckDuckGo HTML search client, used by `web_search` tool |
 | `search_test.go` | Tests for DuckDuckGo search client |
 | `infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 | `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
@@ -545,3 +547,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.0   | TASK label `feature-extraction` displayed as `embedding` (green); `lm rm` auto-stops sidecars and clears tier/embed assignments with yellow warnings instead of blocking; yellow confirmation prompt; README documents HF as official registry with token recommendation |
 | 0.6.1   | Robust tool arg parsing (broken JSON, unquoted keys, `=` separators, `--flag=value` CLI format); print successful tool output directly instead of pass 2 re-inference; inject cwd into tool system prompt; PASS/GUARD/latency debug trace format; parse `<tool:NAME>` routing prefix on follow-up passes |
 | 0.6.2   | Tool use benchmark (`iq perf bench --type tool`): 14 prompts across 7 tools, measures routing accuracy and execution success; `-v` flag for per-prompt debug detail |
+| 0.6.3   | Web search tool: DuckDuckGo integration via `web_search` tool and embed signal; short-circuit skips routing grammar for web queries; synthesis prompt with date injection; toolMinScore 0.66→0.60 |

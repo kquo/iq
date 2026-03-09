@@ -53,6 +53,7 @@ func init() {
 		toolCalc(),
 		toolSearchText(),
 		toolCountLines(),
+		toolWebSearch(),
 	}
 }
 
@@ -61,6 +62,22 @@ func signalToolNames(signal string) []string {
 	for _, s := range toolSignals {
 		if s.Name == signal {
 			return s.Tools
+		}
+	}
+	return nil
+}
+
+// guardToolArgs builds a default arg map for a guard direct-call by populating
+// the tool's first required parameter with the user input. Tools with no
+// required params (e.g. get_time) get nil args as before.
+func guardToolArgs(toolName, input string) map[string]any {
+	t := findTool(toolName)
+	if t == nil {
+		return nil
+	}
+	for _, p := range t.Params {
+		if p.Required {
+			return map[string]any{p.Name: input}
 		}
 	}
 	return nil
@@ -378,6 +395,47 @@ func toolCountLines() tool {
 				count++
 			}
 			return fmt.Sprintf("%d lines", count), nil
+		},
+	}
+}
+
+// toolWebSearch searches the web via DuckDuckGo and returns formatted results.
+func toolWebSearch() tool {
+	return tool{
+		Name:        "web_search",
+		Description: "Search the web for current information using DuckDuckGo",
+		Params: []toolParam{
+			{Name: "query", Type: "string", Description: "Search query", Required: true},
+			{Name: "count", Type: "number", Description: "Max results to return (default: 3)", Required: false},
+		},
+		Handler: func(args map[string]any) (string, error) {
+			query, _ := args["query"].(string)
+			if query == "" {
+				return "", fmt.Errorf("missing required parameter: query")
+			}
+			maxResults := 3
+			if n, ok := args["count"].(float64); ok && n > 0 {
+				maxResults = min(int(n), 20)
+			}
+			param, err := NewSearchParam(query)
+			if err != nil {
+				return "", err
+			}
+			results, err := Search(param, maxResults)
+			if err != nil {
+				return "", fmt.Errorf("web search failed: %w", err)
+			}
+			if results == nil || len(*results) == 0 {
+				return "No results found.", nil
+			}
+			var b strings.Builder
+			for i, r := range *results {
+				if i >= maxResults {
+					break
+				}
+				fmt.Fprintf(&b, "%d. %s\n   %s\n   %s\n\n", i+1, r.Title, r.Link, r.Snippet)
+			}
+			return strings.TrimRight(b.String(), "\n"), nil
 		},
 	}
 }
@@ -808,7 +866,7 @@ type toolSignal struct {
 var toolSignals = []toolSignal{
 	{
 		Name:        "time_date",
-		Description: "What time is it, today's date, current day of the week, tell me the time, right now",
+		Description: "What time is it, today's date, day of the week, tell me the time, what is the time",
 		Tools:       []string{"get_time"},
 	},
 	{
@@ -826,11 +884,16 @@ var toolSignals = []toolSignal{
 		Description: "Calculate expression, compute result, evaluate math, what is X percent of Y, arithmetic",
 		Tools:       []string{"calc"},
 	},
+	{
+		Name:        "web_search",
+		Description: "Search the web for current information, look up latest news, who is the current president, what is the current population, recent events and results, who won the game, current price of stock, weather forecast, up to date facts",
+		Tools:       []string{"web_search"},
+	},
 }
 
 const (
 	toolCacheFile         = "tool_embeddings.json"
-	toolMinScore  float32 = 0.66
+	toolMinScore  float32 = 0.60
 )
 
 // ── Tool embedding cache ─────────────────────────────────────────────────────
