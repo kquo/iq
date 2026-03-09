@@ -46,11 +46,18 @@ type benchInferPrompt struct {
 	Text string `yaml:"text"`
 }
 
+type benchToolPrompt struct {
+	ID           string `yaml:"id"`
+	Text         string `yaml:"text"`
+	ExpectedTool string `yaml:"expected_tool"`
+}
+
 type benchCorpus struct {
 	KBDocs       []benchDoc         `yaml:"kb_docs"`
 	KBQueries    []benchQuery       `yaml:"kb_queries"`
 	CueInputs    []benchCueInput    `yaml:"cue_inputs"`
 	InferPrompts []benchInferPrompt `yaml:"infer_prompts"`
+	ToolPrompts  []benchToolPrompt  `yaml:"tool_prompts"`
 }
 
 // loadBenchCorpus parses the embedded bench_corpus.yaml.
@@ -74,7 +81,7 @@ type HWConfig struct {
 // BenchResult holds one complete benchmark run for one model and type.
 type BenchResult struct {
 	ModelID      string   `json:"model_id"`
-	Type         string   `json:"type"`     // "kb", "cue", "infer"
+	Type         string   `json:"type"`     // "kb", "cue", "infer", "tool"
 	BenchAt      string   `json:"bench_at"` // RFC3339 UTC
 	HW           HWConfig `json:"hw"`
 	SampleCount  int      `json:"sample_count"`
@@ -221,7 +228,7 @@ func unitFor(t string) string {
 		return "docs"
 	case "cue":
 		return "texts"
-	case "infer":
+	case "infer", "tool":
 		return "prompts"
 	default:
 		return ""
@@ -238,6 +245,10 @@ func qualityStr(r BenchResult) string {
 	case "cue":
 		if r.Accuracy > 0 {
 			return fmt.Sprintf("acc:%.0f%% s:%.2f", r.Accuracy*100, r.AvgScore)
+		}
+	case "tool":
+		if r.Accuracy > 0 {
+			return fmt.Sprintf("route:%.0f%% exec:%.0f%%", r.Accuracy*100, r.AvgScore*100)
 		}
 	case "infer":
 		return ""
@@ -277,7 +288,7 @@ func printPerfTable(results []BenchResult, _ string) {
 	fmt.Println(strings.Repeat("─", 115))
 
 	// Print each type's results.
-	types := []string{"kb", "cue", "infer"}
+	types := []string{"kb", "cue", "tool", "infer"}
 	for _, t := range types {
 		rows := typeMap[t]
 		if len(rows) == 0 {
@@ -741,6 +752,127 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	}, nil
 }
 
+// ── Tool Benchmark ────────────────────────────────────────────────────────
+
+// runToolBench sends each tool_prompt through the routing grammar pipeline
+// and checks that the model routes to the expected tool and that execution succeeds.
+func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResult, error) {
+	state, err := readState(modelID)
+	if err != nil || state == nil || !pidAlive(state.PID) {
+		return BenchResult{}, fmt.Errorf("model %q sidecar not running — run: iq start %q", modelID, modelID)
+	}
+
+	fmt.Fprintf(os.Stderr, "  sidecar     %s pid %d on :%d (tier:%s)\n",
+		modelID, state.PID, state.Port, state.Tier)
+	fmt.Fprintf(os.Stderr, "  corpus      %d tool prompts (bench_corpus.yaml)\n", len(corpus.ToolPrompts))
+
+	// Build the system prompt with tool instructions.
+	sysprompt := "You are a helpful assistant.\n" + buildRoutingToolPrompt()
+	grammar := &routeGrammar{ToolNames: toolRegistryNames()}
+
+	var latenciesMs []float64
+	routeCorrect := 0
+	execOK := 0
+
+	t0 := time.Now()
+	for pi, tp := range corpus.ToolPrompts {
+		messages := []chatMessage{
+			{Role: "system", Content: sysprompt},
+			{Role: "user", Content: tp.Text},
+		}
+
+		fmt.Fprintf(os.Stderr, "    %2d/%d  %-20s  expect:%-14s",
+			pi+1, len(corpus.ToolPrompts), tp.ID, tp.ExpectedTool)
+
+		t1 := time.Now()
+		response, err := callSidecarWithGrammar(state.Port, messages, 8192, grammar)
+		elapsed := time.Since(t1)
+		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  %4dms  %s\n", elapsed.Milliseconds(), utl.Gra("sidecar error"))
+			continue
+		}
+
+		if verbose {
+			fmt.Fprintf(os.Stderr, "      %s  %s\n", utl.Gra("prompt"), utl.Gra(tp.Text))
+			fmt.Fprintf(os.Stderr, "      %s  %s\n", utl.Gra("raw_resp"), utl.Gra(fmt.Sprintf("%q", truncate(response, 200))))
+		}
+
+		// Parse routing prefix.
+		routedTool, routeRest := parseRoutingPrefix(response)
+		routeMatch := routedTool == tp.ExpectedTool
+		if routeMatch {
+			routeCorrect++
+		}
+
+		// Try to execute the tool.
+		var execResult string
+		if routedTool != "" {
+			args := parseRoutingArgs(routeRest)
+			call := toolCall{Name: routedTool, Args: args}
+
+			if verbose {
+				argsJSON, _ := json.Marshal(args)
+				fmt.Fprintf(os.Stderr, "      %s  %s(%s)\n", utl.Gra("tool_call"), call.Name, string(argsJSON))
+			}
+
+			r := executeTool(call)
+			if r.Error == "" {
+				execOK++
+				execResult = utl.Gre("OK")
+				if verbose {
+					fmt.Fprintf(os.Stderr, "      %s  %s\n", utl.Gra("tool_result"), utl.Gra(truncate(r.Output, 120)))
+				}
+			} else {
+				execResult = utl.Yel("err: " + truncate(r.Error, 40))
+				if verbose {
+					fmt.Fprintf(os.Stderr, "      %s  %s\n", utl.Gra("tool_error"), utl.Yel(r.Error))
+				}
+			}
+		} else {
+			execResult = utl.Gra("<no_tool>")
+		}
+
+		routeLabel := utl.Gre("OK")
+		if !routeMatch {
+			routeLabel = fmt.Sprintf("MISS→%s", routedTool)
+		}
+
+		fmt.Fprintf(os.Stderr, "  %4dms  route:%-16s exec:%s\n",
+			elapsed.Milliseconds(), routeLabel, execResult)
+	}
+	totalSec := time.Since(t0).Seconds()
+
+	sort.Float64s(latenciesMs)
+	p50 := percentile(latenciesMs, 50)
+	p95 := percentile(latenciesMs, 95)
+	throughputPS := float64(len(corpus.ToolPrompts)) / totalSec
+
+	routeAcc := 0.0
+	execAcc := 0.0
+	if len(corpus.ToolPrompts) > 0 {
+		routeAcc = float64(routeCorrect) / float64(len(corpus.ToolPrompts))
+		execAcc = float64(execOK) / float64(len(corpus.ToolPrompts))
+	}
+
+	fmt.Fprintf(os.Stderr, "  routing     %d/%d (%.0f%%)\n", routeCorrect, len(corpus.ToolPrompts), routeAcc*100)
+	fmt.Fprintf(os.Stderr, "  execution   %d/%d (%.0f%%)\n", execOK, len(corpus.ToolPrompts), execAcc*100)
+
+	return BenchResult{
+		ModelID:      modelID,
+		Type:         "tool",
+		BenchAt:      time.Now().UTC().Format(time.RFC3339),
+		HW:           captureHW(),
+		SampleCount:  len(corpus.ToolPrompts),
+		ThroughputPS: throughputPS,
+		P50LatMs:     p50,
+		P95LatMs:     p95,
+		Accuracy:     routeAcc,
+		AvgScore:     execAcc, // repurpose: execution success rate
+	}, nil
+}
+
 // ── Cobra Commands ────────────────────────────────────────────────────────
 
 func printPerfHelp() {
@@ -752,12 +884,14 @@ func printPerfHelp() {
 	fmt.Printf("  %-15s %s\n", "show", "Show benchmark comparison table")
 	fmt.Printf("  %-15s %s\n\n", "clear", "Remove benchmark results")
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
-	fmt.Printf("  --type kb|cue|infer     Benchmark type (default: all applicable)\n")
-	fmt.Printf("  --model <id>            Model ID to benchmark (required for infer)\n\n")
+	fmt.Printf("  --type kb|cue|tool|infer  Benchmark type (default: all applicable)\n")
+	fmt.Printf("  --model <id>              Model ID to benchmark (required for infer/tool)\n")
+	fmt.Printf("  -v, --verbose             Show debug detail for each prompt (tool bench)\n\n")
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  iq perf bench --type kb\n")
 	fmt.Printf("  iq perf bench --type cue\n")
 	fmt.Printf("  iq perf bench --type infer --model mlx-community/gemma-3-1b-it-4bit\n")
+	fmt.Printf("  iq perf bench --type tool --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit\n")
 	fmt.Printf("  iq perf show\n")
 	fmt.Printf("  iq perf show --type kb\n")
 	fmt.Printf("  iq perf clear --model <id>\n")
@@ -783,6 +917,7 @@ func newPerfCmd() *cobra.Command {
 func newPerfBenchCmd() *cobra.Command {
 	var benchType string
 	var modelID string
+	var verbose bool
 
 	cmd := &cobra.Command{
 		Use:          "bench",
@@ -833,6 +968,12 @@ func newPerfBenchCmd() *cobra.Command {
 					}
 					fmt.Printf("benchmarking cue  model:%s ...\n", mid)
 					result, rerr = runCueBench(mid, corpus)
+				case "tool":
+					if modelID == "" {
+						return fmt.Errorf("--model required for tool benchmark")
+					}
+					fmt.Printf("benchmarking tool  model:%s ...\n", modelID)
+					result, rerr = runToolBench(modelID, corpus, verbose)
 				case "infer":
 					if modelID == "" {
 						return fmt.Errorf("--model required for infer benchmark")
@@ -853,8 +994,9 @@ func newPerfBenchCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&benchType, "type", "", "Benchmark type: cue, kb, infer")
+	cmd.Flags().StringVar(&benchType, "type", "", "Benchmark type: cue, kb, tool, infer")
 	cmd.Flags().StringVar(&modelID, "model", "", "Model ID to benchmark")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show debug detail for each prompt (tool bench)")
 	return cmd
 }
 

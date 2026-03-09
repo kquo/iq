@@ -1351,3 +1351,64 @@ infer_prompts:
       latency, data privacy, cost at scale, freshness of information, accuracy
       on domain-specific queries, and ease of maintenance. Write a structured
       comparison covering each dimension with a final recommendation.
+
+# ── Tool Use Smoke Tests ──────────────────────────────────────────────────
+# Each prompt is expected to trigger a specific tool via routing grammar.
+# Used by `iq perf bench --type tool`.
+
+tool_prompts:
+  - id: tool_get_time_1
+    text: "What time is it?"
+    expected_tool: get_time
+
+  - id: tool_get_time_2
+    text: "What day of the week is today?"
+    expected_tool: get_time
+
+  - id: tool_read_file_1
+    text: "Read main.go and print it"
+    expected_tool: read_file
+
+  - id: tool_read_file_2
+    text: "Show me the contents of go.mod"
+    expected_tool: read_file
+
+  - id: tool_list_dir_1
+    text: "What files are in the current directory?"
+    expected_tool: list_dir
+
+  - id: tool_list_dir_2
+    text: "List the contents of the cmd folder"
+    expected_tool: list_dir
+
+  - id: tool_file_info_1
+    text: "How big is main.go?"
+    expected_tool: file_info
+
+  - id: tool_file_info_2
+    text: "When was go.mod last modified?"
+    expected_tool: file_info
+
+  - id: tool_calc_1
+    text: "What is 247 * 38?"
+    expected_tool: calc
+
+  - id: tool_calc_2
+    text: "Calculate 15% of 840"
+    expected_tool: calc
+
+  - id: tool_search_text_1
+    text: "Search for TODO comments in this directory"
+    expected_tool: search_text
+
+  - id: tool_search_text_2
+    text: "Find all functions named main in .go files"
+    expected_tool: search_text
+
+  - id: tool_count_lines_1
+    text: "How many lines is main.go?"
+    expected_tool: count_lines
+
+  - id: tool_count_lines_2
+    text: "Count the lines in go.mod"
+    expected_tool: count_lines

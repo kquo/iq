@@ -270,13 +270,14 @@ The **`iq perf`** command evaluates model performance using an embedded benchmar
 Benchmark types:
 - **KB retrieval** — measures search quality (MRR = Mean Reciprocal Rank)
 - **Cue classification** — measures accuracy and average similarity score against the embedded benchmark corpus
+- **Tool use** — sends 14 prompts (2 per tool) through the routing grammar pipeline; measures routing accuracy (did the model pick the correct tool?) and execution success rate. Use `-v` for per-prompt debug detail.
 - **Inference latency** — measures P50/P95 latency and throughput
 
 Commands:
 ```
-iq perf bench [--type <type>] [--model <id>]   # run benchmarks
-iq perf show [model] [type]                     # display stored results
-iq perf clear                                   # wipe benchmark history
+iq perf bench [--type <type>] [--model <id>] [-v]   # run benchmarks
+iq perf show [model] [type]                          # display stored results
+iq perf clear                                        # wipe benchmark history
 ```
 
 ### Embed Sidecar
@@ -543,3 +544,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.5.11  | Flatten CLI: promote `iq svc` subcommands to root (`iq start/stop/status/doc/tier/embed`); `iq svc` kept as hidden backward-compat alias |
 | 0.6.0   | TASK label `feature-extraction` displayed as `embedding` (green); `lm rm` auto-stops sidecars and clears tier/embed assignments with yellow warnings instead of blocking; yellow confirmation prompt; README documents HF as official registry with token recommendation |
 | 0.6.1   | Robust tool arg parsing (broken JSON, unquoted keys, `=` separators, `--flag=value` CLI format); print successful tool output directly instead of pass 2 re-inference; inject cwd into tool system prompt; PASS/GUARD/latency debug trace format; parse `<tool:NAME>` routing prefix on follow-up passes |
+| 0.6.2   | Tool use benchmark (`iq perf bench --type tool`): 14 prompts across 7 tools, measures routing accuracy and execution success; `-v` flag for per-prompt debug detail |
