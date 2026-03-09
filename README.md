@@ -43,12 +43,12 @@ iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit
 iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit
 
 # Configure embed model and tier assignments
-iq svc embed set mlx-community/bge-small-en-v1.5-bf16
-iq svc tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit
-iq svc tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit
+iq embed set mlx-community/bge-small-en-v1.5-bf16
+iq tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit
+iq tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit
 
 # Start sidecars
-iq svc start
+iq start
 
 # Run a prompt — auto-classifies and routes to the right model
 iq "explain how transformers work"
