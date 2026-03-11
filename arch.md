@@ -507,7 +507,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 ## Source Files
 
-### Domain packages (`internal/`)
+### Domain Packages
 
 | File | Purpose |
 |------|---------|
@@ -524,20 +524,20 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/tools/tools_test.go` | Tests for calcEval, ParseCalls, ValidatePath, HasFilePath, routing, registry |
 | `internal/kb/kb.go` | KB index types, chunking strategies, hybrid search, ingest, persistence |
 
-### CLI package (`cmd/iq/`)
+### CLI Package
 
 | File | Purpose |
 |------|---------|
-| `main.go` | CLI entry point, root command, version, help routing |
-| `svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
-| `cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
-| `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
-| `tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
-| `kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
-| `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
-| `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
-| `probe.go` | `iq pry` — raw sidecar access |
-| `bench_corpus.yaml` | Benchmark test data (embedded in binary) |
+| `cmd/iq/main.go` | CLI entry point, root command, version, help routing |
+| `cmd/iq/svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
+| `cmd/iq/cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
+| `cmd/iq/prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
+| `cmd/iq/tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
+| `cmd/iq/kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
+| `cmd/iq/lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
+| `cmd/iq/perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
+| `cmd/iq/probe.go` | `iq pry` — raw sidecar access |
+| `cmd/iq/bench_corpus.yaml` | Benchmark test data (embedded in binary) |
 
 
 ## Version History
