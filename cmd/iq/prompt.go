@@ -20,6 +20,7 @@ import (
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
+	"iq/internal/kb"
 	"iq/internal/tools"
 )
 
@@ -361,7 +362,7 @@ func printStep2Route(route *routeResult, elapsed time.Duration) {
 }
 
 // printStep3KB prints the knowledge base retrieval trace.
-func printStep3KB(results []kbResult, model string, elapsed time.Duration) {
+func printStep3KB(results []kb.Result, model string, elapsed time.Duration) {
 	traceStep("3 ", "KB RETRIEVE")
 	traceField("task", "Cosine-similarity search user input against KB chunks")
 	traceField("call", fmt.Sprintf("model %s @ localhost:%d", model, embed.PortConst))
@@ -715,11 +716,11 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 3: KB RETRIEVE ──
 	var kbContext string
-	if kbExists() && !opts.noKB && embed.SidecarAlive() {
+	if kb.Exists() && !opts.noKB && embed.SidecarAlive() {
 		t3 := time.Now()
-		results, kbErr := KBSearch(input, kbDefaultK)
+		results, kbErr := kb.Search(input, kb.DefaultK)
 		if kbErr == nil && len(results) > 0 {
-			kbContext = KBContext(results)
+			kbContext = kb.Context(results)
 			if trace {
 				em := config.DefaultEmbedModel
 				if cfg2, cfgErr := config.Load(nil); cfgErr == nil {

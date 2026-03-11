@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"iq/internal/cue"
 	"iq/internal/embed"
+	"iq/internal/kb"
 	"iq/internal/sidecar"
 )
 
@@ -72,16 +73,16 @@ func newProbeCmd() *cobra.Command {
 
 			// KB retrieval — prepend context to system prompt.
 			if useKB {
-				if !kbExists() {
+				if !kb.Exists() {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: knowledge base is empty — run: iq kb ingest <path>"))
 				} else if !embed.SidecarAlive() {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: embed sidecar not running — run: iq start"))
 				} else {
-					results, kbErr := KBSearch(message, kbDefaultK)
+					results, kbErr := kb.Search(message, kb.DefaultK)
 					if kbErr != nil {
 						fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kbErr.Error()))
 					} else if len(results) > 0 {
-						ctx := KBContext(results)
+						ctx := kb.Context(results)
 						if systemPrompt != "" {
 							systemPrompt = systemPrompt + "\n\n" + ctx
 						} else {

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"iq/internal/config"
 	"iq/internal/embed"
+	"iq/internal/kb"
 	"iq/internal/sidecar"
 )
 
@@ -585,7 +586,7 @@ func newEmbedSetCmd() *cobra.Command {
 			}
 			embed.InvalidateCueEmbeddings()
 			fmt.Printf("embed_model  %s\n", utl.Gre(modelName))
-			kbP, _ := kbPath()
+			kbP, _ := kb.Path()
 			if _, err := os.Stat(kbP); err == nil {
 				fmt.Printf("%s\n", utl.Yel("warning: embed_model changed — existing kb.json is stale"))
 				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
@@ -614,7 +615,7 @@ func newEmbedRmCmd() *cobra.Command {
 			}
 			embed.InvalidateCueEmbeddings()
 			fmt.Printf("embed_model  %s\n", utl.Gra("(default) "+config.DefaultEmbedModel))
-			kbP, _ := kbPath()
+			kbP, _ := kb.Path()
 			if _, err := os.Stat(kbP); err == nil {
 				fmt.Printf("%s\n", utl.Yel("warning: embed_model changed — existing kb.json is stale"))
 				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))

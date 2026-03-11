@@ -43,7 +43,7 @@ IQ is being restructured from a single `cmd/iq` package into isolated domain pac
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier | **done** |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | **done** |
 | `internal/tools` | Tool registry, parser, executor, signal detection | **done** |
-| `internal/kb` | Knowledge base index, chunking, hybrid search, ingest | planned |
+| `internal/kb` | Knowledge base index, chunking, hybrid search, ingest | **done** |
 
 The `cmd/iq` package remains the CLI entry point — it wires commands (cobra), flags, the prompt pipeline, REPL, and orchestration. Domain logic migrates out; orchestration stays.
 
@@ -522,6 +522,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/cache/cache.go` | Response cache with FNV64a hashing, TTL expiry, check/write |
 | `internal/tools/tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
 | `internal/tools/tools_test.go` | Tests for calcEval (internal) |
+| `internal/kb/kb.go` | KB index types, chunking strategies, hybrid search, ingest, persistence |
 
 ### CLI package (`cmd/iq/`)
 
@@ -533,7 +534,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
 | `tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
 | `tools_test.go` | Tests for ParseCalls, ValidatePath, HasFilePath, tool registry via tools package |
-| `kb.go` | KB index, structure-aware chunking, hybrid search, ingest, CLI commands |
+| `kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
 | `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
@@ -582,3 +583,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.8   | Extract `embed` to `internal/embed` domain package |
 | 0.6.9   | Extract `cache` to `internal/cache` domain package |
 | 0.6.10  | Extract `tools` to `internal/tools` domain package |
+| 0.6.11  | Extract `kb` to `internal/kb` domain package — completes `internal/` restructuring |

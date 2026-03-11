@@ -22,6 +22,7 @@ import (
 	"iq/internal/config"
 	"iq/internal/cue"
 	iembed "iq/internal/embed"
+	"iq/internal/kb"
 	"iq/internal/sidecar"
 	"iq/internal/tools"
 )
@@ -486,9 +487,9 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	fmt.Fprintf(os.Stderr, " p50:%.0fms p95:%.0fms\n", p50, p95)
 
 	// Build in-memory KBIndex (never touches user's kb.json).
-	chunks := make([]KBChunk, len(texts))
+	chunks := make([]kb.Chunk, len(texts))
 	for i, doc := range corpus.KBDocs {
-		chunks[i] = KBChunk{
+		chunks[i] = kb.Chunk{
 			ID:        doc.ID,
 			Text:      doc.Text,
 			Source:    "bench:" + doc.ID,
