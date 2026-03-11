@@ -10,8 +10,8 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                               iq CLI (Go)                                 │
 │                                                                           │
-│  iq lm   iq start/stop  iq cue   iq kb   iq ask      iq pry     iq perf   │
-│  (models) (service)    (cues)  (RAG)   (infer/REPL) (raw debug) (bench)   │
+│  iq lm   iq start/stop  iq cue   iq kb   iq ask    iq pry   iq perf iq config│
+│  (models) (service)    (cues)  (RAG)   (infer)   (raw)    (bench) (schema) │
 └────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬────────┘
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
@@ -112,6 +112,8 @@ Tier commands: `iq tier show`, `iq tier add <tier> <model>`, `iq tier rm <tier> 
 Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
 Auto-migration: on first load, old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
+
+**Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings, tier pools with per-tier overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, tier model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
 
 ### Cue Definitions
 
@@ -593,6 +595,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `cmd/iq/kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
 | `cmd/iq/lm.go` | Cobra commands for lm search/get/list/show/rm (thin shim over internal/lm) |
 | `cmd/iq/perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
+| `cmd/iq/cfg.go` | `iq config` — show effective config, validate config files |
 | `cmd/iq/probe.go` | `iq pry` — raw sidecar access |
 | `cmd/iq/bench_corpus.yaml` | Benchmark test data (embedded in binary) |
 
@@ -651,3 +654,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.4   | Extract sidecar HTTP transport to `internal/sidecar/transport.go`; extract LM domain logic (~500 lines) to `internal/lm/lm.go`; `cmd/iq/lm.go` becomes thin CLI shim |
 | 0.7.5   | Concurrency-safe `search.Client` struct replaces package-level braveAPIKey; tool execution safety: 30s timeout, 32KB output cap, ReadOnly/confirm gating |
 | 0.7.6   | Hybrid cue classification: keyword boost prevents embedding drift; strict tool schema validation (ValidateCall/ParseCallsStrict); multi-model benchmark harness (--models flag) |
+| 0.7.7   | `iq config show/validate`: canonical config inspection and validation command |
