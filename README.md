@@ -82,6 +82,8 @@ iq tier add fast mlx-community/gemma-3-4b-it-4bit   # or whichever model scored 
 
 By default sweep runs inference benchmarks (`--type infer`). Add `--type tool` or `--type cue` to compare tool-routing or classification accuracy as well.
 
+The `fast` and `slow` tiers serve different roles and benefit from different inference parameters (temperature, repetition penalty, max tokens). See the **Recommended per-tier tuning** table in [arch.md](arch.md) for starting values.
+
 ```bash
 # Debug: see classification and routing without inferring
 iq -n "explain how transformers work"
@@ -102,7 +104,7 @@ Run `iq` without arguments to see the **usage**.
 
 ```bash
 $ iq
-iq v0.7.8
+iq v0.7.9
 Work with IQ from the command line.
 ...
 ```

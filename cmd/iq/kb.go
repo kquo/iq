@@ -33,7 +33,7 @@ func printKBHelp() {
 	fmt.Printf("  $ %s kb list\n", n)
 	fmt.Printf("  $ %s kb search \"how does auth work\"\n", n)
 	fmt.Printf("  $ %s kb rm ~/projects/myapp\n", n)
-	fmt.Printf("  $ %s kb clear\n\n", n)
+	fmt.Printf("  $ %s kb clear\n", n)
 }
 
 // ── Command ───────────────────────────────────────────────────────────────────

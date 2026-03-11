@@ -28,7 +28,7 @@ func printLmHelp() {
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
 	fmt.Printf("  %-10s %s\n", "search [query|count]", "Search MLX model registry; numeric arg sets result count")
 	fmt.Printf("  %-10s %s\n", "get", "Download a model from the registry")
-	fmt.Printf("  %-10s %s\n", "list", "List locally available models (alias: ls)")
+	fmt.Printf("  %-10s %s\n", "ls|list", "List locally available models")
 	fmt.Printf("  %-10s %s\n", "show", "Show details for a model")
 	fmt.Printf("  %-10s %s\n\n", "rm", "Remove a model")
 	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
@@ -41,7 +41,7 @@ func printLmHelp() {
 	fmt.Printf("  $ %s lm get mlx-community/gemma-3-1b-it-4bit\n", n)
 	fmt.Printf("  $ %s lm list\n", n)
 	fmt.Printf("  $ %s lm show mlx-community/gemma-3-1b-it-4bit\n", n)
-	fmt.Printf("  $ %s lm rm mlx-community/gemma-3-1b-it-4bit\n\n", n)
+	fmt.Printf("  $ %s lm rm mlx-community/gemma-3-1b-it-4bit\n", n)
 }
 
 // ── Root lm command ───────────────────────────────────────────────────────────

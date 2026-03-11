@@ -7,12 +7,12 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 ## System Diagram
 
 ```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                               iq CLI (Go)                                 │
-│                                                                           │
-│  iq lm   iq start/stop  iq cue   iq kb   iq ask    iq pry   iq perf iq config│
-│  (models) (service)    (cues)  (RAG)   (infer)   (raw)    (bench) (schema) │
-└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬────────┘
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                               iq CLI (Go)                                     │
+│                                                                               │
+│  iq lm   iq start/stop  iq cue   iq kb   iq ask    iq pry   iq perf iq config │
+│  (models) (service)    (cues)  (RAG)   (infer)   (raw)    (bench) (schema)    │
+└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬────────────┘
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
 ┌─────────┐ ┌──────┐ ┌────────┐ ┌──────────────────────┐ ┌──────────────────┐
@@ -87,6 +87,14 @@ slow    2GB+ models    — used for quality inference
 
 Resolution order: **per-tier override > global config > hardcoded default**. Pointer types (`*float64`, `*int`) distinguish "not set" from "set to zero."
 
+**Recommended per-tier tuning** — each tier serves a different role, and inference parameters should reflect that:
+
+| Parameter | `fast` (triage) | `slow` (quality) | Why |
+|-----------|----------------|-----------------|-----|
+| `temperature` | 0.3 | 0.7 | Fast tasks (classify, short answers, tool routing) need consistency; slow tasks (reasoning, generation) benefit from expressiveness |
+| `repetition_penalty` | 1.1 | 1.3 | Short outputs rarely loop; longer outputs need a heavier hand to avoid repetition |
+| `max_tokens` | 2048 | 8192 | Cap fast responses since triage doesn't need length; give slow models room for deeper reasoning |
+
 ```yaml
 # Global defaults (populated on first creation; editable)
 repetition_penalty: 1.3
@@ -97,15 +105,19 @@ tiers:
   fast:
     models:
       - mlx-community/Llama-3.2-3B-Instruct-4bit
-    # Per-tier overrides (optional — omit to use global/hardcoded default)
+    # Per-tier overrides — tuned for quick, deterministic triage
     repetition_penalty: 1.1
-    temperature: 0.5
+    temperature: 0.3
+    max_tokens: 2048
   slow:
     models:
       - mlx-community/Qwen2.5-7B-Instruct-4bit
+    # Slow tier inherits global defaults (0.7 temp, 1.3 rep, 8192 tokens)
 
 embed_model: mlx-community/bge-small-en-v1.5-bf16
 ```
+
+Use `iq perf sweep` to validate these choices on your hardware — sweep the same models under both tier configs to see whether the parameter differences move the needle on latency and quality.
 
 Tier commands: `iq tier show`, `iq tier add <tier> <model>`, `iq tier rm <tier> <model>`.
 
@@ -664,3 +676,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.6   | Hybrid cue classification: keyword boost prevents embedding drift; strict tool schema validation (ValidateCall/ParseCallsStrict); multi-model benchmark harness (--models flag) |
 | 0.7.7   | `iq config show/validate`: canonical config inspection and validation command |
 | 0.7.8   | Async KB prefetch with 5s timeout; `iq perf sweep` automates model comparison; README onboarding guide |
+| 0.7.9   | Per-tier tuning guide in arch.md; `short|long` alias format in help; trim trailing blank lines from all help output; README "Find Your Best Models" section |

@@ -219,7 +219,7 @@ func printSvcHelp() {
 	fmt.Printf("  %s status\n", n)
 	fmt.Printf("  %s tier show|add|rm\n", n)
 	fmt.Printf("  %s embed show|set|rm\n", n)
-	fmt.Printf("  %s doc\n\n", n)
+	fmt.Printf("  %s doc\n", n)
 }
 
 // ── Root svc command ──────────────────────────────────────────────────────────
@@ -392,7 +392,7 @@ func printTierHelp() {
 	fmt.Printf("  $ %s tier show\n", n)
 	fmt.Printf("  $ %s tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
 	fmt.Printf("  $ %s tier add slow mlx-community/Phi-4-mini-reasoning-4bit\n", n)
-	fmt.Printf("  $ %s tier rm fast mlx-community/SmolLM2-135M-Instruct-8bit\n\n", n)
+	fmt.Printf("  $ %s tier rm fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
 }
 
 func newTierCmd() *cobra.Command {
@@ -529,7 +529,7 @@ func printEmbedHelp() {
 	fmt.Printf("  %s\n\n", utl.Gra(config.DefaultEmbedModel))
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s embed show\n", n)
-	fmt.Printf("  $ %s embed set mlx-community/bge-small-en-v1.5-bf16\n\n", n)
+	fmt.Printf("  $ %s embed set mlx-community/bge-small-en-v1.5-bf16\n", n)
 }
 
 func newEmbedCmd() *cobra.Command {

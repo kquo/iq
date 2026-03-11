@@ -1245,7 +1245,7 @@ func printPromptHelp() {
 	fmt.Printf("  $ %s ask --category code \"write a binary search in Go\"\n", n)
 	fmt.Printf("  $ %s ask --session abc123 \"continue from before\"\n", n)
 	fmt.Printf("  $ %s ask\n", n)
-	fmt.Printf("  $ echo \"translate to French: hello\" | %s ask\n\n", n)
+	fmt.Printf("  $ echo \"translate to French: hello\" | %s ask\n", n)
 }
 
 // ── Shared flag wiring ────────────────────────────────────────────────────────

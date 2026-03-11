@@ -33,7 +33,7 @@ func printProbeHelp() {
 	fmt.Printf("  $ %s pry slow \"explain gradient descent\"\n", n)
 	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"hello\"\n", n)
 	fmt.Printf("  $ %s pry fast \"respond in pirate speak\" -s \"You are a pirate.\"\n", n)
-	fmt.Printf("  $ %s pry fast \"solve x^2 + 3x - 4\" -c math\n\n", n)
+	fmt.Printf("  $ %s pry fast \"solve x^2 + 3x - 4\" -c math\n", n)
 }
 
 // ── Command ───────────────────────────────────────────────────────────────────

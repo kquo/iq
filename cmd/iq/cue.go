@@ -40,7 +40,7 @@ func printCueHelp() {
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s cue <command> [flags]\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
-	fmt.Printf("  %-10s %s\n", "list", "List all cues (alias: ls)")
+	fmt.Printf("  %-10s %s\n", "ls|list", "List all cues")
 	fmt.Printf("  %-10s %s\n", "show", "Show full details for a cue")
 	fmt.Printf("  %-10s %s\n", "add", "Add a new cue")
 	fmt.Printf("  %-10s %s\n", "edit", "Edit an existing cue in $EDITOR")
@@ -62,7 +62,7 @@ func printCueHelp() {
 	fmt.Printf("  $ %s cue rm my_custom_cue\n", n)
 	fmt.Printf("  $ %s cue reset\n", n)
 	fmt.Printf("  $ %s cue reset math\n", n)
-	fmt.Printf("  $ %s cue sync\n\n", n)
+	fmt.Printf("  $ %s cue sync\n", n)
 }
 
 // ── Root cue command ──────────────────────────────────────────────────────────

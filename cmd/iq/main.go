@@ -11,7 +11,7 @@ import (
 
 const (
 	program_name    = "iq"
-	program_version = "0.7.8"
+	program_version = "0.7.9"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -39,11 +39,11 @@ func printRootHelp() {
 	fmt.Printf("%s\n", utl.Whi2("SERVICE"))
 	fmt.Printf("  %-24s %s\n", "start [tier|model]", "Start sidecars")
 	fmt.Printf("  %-24s %s\n", "stop [tier|model]", "Stop sidecars")
-	fmt.Printf("  %-24s %s\n", "status", "Show running sidecar status (alias: st)")
+	fmt.Printf("  %-24s %s\n", "st|status", "Show running sidecar status")
 	fmt.Printf("  %-24s %s\n", "doc", "Check runtime dependencies and model readiness")
 	fmt.Printf("  %-24s %s\n", "tier", "Manage model tier pool assignments")
 	fmt.Printf("  %-24s %s\n", "embed", "Manage embed sidecar model")
-	fmt.Printf("  %-24s %s\n\n", "config", "Inspect and validate IQ configuration (alias: cfg)")
+	fmt.Printf("  %-24s %s\n\n", "cfg|config", "Inspect and validate IQ configuration")
 	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
 	fmt.Printf("  %-24s %s\n", "lm", "Work with IQ language models")
 	fmt.Printf("  %-24s %s\n", "ask", "Interactive REPL and prompt aliases")
@@ -74,7 +74,7 @@ func printRootHelp() {
 	fmt.Printf("  $ %s start\n", n)
 	fmt.Printf("  $ %s stop\n", n)
 	fmt.Printf("  $ %s st\n", n)
-	fmt.Printf("  $ %s doc\n\n", n)
+	fmt.Printf("  $ %s doc\n", n)
 }
 
 func newVersionCmd() *cobra.Command {
