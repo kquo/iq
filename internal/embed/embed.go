@@ -48,7 +48,17 @@ func SidecarAlive() bool {
 func MlxVenvPython() (string, error) {
 	serverPath, err := exec.LookPath("mlx_lm.server")
 	if err != nil {
-		return "", fmt.Errorf("mlx_lm.server not found on PATH")
+		// exec.LookPath does not expand ~ in PATH entries; check manually.
+		if home, hErr := os.UserHomeDir(); hErr == nil {
+			candidate := filepath.Join(home, ".local", "bin", "mlx_lm.server")
+			if info, sErr := os.Stat(candidate); sErr == nil && !info.IsDir() {
+				serverPath = candidate
+				err = nil
+			}
+		}
+		if err != nil {
+			return "", fmt.Errorf("mlx_lm.server not found on PATH — run: pipx install mlx-lm")
+		}
 	}
 	// Resolve symlink to get the real path inside the pipx venv.
 	real, err := filepath.EvalSymlinks(serverPath)
@@ -79,10 +89,21 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 		return nil
 	}
 
-	// Extract the embedded Python script to a stable temp path.
-	scriptPath := filepath.Join(os.TempDir(), "embed_server.py")
-	if err := os.WriteFile(scriptPath, []byte(EmbedServerPy), 0755); err != nil {
-		return fmt.Errorf("failed to write embed script: %w", err)
+	// Write embedded script to config dir. If a dev override already exists
+	// there, skip the write so local edits survive without a Go rebuild.
+	cfgDir, err := config.Dir()
+	if err != nil {
+		return err
+	}
+	scriptPath := filepath.Join(cfgDir, "embed_server.py")
+	if existing, err := os.ReadFile(scriptPath); err != nil || string(existing) == EmbedServerPy {
+		// Missing or identical to embedded — write (or refresh) the embedded copy.
+		if err := os.WriteFile(scriptPath, []byte(EmbedServerPy), 0755); err != nil {
+			return fmt.Errorf("failed to write embed script: %w", err)
+		}
+	} else {
+		fi, _ := os.Stat(scriptPath)
+		fmt.Fprintf(os.Stderr, "  %s\n", utl.Yel(fmt.Sprintf("using %s (%s)", scriptPath, fi.ModTime().Format("2006-01-02 15:04"))))
 	}
 
 	logP, err := sidecar.LogPath(slug)

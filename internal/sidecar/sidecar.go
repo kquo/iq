@@ -342,10 +342,23 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 		return nil, fmt.Errorf("model %s is a vision-language model (VLM) — IQ only supports text-only models", modelID)
 	}
 
-	scriptPath := filepath.Join(os.TempDir(), "infer_server.py")
-	if err := os.WriteFile(scriptPath, []byte(InferServerPy), 0755); err != nil {
+	// Write embedded script to config dir. If a dev override already exists
+	// there, skip the write so local edits survive without a Go rebuild.
+	cfgDir, err := config.Dir()
+	if err != nil {
 		lf.Close()
-		return nil, fmt.Errorf("failed to write infer script: %w", err)
+		return nil, err
+	}
+	scriptPath := filepath.Join(cfgDir, "infer_server.py")
+	if existing, err := os.ReadFile(scriptPath); err != nil || string(existing) == InferServerPy {
+		// Missing or identical to embedded — write (or refresh) the embedded copy.
+		if err := os.WriteFile(scriptPath, []byte(InferServerPy), 0755); err != nil {
+			lf.Close()
+			return nil, fmt.Errorf("failed to write infer script: %w", err)
+		}
+	} else {
+		fi, _ := os.Stat(scriptPath)
+		fmt.Fprintf(os.Stderr, "  %s\n", utl.Yel(fmt.Sprintf("using %s (%s)", scriptPath, fi.ModTime().Format("2006-01-02 15:04"))))
 	}
 	cmd := exec.Command(pythonPath, scriptPath, "--model", modelPath, "--port", strconv.Itoa(port))
 	cmd.Env = os.Environ()

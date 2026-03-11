@@ -98,13 +98,13 @@ Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `s
 
 ### Service Daemon
 
-The **`iq start`** / **`iq stop`** commands manage sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, written to a temp file at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
+The **`iq start`** / **`iq stop`** commands manage sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, extracted to `~/.config/iq/` at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
 
 Start sequence:
 1. Allocate next free port from 27001+
 2. Resolve HF snapshot directory (`snapshots/<hash>/`) — the `--model` path
 3. **VLM guard** — read `config.json` and reject vision-language models (checks for `vision_config`, `vision_tower`, `image_size` keys and known VLM `model_type` values). `mlx_lm.load` cannot handle vision weights.
-4. Locate Python interpreter from the `mlx-lm` pipx venv; write embedded `infer_server.py` to temp dir
+4. Locate Python interpreter from the `mlx-lm` pipx venv; extract `infer_server.py` to `~/.config/iq/`
 5. Spawn detached subprocess (`Setsid: true`)
 6. Poll `GET /v1/models` until 200 OK or 120s timeout. A background goroutine calls `cmd.Wait()` to detect early crashes reliably (avoids zombie-pid false positives from signal-0 checks).
 7. On failure: print last 10 log lines + path
@@ -316,6 +316,12 @@ pipx install mlx-lm
 pipx inject mlx-lm mlx-embedding-models
 ```
 
+### Dev Hot-Reload for Python Sidecars
+
+Both `infer_server.py` and `embed_server.py` are embedded in the Go binary via `//go:embed` and extracted to `~/.config/iq/` on first start. If the file already exists at that path, the write is skipped — so edits to `~/.config/iq/infer_server.py` or `~/.config/iq/embed_server.py` take effect on the next `iq start` without a Go rebuild.
+
+To reset to the embedded version, delete the file and restart: `rm ~/.config/iq/infer_server.py && iq start`.
+
 ### Web Search Library
 
 A DuckDuckGo client library in `internal/search`. It provides `Search()` and `SearchWithOption()` functions for HTML scraping with retry logic for 202 throttling responses. Used by the `web_search` tool.
@@ -332,6 +338,8 @@ A DuckDuckGo client library in `internal/search`. It provides `Search()` and `Se
 ├── tool_embeddings.json         # tool signal embeddings (auto-built, FNV32a versioned)
 ├── response_cache.json          # inference response cache (FNV64a keyed, 1h TTL)
 ├── kb.json                      # knowledge base: chunk text + 384-float vectors (RAG)
+├── infer_server.py              # extracted inference sidecar script (see dev hot-reload below)
+├── embed_server.py              # extracted embedding sidecar script (see dev hot-reload below)
 ├── benchmarks.json              # performance benchmark results
 ├── run/
 │   ├── <model-slug>.json        # generative sidecar state (PID, port, tier, model)
@@ -584,3 +592,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.10  | Extract `tools` to `internal/tools` domain package |
 | 0.6.11  | Extract `kb` to `internal/kb` domain package — completes `internal/` restructuring |
 | 0.6.12  | Update arch.md section headers and file paths; minor build.sh adjustment |
+| 0.6.13  | Python sidecar dev hot-reload from `~/.config/iq/`; fix `~` not expanded in PATH for `mlx_lm.server` lookup; move tools tests to `internal/tools` |
