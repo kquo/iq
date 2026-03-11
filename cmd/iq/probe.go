@@ -154,13 +154,13 @@ func newProbeCmd() *cobra.Command {
 			// Infer and time it.
 			t0 := time.Now()
 			if noStream {
-				response, err := callSidecar(sc.Port, messages, false, probeIP.MaxTokens, probeIP)
+				response, err := sidecar.Call(sc.Port, messages, probeIP.MaxTokens, probeIP)
 				if err != nil {
 					return err
 				}
 				fmt.Println(response)
 			} else {
-				_, err = streamSidecar(sc.Port, messages, probeIP)
+				_, err = sidecar.Stream(sc.Port, messages, probeIP)
 				if err != nil {
 					return err
 				}

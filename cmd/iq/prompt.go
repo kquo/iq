@@ -2,13 +2,11 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,32 +22,9 @@ import (
 	"iq/internal/embed"
 	"iq/internal/kb"
 	"iq/internal/search"
+	"iq/internal/sidecar"
 	"iq/internal/tools"
 )
-
-// ── OpenAI-compatible types ───────────────────────────────────────────────────
-
-type chatRequest struct {
-	Messages          []config.Message `json:"messages"`
-	Stream            bool             `json:"stream"`
-	MaxTokens         int              `json:"max_tokens,omitempty"`
-	RepetitionPenalty float64          `json:"repetition_penalty,omitempty"`
-	Temperature       float64          `json:"temperature,omitempty"`
-	RoutingGrammar    *routeGrammar    `json:"routing_grammar,omitempty"`
-}
-
-type routeGrammar struct {
-	ToolNames []string `json:"tool_names"`
-}
-
-type chatStreamChunk struct {
-	Choices []struct {
-		Delta struct {
-			Content string `json:"content"`
-		} `json:"delta"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-}
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
@@ -418,136 +393,6 @@ func printStep6Session(sess *session, path string, elapsed time.Duration) {
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
-// ── Sidecar HTTP ──────────────────────────────────────────────────────────────
-
-// stripThinkBlocks removes <think>...</think> reasoning blocks emitted by
-// models like DeepSeek-R1 before returning the response to the user.
-func stripThinkBlocks(s string) string {
-	for {
-		start := strings.Index(s, "<think>")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(s, "</think>")
-		if end == -1 {
-			// Unclosed tag — strip from <think> to end of string.
-			s = strings.TrimSpace(s[:start])
-			break
-		}
-		s = s[:start] + s[end+len("</think>"):]
-	}
-	return strings.TrimSpace(s)
-}
-
-func doSidecarCall(port int, req chatRequest) (string, error) {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return "", err
-	}
-	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq start': %w", port, err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("empty response from sidecar")
-	}
-	content := result.Choices[0].Message.Content
-	return stripThinkBlocks(content), nil
-}
-
-func callSidecar(port int, messages []config.Message, stream bool, maxTokens int, ip config.ResolvedParams) (string, error) {
-	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature}
-	return doSidecarCall(port, req)
-}
-
-// callSidecarWithGrammar sends an inference request with an optional routing grammar.
-func callSidecarWithGrammar(port int, messages []config.Message, maxTokens int, grammar *routeGrammar, ip config.ResolvedParams) (string, error) {
-	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature, RoutingGrammar: grammar}
-	return doSidecarCall(port, req)
-}
-
-func streamSidecar(port int, messages []config.Message, ip config.ResolvedParams) (string, error) {
-	req := chatRequest{Messages: messages, Stream: true, MaxTokens: ip.MaxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return "", err
-	}
-	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq start': %w", port, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("sidecar returned %d: %s", resp.StatusCode, b)
-	}
-
-	// Collect all tokens. If the model uses <think> blocks (e.g. DeepSeek-R1),
-	// we suppress streaming output entirely and print the clean result at the end.
-	// For non-thinking models, tokens stream normally as they arrive.
-	var full strings.Builder
-	hasThink := false
-
-	// Use a large scanner buffer — DeepSeek-R1 think blocks can produce
-	// SSE lines well in excess of bufio's default 64KB limit.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		payload := strings.TrimPrefix(line, "data: ")
-		if payload == "[DONE]" {
-			break
-		}
-		var chunk chatStreamChunk
-		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			continue
-		}
-		for _, choice := range chunk.Choices {
-			token := choice.Delta.Content
-			if token == "" {
-				continue
-			}
-			full.WriteString(token)
-			if strings.Contains(full.String(), "<think>") {
-				hasThink = true
-			}
-			// Only stream to stdout if we have not encountered a think block.
-			if !hasThink {
-				fmt.Print(token)
-			}
-		}
-	}
-	result := stripThinkBlocks(full.String())
-	if hasThink {
-		// Print the clean result after stripping think blocks.
-		fmt.Print(result)
-	}
-	fmt.Println()
-	return strings.TrimSpace(result), scanner.Err()
-}
-
 // ── Auto-name session (background) ───────────────────────────────────────────
 
 func autoNameSession(s *session) {
@@ -565,16 +410,16 @@ func autoNameSession(s *session) {
 		systemMsg := `Given this conversation excerpt, return a JSON object with exactly two fields:
 "name" (max 5 words, title case) and "description" (max 15 words).
 Return only valid JSON, nothing else.`
-		sidecar, err := pickSidecar("fast", true)
+		sc, err := pickSidecar("fast", true)
 		if err != nil {
 			return
 		}
 		nameCfg, _ := config.Load(nil)
 		nameIP := config.ResolveInferParams(nameCfg, "fast")
-		response, err := callSidecar(sidecar.Port, []config.Message{
+		response, err := sidecar.Call(sc.Port, []config.Message{
 			{Role: "system", Content: systemMsg},
 			{Role: "user", Content: excerpt.String()},
-		}, false, 60, nameIP)
+		}, 60, nameIP)
 		if err != nil {
 			return
 		}
@@ -881,7 +726,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 						tPass = time.Now()
 					}
-					response, err = callSidecar(route.Port, synthMessages, false, ip.MaxTokens, ip)
+					response, err = sidecar.Call(route.Port, synthMessages, ip.MaxTokens, ip)
 					if err != nil {
 						return sess, err
 					}
@@ -894,7 +739,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					if trace {
 						traceField("search_error", r.Error)
 					}
-					response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
+					response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
 					if err != nil {
 						return sess, err
 					}
@@ -906,14 +751,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				// ── Pass 1: routing-grammar-constrained inference ──
 				// The grammar forces the model to emit <tool:NAME> or <no_tool>
 				// as its very first tokens, then generates freely.
-				grammar := &routeGrammar{ToolNames: tools.RegistryNames()}
+				grammar := &sidecar.RouteGrammar{ToolNames: tools.RegistryNames()}
 				var tPass time.Time
 				if trace {
 					tracePass(1, "routing grammar")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 					tPass = time.Now()
 				}
-				response, err = callSidecarWithGrammar(route.Port, messages, ip.MaxTokens, grammar, ip)
+				response, err = sidecar.CallWithGrammar(route.Port, messages, ip.MaxTokens, grammar, ip)
 				if err != nil {
 					return sess, err
 				}
@@ -964,7 +809,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 							tPass = time.Now()
 						}
-						response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
+						response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
 						if err != nil {
 							return sess, err
 						}
@@ -1029,7 +874,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 									traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 									tPass = time.Now()
 								}
-								response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
+								response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
 								if err != nil {
 									return sess, err
 								}
@@ -1126,7 +971,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 						tPass = time.Now()
 					}
-					response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
+					response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
 					if err != nil {
 						return sess, err
 					}
@@ -1150,7 +995,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("mode", "non-streaming")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 				}
-				response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
+				response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
 				if err != nil {
 					return sess, err
 				}
@@ -1160,7 +1005,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("mode", "streaming")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 				}
-				response, err = streamSidecar(route.Port, messages, ip)
+				response, err = sidecar.Stream(route.Port, messages, ip)
 				if err != nil {
 					return sess, err
 				}

@@ -14,19 +14,20 @@ import (
 	"iq/internal/config"
 	"iq/internal/embed"
 	"iq/internal/kb"
+	"iq/internal/lm"
 	"iq/internal/sidecar"
 )
 
-// pickSidecar wraps sidecar.PickSidecar with the local diskUsage resolver.
+// pickSidecar wraps sidecar.PickSidecar with the lm.DiskUsage resolver.
 func pickSidecar(tier string, preferSmallest bool) (*sidecar.State, error) {
 	return sidecar.PickSidecar(tier, preferSmallest, func(modelID string) int64 {
-		return diskUsage(hfCacheDir(modelID))
+		return lm.DiskUsage(lm.HFCacheDir(modelID))
 	})
 }
 
 // startSidecar resolves model/python paths and delegates to sidecar.StartInfer.
 func startSidecar(tier, modelID string) error {
-	modelPath, err := snapshotDir(modelID)
+	modelPath, err := lm.SnapshotDir(modelID)
 	if err != nil {
 		return fmt.Errorf("cannot resolve model path: %w", err)
 	}
@@ -45,7 +46,7 @@ func startEmbedSidecar() error {
 		return err
 	}
 	return embed.StartSidecar(config.EmbedModel(cfg), func(modelID string) error {
-		return registerInManifest(modelID)
+		return lm.RegisterInManifest(modelID)
 	})
 }
 
@@ -118,7 +119,7 @@ func printStatus() error {
 			}
 			rss := sidecar.ProcessRSSKB(state.PID)
 			totalKB += rss
-			mem := formatMB(rss * 1024)
+			mem := lm.FormatMB(rss * 1024)
 			if rss == 0 {
 				mem = "?"
 			}
@@ -140,7 +141,7 @@ func printStatus() error {
 		} else {
 			rss := sidecar.ProcessRSSKB(eState.PID)
 			totalKB += rss
-			mem := formatMB(rss * 1024)
+			mem := lm.FormatMB(rss * 1024)
 			if rss == 0 {
 				mem = "?"
 			}
@@ -196,9 +197,9 @@ func printStatus() error {
 	// Column positions: 6+2 + modelW+2 + 28+2 + 7+2 + 8+2 + 7+2 + 8 = left of MEM column
 	lineW := tierW + 2 + modelW + 2 + 28 + 2 + 7 + 2 + 8 + 2 + 7 + 2 + 8
 	iqLabel := "IQ process mem:"
-	iqVal := formatMB(iqRSS * 1024)
+	iqVal := lm.FormatMB(iqRSS * 1024)
 	totLabel := "Total mem:"
-	totVal := formatMB(totalKB * 1024)
+	totVal := lm.FormatMB(totalKB * 1024)
 	// Build the line: left part + right part padded to lineW.
 	left := fmt.Sprintf("%-20s %s", iqLabel, iqVal)
 	right := fmt.Sprintf("%s  %8s", totLabel, totVal)
@@ -285,7 +286,7 @@ func newStartCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
-					emDir := hfCacheDir(config.EmbedModel(cfg))
+					emDir := lm.HFCacheDir(config.EmbedModel(cfg))
 					if _, err := os.Stat(emDir); err != nil {
 						fmt.Println("No models configured. Recommended setup:")
 						fmt.Println()
@@ -745,7 +746,7 @@ func newDocCmd() *cobra.Command {
 			cfg2, cfgErr2 := config.Load(nil)
 			if cfgErr2 == nil {
 				emID := config.EmbedModel(cfg2)
-				cacheDir := hfCacheDir(emID)
+				cacheDir := lm.HFCacheDir(emID)
 				_, statErr := os.Stat(cacheDir)
 				ok := statErr == nil
 				var d string
@@ -765,7 +766,7 @@ func newDocCmd() *cobra.Command {
 			}
 			for _, t := range config.TierOrder {
 				for _, model := range cfg.TierModels(t) {
-					cacheDir := hfCacheDir(model)
+					cacheDir := lm.HFCacheDir(model)
 					_, statErr := os.Stat(cacheDir)
 					modelOK := statErr == nil
 					if modelOK {

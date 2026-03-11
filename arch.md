@@ -38,11 +38,12 @@ Domain logic lives in isolated packages under `internal/`. Each package owns one
 |---------|--------|
 | `internal/config` | Config CRUD, tier definitions, embed model, migrations |
 | `internal/search` | DuckDuckGo web search client |
-| `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files |
+| `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files, HTTP transport (Call/Stream/RawCall) |
 | `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML |
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) |
 | `internal/tools` | Tool registry, parser, executor, signal detection |
+| `internal/lm` | HuggingFace API client, model search/enrich, manifest CRUD, model parsing, formatting helpers |
 | `internal/kb` | Knowledge base index, chunking, hybrid search, ingest |
 
 The `cmd/iq` package is the CLI entry point — it wires commands (cobra), flags, the prompt pipeline, REPL, and orchestration.
@@ -559,6 +560,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/config/config.go` | Config struct, Load/Save, tier helpers, embed model, legacy migrations |
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 | `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
+| `internal/sidecar/transport.go` | OpenAI-compatible HTTP transport: ChatRequest, Call, CallWithGrammar, Stream, RawCall, StripThinkBlocks |
 | `internal/sidecar/infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 | `internal/cue/cue.go` | Cue struct, Load/Save, Find, ForModel, embedded default YAML |
 | `internal/cue/cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
@@ -567,6 +569,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/cache/cache.go` | Response cache with FNV64a hashing, TTL expiry, check/write |
 | `internal/tools/tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
 | `internal/tools/tools_test.go` | Tests for calcEval, ParseCalls, ValidatePath, HasFilePath, routing, registry |
+| `internal/lm/lm.go` | HF API types/client, manifest CRUD, cache helpers, model param/quant parsing, formatting |
 | `internal/kb/kb.go` | KB index types, chunking strategies, hybrid search, ingest, persistence |
 
 ### CLI Package
@@ -576,10 +579,11 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `cmd/iq/main.go` | CLI entry point, root command, version, help routing |
 | `cmd/iq/svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
 | `cmd/iq/cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
-| `cmd/iq/prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
+| `cmd/iq/prompt.go` | 8-step execution pipeline, session management, REPL, trace output |
+| `cmd/iq/prompt_test.go` | End-to-end orchestration tests with mock sidecar (httptest) |
 | `cmd/iq/tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
 | `cmd/iq/kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
-| `cmd/iq/lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
+| `cmd/iq/lm.go` | Cobra commands for lm search/get/list/show/rm (thin shim over internal/lm) |
 | `cmd/iq/perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `cmd/iq/probe.go` | `iq pry` — raw sidecar access |
 | `cmd/iq/bench_corpus.yaml` | Benchmark test data (embedded in binary) |
@@ -636,3 +640,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.1   | Web search hardening: rate limiter, pinned CSS selectors with fixture test, Brave Search API fallback; config.yaml populates all defaults on first creation |
 | 0.7.2   | Housekeeping: rename search.SearchParam/SearchResult → Param/Result; unify chatMessage/cache.Message into config.Message; broaden MlxVenvPython fallback paths (PIPX_HOME, /opt/homebrew/bin); config.Load resilient to read-only filesystems |
 | 0.7.3   | `--dump-prompt` flag writes assembled message array as JSON before inference; end-to-end orchestration test with mock sidecar (httptest); build.sh v2.2.0: indented output, `-v` tests, green command echo |
+| 0.7.4   | Extract sidecar HTTP transport to `internal/sidecar/transport.go`; extract LM domain logic (~500 lines) to `internal/lm/lm.go`; `cmd/iq/lm.go` becomes thin CLI shim |

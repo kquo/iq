@@ -17,12 +17,12 @@ import (
 
 // mockInferServer returns an httptest.Server that speaks the
 // OpenAI-compatible /v1/chat/completions protocol.
-// handler receives the decoded chatRequest and returns the text response.
-func mockInferServer(t *testing.T, handler func(chatRequest) string) *httptest.Server {
+// handler receives the decoded sidecar.ChatRequest and returns the text response.
+func mockInferServer(t *testing.T, handler func(sidecar.ChatRequest) string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		var req chatRequest
+		var req sidecar.ChatRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -97,7 +97,7 @@ func TestEndToEndInference(t *testing.T) {
 	const modelID = "test-org/test-model"
 	const wantResponse = "Mock inference response."
 
-	srv := mockInferServer(t, func(req chatRequest) string {
+	srv := mockInferServer(t, func(req sidecar.ChatRequest) string {
 		// Verify the assembled messages look right.
 		if len(req.Messages) < 1 {
 			t.Error("expected at least 1 message in request")
@@ -154,7 +154,7 @@ func TestDumpPrompt(t *testing.T) {
 	const modelID = "test-org/test-model"
 
 	// Server should never be called — dump-prompt stops before inference.
-	srv := mockInferServer(t, func(req chatRequest) string {
+	srv := mockInferServer(t, func(req sidecar.ChatRequest) string {
 		t.Error("inference should not be called with --dump-prompt")
 		return ""
 	})
