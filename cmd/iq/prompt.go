@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -126,7 +128,11 @@ func newSession(cueN, tierN string) *session {
 }
 
 func shortID() string {
-	return fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff)
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%08x", time.Now().UnixNano()&0xffffffff)
+	}
+	return hex.EncodeToString(b)
 }
 
 // ── Classification ────────────────────────────────────────────────────────────
