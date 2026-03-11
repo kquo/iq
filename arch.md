@@ -583,3 +583,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.9   | Extract `cache` to `internal/cache` domain package |
 | 0.6.10  | Extract `tools` to `internal/tools` domain package |
 | 0.6.11  | Extract `kb` to `internal/kb` domain package — completes `internal/` restructuring |
+| 0.6.12  | Update arch.md section headers and file paths; minor build.sh adjustment |
