@@ -23,6 +23,7 @@ import (
 	"iq/internal/cue"
 	iembed "iq/internal/embed"
 	"iq/internal/sidecar"
+	"iq/internal/tools"
 )
 
 //go:embed bench_corpus.yaml
@@ -771,8 +772,8 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 	fmt.Fprintf(os.Stderr, "  corpus      %d tool prompts (bench_corpus.yaml)\n", len(corpus.ToolPrompts))
 
 	// Build the system prompt with tool instructions.
-	sysprompt := "You are a helpful assistant.\n" + buildRoutingToolPrompt()
-	grammar := &routeGrammar{ToolNames: toolRegistryNames()}
+	sysprompt := "You are a helpful assistant.\n" + tools.BuildRoutingPrompt()
+	grammar := &routeGrammar{ToolNames: tools.RegistryNames()}
 
 	var latenciesMs []float64
 	routeCorrect := 0
@@ -804,7 +805,7 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 		}
 
 		// Parse routing prefix.
-		routedTool, routeRest := parseRoutingPrefix(response)
+		routedTool, routeRest := tools.ParseRoutingPrefix(response)
 		routeMatch := routedTool == tp.ExpectedTool
 		if routeMatch {
 			routeCorrect++
@@ -813,15 +814,15 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 		// Try to execute the tool.
 		var execResult string
 		if routedTool != "" {
-			args := parseRoutingArgs(routeRest)
-			call := toolCall{Name: routedTool, Args: args}
+			args := tools.ParseRoutingArgs(routeRest)
+			call := tools.Call{Name: routedTool, Args: args}
 
 			if verbose {
 				argsJSON, _ := json.Marshal(args)
 				fmt.Fprintf(os.Stderr, "      %s  %s(%s)\n", utl.Gra("tool_call"), call.Name, string(argsJSON))
 			}
 
-			r := executeTool(call)
+			r := tools.Execute(call)
 			if r.Error == "" {
 				execOK++
 				execResult = utl.Gre("OK")

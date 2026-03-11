@@ -20,6 +20,7 @@ import (
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
+	"iq/internal/tools"
 )
 
 // ── OpenAI-compatible types ───────────────────────────────────────────────────
@@ -329,7 +330,7 @@ func webSearchSynthPrompt() string {
 			"Give the single best answer. Do NOT discuss discrepancies, conflicts, or other sources.\n", now)
 }
 
-func printStep1bToolDetect(tt *toolClassifyTrace) {
+func printStep1bToolDetect(tt *tools.ClassifyTrace) {
 	traceStep("1b", "TOOL DETECT")
 	if tt.Reason == "file path" || tt.Reason == "forced" {
 		if tt.Enabled {
@@ -339,7 +340,7 @@ func printStep1bToolDetect(tt *toolClassifyTrace) {
 		}
 		return
 	}
-	traceField("task", fmt.Sprintf("Cosine-similarity match input vector against %d tool signal descriptions", len(toolSignals)))
+	traceField("task", fmt.Sprintf("Cosine-similarity match input vector against %d tool signal descriptions", len(tools.Signals)))
 	traceField("best_signal", fmt.Sprintf("%s (score: %.2f)", tt.BestSignal, tt.BestScore))
 	if tt.Enabled {
 		traceField("result", fmt.Sprintf("enabled (%s)", tt.Reason))
@@ -666,20 +667,20 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 1b: TOOL DETECT ──
 	useTools := false
-	var tt *toolClassifyTrace
+	var tt *tools.ClassifyTrace
 	switch opts.toolMode {
 	case "on":
 		useTools = true
-		tt = &toolClassifyTrace{Enabled: true, Reason: "forced"}
+		tt = &tools.ClassifyTrace{Enabled: true, Reason: "forced"}
 	case "off":
 		useTools = false
-		tt = &toolClassifyTrace{Enabled: false, Reason: "forced"}
+		tt = &tools.ClassifyTrace{Enabled: false, Reason: "forced"}
 	default:
-		useTools = hasFilePath(input)
+		useTools = tools.HasFilePath(input)
 		if useTools {
-			tt = &toolClassifyTrace{Enabled: true, Reason: "file path"}
+			tt = &tools.ClassifyTrace{Enabled: true, Reason: "file path"}
 		} else if et != nil && len(et.InputVec) > 0 {
-			useTools, tt = toolClassify(et.InputVec, et.Model)
+			useTools, tt = tools.Classify(et.InputVec, et.Model)
 		}
 	}
 	if trace && tt != nil {
@@ -738,7 +739,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		messages = append(messages, sess.Messages...)
 		// If tools active, inject tool prompt into existing system message.
 		if useTools && len(messages) > 0 && messages[0].Role == "system" {
-			messages[0].Content += buildRoutingToolPrompt()
+			messages[0].Content += tools.BuildRoutingPrompt()
 		}
 		messages = append(messages, chatMessage{Role: "user", Content: input})
 	} else if kbContext != "" {
@@ -751,7 +752,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			sysprompt = "You are a helpful assistant."
 		}
 		if useTools {
-			sysprompt += buildRoutingToolPrompt()
+			sysprompt += tools.BuildRoutingPrompt()
 		}
 		userContent := kbContext + "\n\n" + input
 		messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
@@ -762,7 +763,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			if sysprompt == "" {
 				sysprompt = "You are a helpful assistant."
 			}
-			sysprompt += buildRoutingToolPrompt()
+			sysprompt += tools.BuildRoutingPrompt()
 		}
 		if sysprompt != "" {
 			messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
@@ -827,13 +828,13 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("mode", "web_search short-circuit (skipping routing grammar)")
 					tPass = time.Now()
 				}
-				call := toolCall{Name: "web_search", Args: guardToolArgs("web_search", input)}
+				call := tools.Call{Name: "web_search", Args: tools.GuardArgs("web_search", input)}
 				if trace {
 					printToolCallTrace(call)
 				} else {
 					printToolStatus(call)
 				}
-				r := executeTool(call)
+				r := tools.Execute(call)
 				if trace {
 					printToolResultTrace(r)
 				}
@@ -844,7 +845,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						{Role: "system", Content: webSearchSynthPrompt()},
 						{Role: "user", Content: input},
 						{Role: "assistant", Content: "Let me search for that."},
-						{Role: "user", Content: "Search results:\n\n" + formatToolResult(r)},
+						{Role: "user", Content: "Search results:\n\n" + tools.FormatResult(r)},
 					}
 					if trace {
 						tracePass(1, "synthesize web search")
@@ -876,7 +877,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				// ── Pass 1: routing-grammar-constrained inference ──
 				// The grammar forces the model to emit <tool:NAME> or <no_tool>
 				// as its very first tokens, then generates freely.
-				grammar := &routeGrammar{ToolNames: toolRegistryNames()}
+				grammar := &routeGrammar{ToolNames: tools.RegistryNames()}
 				var tPass time.Time
 				if trace {
 					tracePass(1, "routing grammar")
@@ -892,7 +893,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				}
 
 				// Parse the routing prefix from the grammar-constrained response.
-				routedTool, routeRest := parseRoutingPrefix(response)
+				routedTool, routeRest := tools.ParseRoutingPrefix(response)
 
 				// If the grammar routed to a tool, construct a toolCall and execute it.
 				toolDone := false
@@ -902,15 +903,15 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					}
 
 					// Try to parse JSON args from the text after the prefix.
-					args := parseRoutingArgs(routeRest)
-					call := toolCall{Name: routedTool, Args: args}
+					args := tools.ParseRoutingArgs(routeRest)
+					call := tools.Call{Name: routedTool, Args: args}
 
 					if trace {
 						printToolCallTrace(call)
 					} else {
 						printToolStatus(call)
 					}
-					r := executeTool(call)
+					r := tools.Execute(call)
 					if trace {
 						printToolResultTrace(r)
 						traceField("latency 1", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
@@ -927,7 +928,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						messages = append(messages, chatMessage{Role: "assistant", Content: response})
 						messages = append(messages, chatMessage{
 							Role:    "user",
-							Content: "Tool result below. Explain the result or error briefly.\n\n" + formatToolResult(r),
+							Content: "Tool result below. Explain the result or error briefly.\n\n" + tools.FormatResult(r),
 						})
 						if trace {
 							tracePass(2, "explain tool result")
@@ -956,7 +957,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					// expected tool. Small models can't be reprompted into compliance,
 					// so we trust the embed signal and call the tool ourselves.
 					if tt != nil && tt.Reason == "embed" {
-						expected := signalToolNames(tt.BestSignal)
+						expected := tools.SignalToolNames(tt.BestSignal)
 						if len(expected) > 0 {
 							guardTool := expected[0]
 							if trace {
@@ -966,14 +967,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 							}
 							// Build default args: populate the first required param
 							// with the user input so tools like web_search get a query.
-							guardArgs := guardToolArgs(guardTool, input)
-							call := toolCall{Name: guardTool, Args: guardArgs}
+							guardArgs := tools.GuardArgs(guardTool, input)
+							call := tools.Call{Name: guardTool, Args: guardArgs}
 							if trace {
 								printToolCallTrace(call)
 							} else {
 								printToolStatus(call)
 							}
-							r := executeTool(call)
+							r := tools.Execute(call)
 							if trace {
 								printToolResultTrace(r)
 							}
@@ -992,7 +993,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 								}
 								messages = append(messages, chatMessage{
 									Role:    "user",
-									Content: synthPrompt + formatToolResult(r),
+									Content: synthPrompt + tools.FormatResult(r),
 								})
 								if trace {
 									tracePass(2, "synthesize guard tool result")
@@ -1019,14 +1020,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					if toolDone {
 						break
 					}
-					calls, remaining := parseToolCalls(response)
+					calls, remaining := tools.ParseCalls(response)
 
 					// Fallback: model may reuse <tool:NAME> routing prefix on
 					// follow-up passes instead of <tool_call> blocks.
 					if len(calls) == 0 {
-						if rTool, rRest := parseRoutingPrefix(response); rTool != "" {
-							args := parseRoutingArgs(rRest)
-							calls = []toolCall{{Name: rTool, Args: args}}
+						if rTool, rRest := tools.ParseRoutingPrefix(response); rTool != "" {
+							args := tools.ParseRoutingArgs(rRest)
+							calls = []tools.Call{{Name: rTool, Args: args}}
 							remaining = ""
 						}
 					}
@@ -1056,7 +1057,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						} else {
 							printToolStatus(call)
 						}
-						r := executeTool(call)
+						r := tools.Execute(call)
 						if trace {
 							printToolResultTrace(r)
 						}
@@ -1068,7 +1069,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						} else if r.Error != "" {
 							allOK = false
 						}
-						resultBlock.WriteString(formatToolResult(r))
+						resultBlock.WriteString(tools.FormatResult(r))
 						resultBlock.WriteByte('\n')
 					}
 
@@ -1107,7 +1108,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 					// On the last iteration, strip any remaining tool calls and print.
 					if iter == maxToolIter-1 {
-						_, remaining = parseToolCalls(response)
+						_, remaining = tools.ParseCalls(response)
 						fmt.Println(remaining)
 						response = remaining
 					}

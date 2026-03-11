@@ -42,7 +42,7 @@ IQ is being restructured from a single `cmd/iq` package into isolated domain pac
 | `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML | **done** |
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier | **done** |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | **done** |
-| `internal/tools` | Tool registry, parser, executor, signal detection | planned |
+| `internal/tools` | Tool registry, parser, executor, signal detection | **done** |
 | `internal/kb` | Knowledge base index, chunking, hybrid search, ingest | planned |
 
 The `cmd/iq` package remains the CLI entry point — it wires commands (cobra), flags, the prompt pipeline, REPL, and orchestration. Domain logic migrates out; orchestration stays.
@@ -520,6 +520,8 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/embed/embed.go` | Embed sidecar lifecycle, HTTP embedding calls, cosine similarity, cue classifier |
 | `internal/embed/embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `internal/cache/cache.go` | Response cache with FNV64a hashing, TTL expiry, check/write |
+| `internal/tools/tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
+| `internal/tools/tools_test.go` | Tests for calcEval (internal) |
 
 ### CLI package (`cmd/iq/`)
 
@@ -529,8 +531,8 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
 | `cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
-| `tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
-| `tools_test.go` | Tests for calc, parseToolCalls, validatePath, hasFilePath, tool registry |
+| `tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
+| `tools_test.go` | Tests for ParseCalls, ValidatePath, HasFilePath, tool registry via tools package |
 | `kb.go` | KB index, structure-aware chunking, hybrid search, ingest, CLI commands |
 | `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
@@ -579,3 +581,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.7   | Extract `cue` to `internal/cue` domain package |
 | 0.6.8   | Extract `embed` to `internal/embed` domain package |
 | 0.6.9   | Extract `cache` to `internal/cache` domain package |
+| 0.6.10  | Extract `tools` to `internal/tools` domain package |
