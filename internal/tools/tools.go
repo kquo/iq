@@ -597,6 +597,81 @@ func GuardArgs(toolName, input string) map[string]any {
 	return nil
 }
 
+// ── Schema validation ────────────────────────────────────────────────────────
+
+// ValidateCall checks that a Call conforms to the tool's parameter schema:
+// tool must exist, required params present, no unknown params, correct types.
+func ValidateCall(call Call) error {
+	t := FindTool(call.Name)
+	if t == nil {
+		return fmt.Errorf("unknown tool: %s", call.Name)
+	}
+	// Check required params present.
+	for _, p := range t.Params {
+		if p.Required {
+			v, ok := call.Args[p.Name]
+			if !ok || v == nil {
+				return fmt.Errorf("missing required parameter %q", p.Name)
+			}
+		}
+	}
+	// Check no unknown params.
+	known := make(map[string]bool, len(t.Params))
+	for _, p := range t.Params {
+		known[p.Name] = true
+	}
+	for k := range call.Args {
+		if !known[k] {
+			return fmt.Errorf("unknown parameter %q", k)
+		}
+	}
+	// Check param types.
+	for k, v := range call.Args {
+		for _, p := range t.Params {
+			if p.Name == k {
+				if err := checkParamType(v, p.Type); err != nil {
+					return fmt.Errorf("parameter %q: %w", k, err)
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func checkParamType(v any, expected string) error {
+	switch expected {
+	case "string":
+		if _, ok := v.(string); !ok {
+			return fmt.Errorf("expected string, got %T", v)
+		}
+	case "number":
+		switch v.(type) {
+		case float64, int:
+			// OK
+		default:
+			return fmt.Errorf("expected number, got %T", v)
+		}
+	}
+	return nil
+}
+
+// ParseCallsStrict wraps ParseCalls and validates each call against the
+// tool registry schema. Valid calls are returned; invalid ones produce errors.
+func ParseCallsStrict(text string) ([]Call, string, []error) {
+	calls, remaining := ParseCalls(text)
+	var errs []error
+	var valid []Call
+	for _, c := range calls {
+		if err := ValidateCall(c); err != nil {
+			errs = append(errs, fmt.Errorf("tool %q: %w", c.Name, err))
+		} else {
+			valid = append(valid, c)
+		}
+	}
+	return valid, remaining, errs
+}
+
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
 // ParseCalls extracts tool_call blocks from model output.

@@ -898,12 +898,14 @@ func printPerfHelp() {
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
 	fmt.Printf("  --type kb|cue|tool|infer  Benchmark type (default: all applicable)\n")
 	fmt.Printf("  --model <id>              Model ID to benchmark (required for infer/tool)\n")
+	fmt.Printf("  --models <id,id,...>       Comma-separated model IDs for comparison benchmarks\n")
 	fmt.Printf("  -v, --verbose             Show debug detail for each prompt (tool bench)\n\n")
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  iq perf bench --type kb\n")
 	fmt.Printf("  iq perf bench --type cue\n")
 	fmt.Printf("  iq perf bench --type infer --model mlx-community/gemma-3-1b-it-4bit\n")
 	fmt.Printf("  iq perf bench --type tool --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit\n")
+	fmt.Printf("  iq perf bench --type cue --models model-a,model-b,model-c\n")
 	fmt.Printf("  iq perf show\n")
 	fmt.Printf("  iq perf show --type kb\n")
 	fmt.Printf("  iq perf clear --model <id>\n")
@@ -929,11 +931,12 @@ func newPerfCmd() *cobra.Command {
 func newPerfBenchCmd() *cobra.Command {
 	var benchType string
 	var modelID string
+	var modelsFlag string
 	var verbose bool
 
 	cmd := &cobra.Command{
 		Use:          "bench",
-		Short:        "Run benchmark for a model",
+		Short:        "Run benchmark for a model (or compare multiple with --models)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			corpus, err := loadBenchCorpus()
@@ -951,63 +954,101 @@ func newPerfBenchCmd() *cobra.Command {
 				return err
 			}
 
+			// Build model list: --models takes precedence over --model.
+			var models []string
+			if modelsFlag != "" {
+				for m := range strings.SplitSeq(modelsFlag, ",") {
+					m = strings.TrimSpace(m)
+					if m != "" {
+						models = append(models, m)
+					}
+				}
+			} else if modelID != "" {
+				models = []string{modelID}
+			}
+
 			// Determine which types to run.
 			var types []string
 			if benchType != "" {
 				types = []string{benchType}
 			} else {
 				types = []string{"kb", "cue"}
-				if modelID != "" {
+				if len(models) > 0 {
 					types = append(types, "infer")
 				}
 			}
 
-			for _, t := range types {
-				var result BenchResult
-				var rerr error
-				switch t {
-				case "kb":
-					mid := modelID
-					if mid == "" {
-						mid = config.EmbedModel(cfg)
+			for _, mid := range models {
+				for _, t := range types {
+					var result BenchResult
+					var rerr error
+					switch t {
+					case "kb":
+						fmt.Printf("benchmarking kb  model:%s ...\n", mid)
+						result, rerr = runKBBench(mid, corpus)
+					case "cue":
+						fmt.Printf("benchmarking cue  model:%s ...\n", mid)
+						result, rerr = runCueBench(mid, corpus)
+					case "tool":
+						fmt.Printf("benchmarking tool  model:%s ...\n", mid)
+						result, rerr = runToolBench(mid, corpus, verbose)
+					case "infer":
+						fmt.Printf("benchmarking infer  model:%s ...\n", mid)
+						result, rerr = runInferBench(mid, corpus)
 					}
-					fmt.Printf("benchmarking kb  model:%s ...\n", mid)
-					result, rerr = runKBBench(mid, corpus)
-				case "cue":
-					mid := modelID
-					if mid == "" {
-						mid = config.EmbedModel(cfg)
+					if rerr != nil {
+						fmt.Fprintf(os.Stderr, "  error: %v\n", rerr)
+						continue
 					}
-					fmt.Printf("benchmarking cue  model:%s ...\n", mid)
-					result, rerr = runCueBench(mid, corpus)
-				case "tool":
-					if modelID == "" {
-						return fmt.Errorf("--model required for tool benchmark")
-					}
-					fmt.Printf("benchmarking tool  model:%s ...\n", modelID)
-					result, rerr = runToolBench(modelID, corpus, verbose)
-				case "infer":
-					if modelID == "" {
-						return fmt.Errorf("--model required for infer benchmark")
-					}
-					fmt.Printf("benchmarking infer  model:%s ...\n", modelID)
-					result, rerr = runInferBench(modelID, corpus)
+					upsertResult(bs, result)
+					fmt.Printf("  %s\n", formatBenchRow(result))
 				}
-
-				if rerr != nil {
-					fmt.Fprintf(os.Stderr, "  error: %v\n", rerr)
-					continue
-				}
-				upsertResult(bs, result)
-				fmt.Printf("  %s\n", formatBenchRow(result))
 			}
 
-			return saveBenchStore(bs)
+			// If no models specified, run embed-type benchmarks with configured embed model.
+			if len(models) == 0 {
+				for _, t := range types {
+					var result BenchResult
+					var rerr error
+					switch t {
+					case "kb":
+						mid := config.EmbedModel(cfg)
+						fmt.Printf("benchmarking kb  model:%s ...\n", mid)
+						result, rerr = runKBBench(mid, corpus)
+					case "cue":
+						mid := config.EmbedModel(cfg)
+						fmt.Printf("benchmarking cue  model:%s ...\n", mid)
+						result, rerr = runCueBench(mid, corpus)
+					case "tool", "infer":
+						return fmt.Errorf("--model or --models required for %s benchmark", t)
+					}
+					if rerr != nil {
+						fmt.Fprintf(os.Stderr, "  error: %v\n", rerr)
+						continue
+					}
+					upsertResult(bs, result)
+					fmt.Printf("  %s\n", formatBenchRow(result))
+				}
+			}
+
+			if err := saveBenchStore(bs); err != nil {
+				return err
+			}
+
+			// In multi-model mode, print comparison table.
+			if len(models) > 1 {
+				fmt.Println()
+				fmt.Println(utl.Whi2("COMPARISON"))
+				printPerfTable(resultsFor(bs, "", benchType), benchType)
+			}
+
+			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&benchType, "type", "", "Benchmark type: cue, kb, tool, infer")
 	cmd.Flags().StringVar(&modelID, "model", "", "Model ID to benchmark")
+	cmd.Flags().StringVar(&modelsFlag, "models", "", "Comma-separated model IDs for comparison benchmarks")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show debug detail for each prompt (tool bench)")
 	return cmd
 }

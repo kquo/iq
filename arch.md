@@ -215,7 +215,7 @@ The **`iq ask`** command provides an interactive REPL. One-shot prompts can also
 
 Routes user prompts through a 6-step pipeline:
 
-**Step 1 — CLASSIFY.** The user input is embedded via the embed sidecar (:27000) and compared against pre-computed embeddings of all cue descriptions via cosine similarity. The highest-scoring cue is selected (minimum score threshold: 0.40). No generative call, no instruction-following dependency, deterministic result. Falls back to `initial` if the embed sidecar is not running.
+**Step 1 — CLASSIFY.** Hybrid scoring: the user input is embedded via the embed sidecar (:27000) and compared against pre-computed cue description embeddings via cosine similarity. A deterministic keyword boost (+0.10) is added when the cue name phrase (e.g. "code review", "math", "summarization") appears in the input, preventing embedding drift from silently misrouting explicit intent. The highest hybrid score wins (minimum threshold: 0.40). Falls back to `initial` if the embed sidecar is not running. Debug trace shows `method: hybrid` when a keyword boost influenced the result.
 
 > **What embeddings are.** An embedding is a fixed-size vector of numbers — in IQ's case, 384 floats — that a neural network uses to represent the meaning of a piece of text. Networks trained on large corpora learn to place semantically similar content close together in this high-dimensional space: "explain a transformer model" and "describe how attention works" will produce vectors pointing in nearly the same direction even though they share no words. This numerical representation of meaning is the bridge between raw data and neural cognition. It enables similarity search and retrieval (vector DBs), routing and classification without generative inference, memory systems in agentic AI, and multi-modal fusion (images and text embedded into the same space so they can be compared directly). In IQ, embeddings serve triple duty: classifying prompts to cues, detecting when tools are needed, and retrieving relevant knowledge base chunks for RAG.
 
@@ -287,6 +287,8 @@ In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), eight read-only to
 
 **Execution safety** — every tool handler runs inside a goroutine with a 30-second timeout (`ExecuteTimeout`). If the handler does not return in time, the call returns a timeout error instead of blocking the inference loop. Tool output injected into the conversation context is capped at 32 KB (`MaxOutputBytes`); longer output is truncated with a marker. Each tool carries a `ReadOnly` flag (true for all current tools); future write tools will require `--confirm` mode to execute.
 
+**Schema validation** — `ValidateCall()` checks tool calls against the registry schema before execution: tool must exist, required params present, no unknown params, correct types (string/number). `ParseCallsStrict()` wraps the permissive parser and rejects malformed calls, preventing silent parameter misinterpretation. The permissive parser (`ParseCalls`) remains the default for resilience; strict mode is available for automation and high-assurance use.
+
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `get_time` | *(none)* | Current date, time, timezone, day of week |
@@ -326,11 +328,14 @@ Benchmark types:
 - **Tool use** — sends 14 prompts (2 per tool) through the routing grammar pipeline; measures routing accuracy (did the model pick the correct tool?) and execution success rate. Use `-v` for per-prompt debug detail.
 - **Inference latency** — measures P50/P95 latency and throughput
 
+**Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, models must already be running.
+
 Commands:
 ```
-iq perf bench [--type <type>] [--model <id>] [-v]   # run benchmarks
-iq perf show [model] [type]                          # display stored results
-iq perf clear                                        # wipe benchmark history
+iq perf bench [--type <type>] [--model <id>] [-v]             # run benchmarks
+iq perf bench --type cue --models model-a,model-b,model-c     # compare models
+iq perf show [model] [type]                                    # display stored results
+iq perf clear                                                  # wipe benchmark history
 ```
 
 ### Embed Sidecar
@@ -645,3 +650,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.3   | `--dump-prompt` flag writes assembled message array as JSON before inference; end-to-end orchestration test with mock sidecar (httptest); build.sh v2.2.0: indented output, `-v` tests, green command echo |
 | 0.7.4   | Extract sidecar HTTP transport to `internal/sidecar/transport.go`; extract LM domain logic (~500 lines) to `internal/lm/lm.go`; `cmd/iq/lm.go` becomes thin CLI shim |
 | 0.7.5   | Concurrency-safe `search.Client` struct replaces package-level braveAPIKey; tool execution safety: 30s timeout, 32KB output cap, ReadOnly/confirm gating |
+| 0.7.6   | Hybrid cue classification: keyword boost prevents embedding drift; strict tool schema validation (ValidateCall/ParseCallsStrict); multi-model benchmark harness (--models flag) |

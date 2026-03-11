@@ -393,20 +393,56 @@ func RefreshCueEmbeddings(cues []cue.Cue, model string) error {
 	return saveCueEmbeddings(cache)
 }
 
+// ── Keyword matching (deterministic floor) ──────────────────────────────────
+
+const KeywordBoostConst float32 = 0.10
+
+// keywordScore returns a deterministic score boost when the cue name appears
+// as a phrase in the input. This prevents embedding drift from silently
+// misrouting prompts that explicitly mention a cue's intent.
+func keywordScore(input string, cueName string) float32 {
+	if cueName == "initial" {
+		return 0 // never keyword-match the catch-all
+	}
+	inputLow := strings.ToLower(input)
+
+	// Multi-word cue names: check phrase match (e.g. "code review" in input)
+	phrase := strings.ReplaceAll(cueName, "_", " ")
+	if len(phrase) >= 4 && strings.Contains(inputLow, phrase) {
+		return KeywordBoostConst
+	}
+
+	// Single-word cue names (math, safety, reasoning, summarization):
+	// require exact word-boundary match to avoid substring noise.
+	if !strings.Contains(cueName, "_") && len(cueName) >= 4 {
+		target := strings.ToLower(cueName)
+		for word := range strings.FieldsSeq(inputLow) {
+			if word == target {
+				return KeywordBoostConst
+			}
+		}
+	}
+
+	return 0
+}
+
 // ── Embed-based classifier ────────────────────────────────────────────────────
 
 // ClassifyTrace carries the details of an embedding classification call.
 type ClassifyTrace struct {
-	Model    string
-	Resolved string
-	Score    float32
-	Elapsed  time.Duration
-	CacheHit bool
-	InputVec []float32
+	Model        string
+	Resolved     string
+	Score        float32
+	Elapsed      time.Duration
+	CacheHit     bool
+	InputVec     []float32
+	Method       string  // "embed" or "hybrid" (keyword-boosted)
+	KeywordBoost float32 // boost applied from keyword matching (0 if none)
 }
 
-// Classify returns the best-matching cue name for the input using
-// cosine similarity against pre-computed cue description embeddings.
+// Classify returns the best-matching cue name for the input using hybrid
+// scoring: cosine similarity against pre-computed cue embeddings, augmented
+// by deterministic keyword matching on cue names.
 func Classify(input string, cues []cue.Cue, model string) (string, *ClassifyTrace, error) {
 	t0 := time.Now()
 	cacheHit := true
@@ -434,28 +470,39 @@ func Classify(input string, cues []cue.Cue, model string) (string, *ClassifyTrac
 
 	bestName := "initial"
 	var bestScore float32 = -2
+	var bestKWBoost float32
 	for _, c := range cues {
 		cueVec, ok := cache.Cues[c.Name]
 		if !ok {
 			continue
 		}
-		score := CosineSimilarity(vec, cueVec)
-		if score > bestScore {
-			bestScore = score
+		embedScore := CosineSimilarity(vec, cueVec)
+		kwBoost := keywordScore(input, c.Name)
+		hybrid := embedScore + kwBoost
+		if hybrid > bestScore {
+			bestScore = hybrid
 			bestName = c.Name
+			bestKWBoost = kwBoost
 		}
 	}
 	if bestScore < ClassifyMinScore {
 		bestName = "initial"
 	}
 
+	method := "embed"
+	if bestKWBoost > 0 {
+		method = "hybrid"
+	}
+
 	trace := &ClassifyTrace{
-		Model:    model,
-		Resolved: bestName,
-		Score:    bestScore,
-		Elapsed:  time.Since(t0),
-		CacheHit: cacheHit,
-		InputVec: vec,
+		Model:        model,
+		Resolved:     bestName,
+		Score:        bestScore,
+		Elapsed:      time.Since(t0),
+		CacheHit:     cacheHit,
+		InputVec:     vec,
+		Method:       method,
+		KeywordBoost: bestKWBoost,
 	}
 	return bestName, trace, nil
 }

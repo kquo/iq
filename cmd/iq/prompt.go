@@ -287,9 +287,14 @@ func traceBlock(role, content string, highlightUser bool) {
 // printStep1Classify prints the embedding classification trace.
 func printStep1Classify(t *embed.ClassifyTrace) {
 	traceStep("1 ", "CLASSIFY")
-	traceField("task", "Cosine-similarity match user input against 17 cue descriptions")
+	traceField("task", "Hybrid match: cosine-similarity + keyword boost against cue descriptions")
 	traceField("call", fmt.Sprintf("model %s @ localhost:%d", t.Model, embed.PortConst))
-	traceField("resolved_cue", fmt.Sprintf("%s (score: %.4f)", t.Resolved, t.Score))
+	scoreDetail := fmt.Sprintf("%s (score: %.4f, method: %s", t.Resolved, t.Score, t.Method)
+	if t.KeywordBoost > 0 {
+		scoreDetail += fmt.Sprintf(", kw_boost: +%.2f", t.KeywordBoost)
+	}
+	scoreDetail += ")"
+	traceField("resolved_cue", scoreDetail)
 	if !t.CacheHit {
 		traceField("cache", "rebuilt")
 	}
