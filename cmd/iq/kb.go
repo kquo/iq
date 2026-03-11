@@ -16,6 +16,7 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"iq/internal/config"
+	"iq/internal/embed"
 )
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -609,7 +610,7 @@ func KBSearch(query string, topK int) ([]kbResult, error) {
 		return nil, nil
 	}
 
-	vecs, err := embedTexts([]string{query}, "query")
+	vecs, err := embed.Texts([]string{query}, "query")
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -625,7 +626,7 @@ func KBSearch(query string, topK int) ([]kbResult, error) {
 		if len(c.Embedding) == 0 {
 			continue
 		}
-		score := cosineSimilarity(qvec, c.Embedding)
+		score := embed.CosineSimilarity(qvec, c.Embedding)
 		// Boost chunks that contain exact keyword matches from the query.
 		// Apply boost to label too so symbol names in headings are matched.
 		score += keywordBoost(c.Text, c.Label, keywords)
@@ -668,7 +669,7 @@ func KBContext(results []kbResult) string {
 // ── Ingest ────────────────────────────────────────────────────────────────────
 
 func kbIngest(root string) error {
-	if !embedSidecarAlive() {
+	if !embed.SidecarAlive() {
 		return fmt.Errorf("embed sidecar not running — run: iq start")
 	}
 
@@ -747,7 +748,7 @@ func kbIngest(root string) error {
 		for j, c := range batch {
 			texts[j] = embedText(abs, c.Source, c.Label, c.Text)
 		}
-		vecs, err := embedTexts(texts, "document")
+		vecs, err := embed.Texts(texts, "document")
 		if err != nil {
 			fmt.Println()
 			return fmt.Errorf("embed batch %d: %w", i/embedBatch, err)
@@ -903,7 +904,7 @@ func newKbSearchCmd() *cobra.Command {
 			if !kbExists() {
 				return fmt.Errorf("knowledge base is empty — run: iq kb ingest <path>")
 			}
-			if !embedSidecarAlive() {
+			if !embed.SidecarAlive() {
 				return fmt.Errorf("embed sidecar not running — run: iq start")
 			}
 			query := strings.Join(args, " ")
@@ -913,7 +914,7 @@ func newKbSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			vecs, err := embedTexts([]string{query}, "query")
+			vecs, err := embed.Texts([]string{query}, "query")
 			if err != nil {
 				return err
 			}
@@ -924,7 +925,7 @@ func newKbSearchCmd() *cobra.Command {
 				if len(c.Embedding) == 0 {
 					continue
 				}
-				score := cosineSimilarity(qvec, c.Embedding)
+				score := embed.CosineSimilarity(qvec, c.Embedding)
 				score += keywordBoost(c.Text, c.Label, keywords)
 				results = append(results, kbResult{Chunk: c, Score: score})
 			}

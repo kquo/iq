@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"iq/internal/config"
 	"iq/internal/cue"
+	iembed "iq/internal/embed"
 	"iq/internal/sidecar"
 )
 
@@ -327,7 +328,7 @@ type benchSidecar struct {
 // released with releaseBenchSidecar when done.
 func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 	// Check if the live sidecar already serves the requested model.
-	state, err := sidecar.ReadState(embedSlugConst)
+	state, err := sidecar.ReadState(iembed.SlugConst)
 	if err == nil && state != nil && sidecar.PidAlive(state.PID) && state.Model == modelID {
 		return &benchSidecar{
 			ModelID: modelID,
@@ -346,11 +347,11 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 	}
 
 	scriptPath := filepath.Join(os.TempDir(), "embed_server.py")
-	if err := os.WriteFile(scriptPath, []byte(embedServerPy), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(iembed.EmbedServerPy), 0755); err != nil {
 		return nil, fmt.Errorf("failed to write embed script: %w", err)
 	}
 
-	pyPath, err := mlxVenvPython()
+	pyPath, err := iembed.MlxVenvPython()
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve Python interpreter: %w", err)
 	}
@@ -386,7 +387,7 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 
 	// Poll health endpoint — same timeout as regular embed sidecars.
 	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
-	deadline := time.Now().Add(embedReadyTimeout)
+	deadline := time.Now().Add(iembed.ReadyTimeout)
 	client := &http.Client{Timeout: 2 * time.Second}
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(healthURL)
@@ -417,7 +418,7 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 	}
 	fmt.Fprintf(os.Stderr, " %s\n", utl.Gra("timeout"))
 	sidecar.PrintLastLogLines(benchLogPath, 15)
-	return nil, fmt.Errorf("bench sidecar did not become ready within %s (see log above)", embedReadyTimeout)
+	return nil, fmt.Errorf("bench sidecar did not become ready within %s (see log above)", iembed.ReadyTimeout)
 }
 
 // releaseBenchSidecar stops a temporary sidecar. No-op if it was reused.
@@ -462,7 +463,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	// Phase 1: batch-embed all docs for throughput measurement.
 	fmt.Fprintf(os.Stderr, "  phase 1/3   batch-embedding %d docs ...", len(texts))
 	t0 := time.Now()
-	embedVecs, err := embedTextsOnPort(texts, modelID, port, "document")
+	embedVecs, err := iembed.TextsOnPort(texts, modelID, port, "document")
 	if err != nil {
 		return BenchResult{}, err
 	}
@@ -475,7 +476,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	var latenciesMs []float64
 	for _, text := range texts {
 		t1 := time.Now()
-		_, _ = embedTextsOnPort([]string{text}, modelID, port, "document")
+		_, _ = iembed.TextsOnPort([]string{text}, modelID, port, "document")
 		latenciesMs = append(latenciesMs, float64(time.Since(t1).Milliseconds()))
 	}
 	sort.Float64s(latenciesMs)
@@ -498,7 +499,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	fmt.Fprintf(os.Stderr, "  phase 3/3   evaluating %d queries (MRR) ...\n", len(corpus.KBQueries))
 	var mrrScores []float64
 	for qi, q := range corpus.KBQueries {
-		queryVecs, err := embedTextsOnPort([]string{q.Query}, modelID, port, "query")
+		queryVecs, err := iembed.TextsOnPort([]string{q.Query}, modelID, port, "query")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "    query %d/%d  SKIP (embed error)\n", qi+1, len(corpus.KBQueries))
 			continue
@@ -512,7 +513,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		}
 		var ranked []scored
 		for _, chunk := range chunks {
-			sim := cosineSimilarity(queryVec, chunk.Embedding)
+			sim := iembed.CosineSimilarity(queryVec, chunk.Embedding)
 			ranked = append(ranked, scored{chunk.ID, sim})
 		}
 		sort.Slice(ranked, func(i, j int) bool {
@@ -583,7 +584,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		return BenchResult{}, err
 	}
 	fmt.Fprintf(os.Stderr, "  cue set     %d cues loaded\n", len(cues))
-	fmt.Fprintf(os.Stderr, "  threshold   %.2f\n", classifyMinScore)
+	fmt.Fprintf(os.Stderr, "  threshold   %.2f\n", iembed.ClassifyMinScore)
 
 	// Build cue embeddings using the benchmark sidecar.
 	fmt.Fprintf(os.Stderr, "  embedding   %d cue descriptions ...", len(cues))
@@ -591,7 +592,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	for _, c := range cues {
 		cueTexts = append(cueTexts, c.Name+": "+c.Description)
 	}
-	cueVecs, err := embedTextsOnPort(cueTexts, modelID, port, "document")
+	cueVecs, err := iembed.TextsOnPort(cueTexts, modelID, port, "document")
 	if err != nil {
 		return BenchResult{}, fmt.Errorf("failed to embed cue descriptions: %w", err)
 	}
@@ -607,7 +608,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		t1 := time.Now()
 
 		// Embed the input text.
-		inputVecs, err := embedTextsOnPort([]string{input.Text}, modelID, port, "query")
+		inputVecs, err := iembed.TextsOnPort([]string{input.Text}, modelID, port, "query")
 		elapsed := time.Since(t1)
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 
@@ -624,7 +625,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		bestIdx := 0
 		var bestScore float32
 		for j, cv := range cueVecs {
-			sim := cosineSimilarity(inputVec, cv)
+			sim := iembed.CosineSimilarity(inputVec, cv)
 			if sim > bestScore {
 				bestScore = sim
 				bestIdx = j
@@ -632,7 +633,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		}
 
 		resolved := "initial"
-		if bestScore >= classifyMinScore {
+		if bestScore >= iembed.ClassifyMinScore {
 			resolved = cues[bestIdx].Name
 		}
 

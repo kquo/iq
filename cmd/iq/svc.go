@@ -12,6 +12,7 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"iq/internal/config"
+	"iq/internal/embed"
 	"iq/internal/sidecar"
 )
 
@@ -28,12 +29,23 @@ func startSidecar(tier, modelID string) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve model path: %w", err)
 	}
-	pyPath, err := mlxVenvPython()
+	pyPath, err := embed.MlxVenvPython()
 	if err != nil {
 		return fmt.Errorf("cannot resolve Python interpreter: %w", err)
 	}
 	_, err = sidecar.StartInfer(tier, modelID, modelPath, pyPath)
 	return err
+}
+
+// startEmbedSidecar resolves config and delegates to embed.StartSidecar.
+func startEmbedSidecar() error {
+	cfg, err := config.Load(nil)
+	if err != nil {
+		return err
+	}
+	return embed.StartSidecar(config.EmbedModel(cfg), func(modelID string) error {
+		return registerInManifest(modelID)
+	})
 }
 
 // resolveModels returns the model IDs to act on given an optional arg.
@@ -115,7 +127,7 @@ func printStatus() error {
 
 	// Embed sidecar row.
 	{
-		slug := embedSlugConst
+		slug := embed.SlugConst
 		model := config.EmbedModel(cfg)
 		eState, _ := sidecar.ReadState(slug)
 		endpoint := ""
@@ -350,7 +362,7 @@ func newStopCmd() *cobra.Command {
 			}
 			// Stop embed sidecar and sweep for orphans when stopping everything.
 			if arg == "" {
-				if err := sidecar.Stop(embedSlugConst); err != nil {
+				if err := sidecar.Stop(embed.SlugConst); err != nil {
 					fmt.Fprintf(os.Stderr, "  error stopping embed: %s\n", err.Error())
 				}
 				sidecar.KillOrphanSidecars()
@@ -571,7 +583,7 @@ func newEmbedSetCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Printf("embed_model  %s\n", utl.Gre(modelName))
 			kbP, _ := kbPath()
 			if _, err := os.Stat(kbP); err == nil {
@@ -579,7 +591,7 @@ func newEmbedSetCmd() *cobra.Command {
 				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the new model.
-			sidecar.Stop(embedSlugConst)
+			sidecar.Stop(embed.SlugConst)
 			return startEmbedSidecar()
 		},
 	}
@@ -600,7 +612,7 @@ func newEmbedRmCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Printf("embed_model  %s\n", utl.Gra("(default) "+config.DefaultEmbedModel))
 			kbP, _ := kbPath()
 			if _, err := os.Stat(kbP); err == nil {
@@ -608,7 +620,7 @@ func newEmbedRmCmd() *cobra.Command {
 				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the default model.
-			sidecar.Stop(embedSlugConst)
+			sidecar.Stop(embed.SlugConst)
 			return startEmbedSidecar()
 		},
 	}
@@ -693,7 +705,7 @@ func newDocCmd() *cobra.Command {
 			checks = append(checks, runDocCheck("mlx_lm.server", serverDetail, serverOK, false))
 
 			// ── slow subprocess checks — run concurrently ──
-			venvPy, pyVenvErr := mlxVenvPython()
+			venvPy, pyVenvErr := embed.MlxVenvPython()
 			var (
 				wg                     sync.WaitGroup
 				flagCheck, embPkgCheck docCheck

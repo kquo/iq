@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 	"iq/internal/cue"
+	"iq/internal/embed"
 )
 
 // ── $EDITOR helper ────────────────────────────────────────────────────────────
@@ -254,7 +255,7 @@ system_prompt: |
 			if err := cue.Save(cues); err != nil {
 				return err
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Printf("Added cue %q\n", newCue.Name)
 			return nil
 		},
@@ -328,7 +329,7 @@ func newCueEditCmd() *cobra.Command {
 			if err := cue.Save(cues); err != nil {
 				return err
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Printf("Updated cue %q\n", updatedCue.Name)
 			return nil
 		},
@@ -362,7 +363,7 @@ func newCueRmCmd() *cobra.Command {
 			if err := cue.Save(cues); err != nil {
 				return err
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Printf("Removed cue %q\n", args[0])
 			return nil
 		},
@@ -403,7 +404,7 @@ func newCueAssignCmd() *cobra.Command {
 			if err := cue.Save(cues); err != nil {
 				return err
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Printf("Assigned %s → %s\n", modelID, cueName)
 			return nil
 		},
@@ -490,7 +491,7 @@ func newCueResetCmd() *cobra.Command {
 				if err := cue.Save(cues); err != nil {
 					return err
 				}
-				invalidateCueEmbeddings()
+				embed.InvalidateCueEmbeddings()
 				fmt.Printf("Reset cue %q to factory default.\n", name)
 				return nil
 			}
@@ -551,7 +552,7 @@ func newCueResetCmd() *cobra.Command {
 			if err := cue.SaveRaw([]byte(cue.DefaultCuesYAML), path); err != nil {
 				return fmt.Errorf("failed to write defaults: %w", err)
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Println("Cues reset to factory defaults.")
 			return nil
 		},
@@ -596,7 +597,7 @@ func newCueSyncCmd() *cobra.Command {
 			if err := cue.Save(cues); err != nil {
 				return err
 			}
-			invalidateCueEmbeddings()
+			embed.InvalidateCueEmbeddings()
 			fmt.Printf("Added %d new cue(s):\n", len(added))
 			for _, name := range added {
 				fmt.Printf("  %s\n", name)

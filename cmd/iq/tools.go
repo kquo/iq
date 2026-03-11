@@ -15,6 +15,7 @@ import (
 
 	"github.com/queone/utl"
 	"iq/internal/config"
+	"iq/internal/embed"
 	"iq/internal/search"
 )
 
@@ -980,7 +981,7 @@ func refreshToolEmbeddings(model string) error {
 		texts[i] = s.Name + ": " + s.Description
 		names[i] = s.Name
 	}
-	embeddings, err := embedTexts(texts, "document")
+	embeddings, err := embed.Texts(texts, "document")
 	if err != nil {
 		return fmt.Errorf("failed to embed tool signal descriptions: %w", err)
 	}
@@ -1032,7 +1033,7 @@ func toolClassify(inputVec []float32, model string) (bool, *toolClassifyTrace) {
 		if !ok {
 			continue
 		}
-		score := cosineSimilarity(inputVec, sigVec)
+		score := embed.CosineSimilarity(inputVec, sigVec)
 		if score > bestScore {
 			bestScore = score
 			bestName = s.Name

@@ -9,6 +9,7 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"iq/internal/cue"
+	"iq/internal/embed"
 	"iq/internal/sidecar"
 )
 
@@ -73,7 +74,7 @@ func newProbeCmd() *cobra.Command {
 			if useKB {
 				if !kbExists() {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: knowledge base is empty — run: iq kb ingest <path>"))
-				} else if !embedSidecarAlive() {
+				} else if !embed.SidecarAlive() {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: embed sidecar not running — run: iq start"))
 				} else {
 					results, kbErr := KBSearch(message, kbDefaultK)

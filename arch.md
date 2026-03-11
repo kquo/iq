@@ -40,7 +40,7 @@ IQ is being restructured from a single `cmd/iq` package into isolated domain pac
 | `internal/search` | DuckDuckGo web search client | **done** |
 | `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | **done** |
 | `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML | **done** |
-| `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity | planned |
+| `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier | **done** |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | planned |
 | `internal/tools` | Tool registry, parser, executor, signal detection | planned |
 | `internal/kb` | Knowledge base index, chunking, hybrid search, ingest | planned |
@@ -67,7 +67,7 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 `iq lm rm` auto-clears tier assignments and stops running sidecars (including the embed sidecar) with yellow warnings before prompting for confirmation. The confirmation prompt is printed in yellow with `[y/N]` in default color.
 
-### Configuration (`internal/config`)
+### Configuration
 
 Manages `~/.config/iq/config.yaml`. Extracted to `internal/config` as the first domain package in the restructuring. Exports `Config` struct, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `TierOrder`, and `DefaultEmbedModel`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
 
@@ -82,7 +82,7 @@ Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
 Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
 
-### Cue Definitions (`internal/cue`)
+### Cue Definitions
 
 The **`iq cue`** command manages `~/.config/iq/cues.yaml`, seeded from an embedded default set of 17 cues across 8 categories.
 
@@ -96,7 +96,7 @@ Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `s
 
 `sync` merges new factory cues into an existing `cues.yaml` without overwriting user customisations — useful when upgrading IQ to a version that adds new cues.
 
-### Service Daemon (`internal/sidecar`)
+### Service Daemon
 
 The **`iq start`** / **`iq stop`** commands manage sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, written to a temp file at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
 
@@ -316,7 +316,7 @@ pipx install mlx-lm
 pipx inject mlx-lm mlx-embedding-models
 ```
 
-### Web Search Library (`internal/search`)
+### Web Search Library
 
 A DuckDuckGo client library in `internal/search`. It provides `Search()` and `SearchWithOption()` functions for HTML scraping with retry logic for 202 throttling responses. Used by the `web_search` tool.
 
@@ -517,6 +517,8 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/sidecar/infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 | `internal/cue/cue.go` | Cue struct, Load/Save, Find, ForModel, embedded default YAML |
 | `internal/cue/cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
+| `internal/embed/embed.go` | Embed sidecar lifecycle, HTTP embedding calls, cosine similarity, cue classifier |
+| `internal/embed/embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 
 ### CLI package (`cmd/iq/`)
 
@@ -524,7 +526,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 |------|---------|
 | `main.go` | CLI entry point, root command, version, help routing |
 | `svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
-| `embed.go` | Embed sidecar startup, HTTP embedding calls, cue cache, cosine similarity |
 | `cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
 | `cache.go` | Response cache with FNV64a hashing, TTL expiry, load/save/check/write |
@@ -534,7 +535,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
-| `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `bench_corpus.yaml` | Benchmark test data (embedded in binary) |
 
 
@@ -577,3 +577,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.5   | Extract `search` to `internal/search` domain package |
 | 0.6.6   | Extract `sidecar` to `internal/sidecar` domain package |
 | 0.6.7   | Extract `cue` to `internal/cue` domain package |
+| 0.6.8   | Extract `embed` to `internal/embed` domain package |

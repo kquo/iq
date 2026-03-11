@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"iq/internal/config"
 	"iq/internal/cue"
+	"iq/internal/embed"
 )
 
 // ── OpenAI-compatible types ───────────────────────────────────────────────────
@@ -126,7 +127,7 @@ func shortID() string {
 }
 
 // ── Classification ────────────────────────────────────────────────────────────
-// Embedding-based classification is implemented in embed.go (embedClassify).
+// Embedding-based classification is implemented in internal/embed (embed.Classify).
 // This section is intentionally empty.
 
 // ── Routing ───────────────────────────────────────────────────────────────────
@@ -303,10 +304,10 @@ func traceBlock(role, content string, highlightUser bool) {
 }
 
 // printStep1Classify prints the embedding classification trace.
-func printStep1Classify(t *embedClassifyTrace) {
+func printStep1Classify(t *embed.ClassifyTrace) {
 	traceStep("1 ", "CLASSIFY")
 	traceField("task", "Cosine-similarity match user input against 17 cue descriptions")
-	traceField("call", fmt.Sprintf("model %s @ localhost:%d", t.Model, embedPortConst))
+	traceField("call", fmt.Sprintf("model %s @ localhost:%d", t.Model, embed.PortConst))
 	traceField("resolved_cue", fmt.Sprintf("%s (score: %.4f)", t.Resolved, t.Score))
 	if !t.CacheHit {
 		traceField("cache", "rebuilt")
@@ -361,7 +362,7 @@ func printStep2Route(route *routeResult, elapsed time.Duration) {
 func printStep3KB(results []kbResult, model string, elapsed time.Duration) {
 	traceStep("3 ", "KB RETRIEVE")
 	traceField("task", "Cosine-similarity search user input against KB chunks")
-	traceField("call", fmt.Sprintf("model %s @ localhost:%d", model, embedPortConst))
+	traceField("call", fmt.Sprintf("model %s @ localhost:%d", model, embed.PortConst))
 	traceField("chunks", fmt.Sprintf("%d results", len(results)))
 	for _, r := range results {
 		traceField("top", fmt.Sprintf("score:%.4f  %s:%d–%d",
@@ -624,7 +625,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 1: CLASSIFY ──
 	cueName := opts.cueName
-	var et *embedClassifyTrace
+	var et *embed.ClassifyTrace
 
 	if cueName == "" && opts.tier == "" {
 		candidates := cues
@@ -639,7 +640,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				return sess, fmt.Errorf("no cues in category %q", opts.category)
 			}
 		}
-		if !embedSidecarAlive() {
+		if !embed.SidecarAlive() {
 			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial cue (run: iq start)"))
 			cueName = "initial"
 		} else {
@@ -648,7 +649,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			if cfgErr == nil {
 				em = config.EmbedModel(cfg2)
 			}
-			cueName, et, err = embedClassify(input, candidates, em)
+			cueName, et, err = embed.Classify(input, candidates, em)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("classification error: "+err.Error()+", falling back to initial"))
 				cueName = "initial"
@@ -712,7 +713,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 3: KB RETRIEVE ──
 	var kbContext string
-	if kbExists() && !opts.noKB && embedSidecarAlive() {
+	if kbExists() && !opts.noKB && embed.SidecarAlive() {
 		t3 := time.Now()
 		results, kbErr := KBSearch(input, kbDefaultK)
 		if kbErr == nil && len(results) > 0 {

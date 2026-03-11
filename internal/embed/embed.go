@@ -1,4 +1,4 @@
-package main
+package embed
 
 import (
 	"bytes"
@@ -16,38 +16,38 @@ import (
 	"time"
 
 	"github.com/queone/utl"
+
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/sidecar"
 )
 
 //go:embed embed_server.py
-var embedServerPy string
+var EmbedServerPy string
 
 const (
-	embedSlugConst    = "embed"
-	embedPortConst    = 27000
-	embedReadyTimeout = 60 * time.Second
-	embedCacheFile    = "cue_embeddings.json"
+	SlugConst    = "embed"
+	PortConst    = 27000
+	ReadyTimeout = 60 * time.Second
+	CacheFile    = "cue_embeddings.json"
 
-	// classifyMinScore is the minimum cosine similarity required to accept a
-	// cue match. Below this threshold the classifier falls back to "initial"
-	// rather than committing to a low-confidence (potentially wrong) cue.
-	classifyMinScore float32 = 0.40
+	// ClassifyMinScore is the minimum cosine similarity required to accept a
+	// cue match. Below this threshold the classifier falls back to "initial".
+	ClassifyMinScore float32 = 0.40
 )
 
 // ── Embed sidecar helpers ─────────────────────────────────────────────────────
 
-// embedSidecarAlive returns true if the embed sidecar is running.
-func embedSidecarAlive() bool {
-	state, err := sidecar.ReadState(embedSlugConst)
+// SidecarAlive returns true if the embed sidecar is running.
+func SidecarAlive() bool {
+	state, err := sidecar.ReadState(SlugConst)
 	return err == nil && state != nil && sidecar.PidAlive(state.PID)
 }
 
-// mlxVenvPython locates the Python interpreter in the same venv as mlx_lm.server.
-func mlxVenvPython() (string, error) {
-	serverPath, _ := checkCommand("mlx_lm.server", "")
-	if serverPath == "" {
+// MlxVenvPython locates the Python interpreter in the same venv as mlx_lm.server.
+func MlxVenvPython() (string, error) {
+	serverPath, err := exec.LookPath("mlx_lm.server")
+	if err != nil {
 		return "", fmt.Errorf("mlx_lm.server not found on PATH")
 	}
 	// Resolve symlink to get the real path inside the pipx venv.
@@ -65,17 +65,12 @@ func mlxVenvPython() (string, error) {
 	return "", fmt.Errorf("no python3/python found in mlx_lm venv (%s) — run: pipx inject mlx-lm mlx-embedding-models", binDir)
 }
 
-// startEmbedSidecar extracts embed_server.py, finds the venv Python, and
-// spawns the single embedding sidecar.
-func startEmbedSidecar() error {
-	cfg, err := config.Load(nil)
-	if err != nil {
-		return err
-	}
-
-	modelID := config.EmbedModel(cfg)
-	slug := embedSlugConst
-	port := embedPortConst
+// StartSidecar extracts embed_server.py, finds the venv Python, and
+// spawns the single embedding sidecar. onReady is called after successful start
+// (e.g., to register in manifest).
+func StartSidecar(modelID string, onReady func(string) error) error {
+	slug := SlugConst
+	port := PortConst
 
 	existing, _ := sidecar.ReadState(slug)
 	if existing != nil && sidecar.PidAlive(existing.PID) {
@@ -86,7 +81,7 @@ func startEmbedSidecar() error {
 
 	// Extract the embedded Python script to a stable temp path.
 	scriptPath := filepath.Join(os.TempDir(), "embed_server.py")
-	if err := os.WriteFile(scriptPath, []byte(embedServerPy), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(EmbedServerPy), 0755); err != nil {
 		return fmt.Errorf("failed to write embed script: %w", err)
 	}
 
@@ -99,7 +94,7 @@ func startEmbedSidecar() error {
 		return fmt.Errorf("failed to open embed log: %w", err)
 	}
 
-	pyPath, err := mlxVenvPython()
+	pyPath, err := MlxVenvPython()
 	if err != nil {
 		lf.Close()
 		return fmt.Errorf("cannot resolve Python interpreter: %w", err)
@@ -130,13 +125,15 @@ func startEmbedSidecar() error {
 		return fmt.Errorf("started (pid %d) but failed to write state: %w", cmd.Process.Pid, err)
 	}
 
-	if err := registerInManifest(modelID); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: failed to register embed model in manifest: "+err.Error()))
+	if onReady != nil {
+		if err := onReady(modelID); err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: post-start callback failed: "+err.Error()))
+		}
 	}
 
 	fmt.Printf("  %-11s  pid %-7d  %s  ", slug, cmd.Process.Pid, sidecar.Endpoint(port))
 	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
-	deadline := time.Now().Add(embedReadyTimeout)
+	deadline := time.Now().Add(ReadyTimeout)
 	client := &http.Client{Timeout: 2 * time.Second}
 
 	for time.Now().Before(deadline) {
@@ -158,15 +155,14 @@ func startEmbedSidecar() error {
 	}
 	fmt.Printf("%s\n", utl.Gra("timeout"))
 	sidecar.PrintLastLogLines(logP, 10)
-	return fmt.Errorf("embed sidecar did not become ready within %s", embedReadyTimeout)
+	return fmt.Errorf("embed sidecar did not become ready within %s", ReadyTimeout)
 }
 
 // ── Embedding call ────────────────────────────────────────────────────────────
 
-// embedTextsOnPort sends texts to an embed sidecar at the given port, applying
+// TextsOnPort sends texts to an embed sidecar at the given port, applying
 // model-specific truncation and instruction prefixes based on model name.
-// This is the low-level call used by both the normal path and benchmark sidecars.
-func embedTextsOnPort(texts []string, model string, port int, task string) ([][]float32, error) {
+func TextsOnPort(texts []string, model string, port int, task string) ([][]float32, error) {
 	// Per-model context window limits.
 	maxRunes := 1600
 	if strings.Contains(strings.ToLower(model), "mxbai") {
@@ -182,8 +178,6 @@ func embedTextsOnPort(texts []string, model string, port int, task string) ([][]
 	}
 
 	// Apply instruction prefix for models that require it.
-	// nomic models: "search_query:" / "search_document:"
-	// mxbai models: query prefix only
 	prefixed := truncated
 	modelLow := strings.ToLower(model)
 	switch {
@@ -241,10 +235,10 @@ func embedTextsOnPort(texts []string, model string, port int, task string) ([][]
 	return result.Embeddings, nil
 }
 
-// embedTexts calls the local embed sidecar.
+// Texts calls the local embed sidecar.
 // task is "query" or "document" — controls instruction prefix for models that require it.
-func embedTexts(texts []string, task string) ([][]float32, error) {
-	state, err := sidecar.ReadState(embedSlugConst)
+func Texts(texts []string, task string) ([][]float32, error) {
+	state, err := sidecar.ReadState(SlugConst)
 	if err != nil || state == nil || !sidecar.PidAlive(state.PID) {
 		return nil, fmt.Errorf("embed sidecar not running — run: iq start")
 	}
@@ -254,13 +248,13 @@ func embedTexts(texts []string, task string) ([][]float32, error) {
 		return nil, err
 	}
 
-	return embedTextsOnPort(texts, config.EmbedModel(cfg), state.Port, task)
+	return TextsOnPort(texts, config.EmbedModel(cfg), state.Port, task)
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────
 
-// cosineSimilarity returns the cosine similarity between two float32 vectors.
-func cosineSimilarity(a, b []float32) float32 {
+// CosineSimilarity returns the cosine similarity between two float32 vectors.
+func CosineSimilarity(a, b []float32) float32 {
 	var dot, normA, normB float64
 	for i := range a {
 		dot += float64(a[i]) * float64(b[i])
@@ -286,7 +280,7 @@ func cueEmbeddingsPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, embedCacheFile), nil
+	return filepath.Join(dir, CacheFile), nil
 }
 
 func loadCueEmbeddings() (*cueEmbeddingCache, error) {
@@ -320,18 +314,16 @@ func saveCueEmbeddings(cache *cueEmbeddingCache) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// invalidateCueEmbeddings deletes the embedding cache. Called after any cue
-// mutation or cue_model change so the next prompt triggers a rebuild.
-func invalidateCueEmbeddings() {
+// InvalidateCueEmbeddings deletes the embedding cache.
+func InvalidateCueEmbeddings() {
 	path, err := cueEmbeddingsPath()
 	if err == nil {
 		os.Remove(path)
 	}
 }
 
-// cueEmbeddingsStale returns true if the cache is missing, uses a different
-// model, or is missing any cue present in the current set.
-func cueEmbeddingsStale(cues []cue.Cue, model string) bool {
+// CueEmbeddingsStale returns true if the cache needs rebuilding.
+func CueEmbeddingsStale(cues []cue.Cue, model string) bool {
 	cache, err := loadCueEmbeddings()
 	if err != nil || cache == nil {
 		return true
@@ -347,16 +339,15 @@ func cueEmbeddingsStale(cues []cue.Cue, model string) bool {
 	return false
 }
 
-// refreshCueEmbeddings embeds all cue name+description strings and writes the
-// result to the cache file. Always uses the "cue" role model.
-func refreshCueEmbeddings(cues []cue.Cue, model string) error {
+// RefreshCueEmbeddings embeds all cue name+description strings and writes the cache.
+func RefreshCueEmbeddings(cues []cue.Cue, model string) error {
 	texts := make([]string, len(cues))
 	names := make([]string, len(cues))
 	for i, c := range cues {
 		texts[i] = c.Name + ": " + c.Description
 		names[i] = c.Name
 	}
-	embeddings, err := embedTexts(texts, "document")
+	embeddings, err := Texts(texts, "document")
 	if err != nil {
 		return fmt.Errorf("failed to embed cue descriptions: %w", err)
 	}
@@ -375,8 +366,8 @@ func refreshCueEmbeddings(cues []cue.Cue, model string) error {
 
 // ── Embed-based classifier ────────────────────────────────────────────────────
 
-// embedClassifyTrace carries the details of an embedding classification call.
-type embedClassifyTrace struct {
+// ClassifyTrace carries the details of an embedding classification call.
+type ClassifyTrace struct {
 	Model    string
 	Resolved string
 	Score    float32
@@ -385,16 +376,15 @@ type embedClassifyTrace struct {
 	InputVec []float32
 }
 
-// embedClassify returns the best-matching cue name for the input using
+// Classify returns the best-matching cue name for the input using
 // cosine similarity against pre-computed cue description embeddings.
-// Falls back to "initial" on any error.
-func embedClassify(input string, cues []cue.Cue, model string) (string, *embedClassifyTrace, error) {
+func Classify(input string, cues []cue.Cue, model string) (string, *ClassifyTrace, error) {
 	t0 := time.Now()
 	cacheHit := true
 
-	if cueEmbeddingsStale(cues, model) {
+	if CueEmbeddingsStale(cues, model) {
 		cacheHit = false
-		if err := refreshCueEmbeddings(cues, model); err != nil {
+		if err := RefreshCueEmbeddings(cues, model); err != nil {
 			return "initial", nil, err
 		}
 	}
@@ -404,7 +394,7 @@ func embedClassify(input string, cues []cue.Cue, model string) (string, *embedCl
 		return "initial", nil, fmt.Errorf("cue embeddings unavailable")
 	}
 
-	inputEmb, err := embedTexts([]string{input}, "query")
+	inputEmb, err := Texts([]string{input}, "query")
 	if err != nil {
 		return "initial", nil, err
 	}
@@ -420,17 +410,17 @@ func embedClassify(input string, cues []cue.Cue, model string) (string, *embedCl
 		if !ok {
 			continue
 		}
-		score := cosineSimilarity(vec, cueVec)
+		score := CosineSimilarity(vec, cueVec)
 		if score > bestScore {
 			bestScore = score
 			bestName = c.Name
 		}
 	}
-	if bestScore < classifyMinScore {
+	if bestScore < ClassifyMinScore {
 		bestName = "initial"
 	}
 
-	trace := &embedClassifyTrace{
+	trace := &ClassifyTrace{
 		Model:    model,
 		Resolved: bestName,
 		Score:    bestScore,

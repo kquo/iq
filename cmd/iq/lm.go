@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	"iq/internal/config"
 	"iq/internal/cue"
+	"iq/internal/embed"
 	"iq/internal/sidecar"
 )
 
@@ -1000,10 +1001,10 @@ func newLmRmCmd() *cobra.Command {
 			// Warn and auto-clear if model is the embed model.
 			cfg, _ := config.Load(nil)
 			if cfg != nil && model == config.EmbedModel(cfg) {
-				s, _ := sidecar.ReadState(embedSlugConst)
+				s, _ := sidecar.ReadState(embed.SlugConst)
 				if s != nil && sidecar.PidAlive(s.PID) {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping embed sidecar"))
-					if err := sidecar.Stop(embedSlugConst); err != nil {
+					if err := sidecar.Stop(embed.SlugConst); err != nil {
 						return fmt.Errorf("failed to stop embed sidecar: %w", err)
 					}
 				}
