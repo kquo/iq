@@ -39,6 +39,7 @@ IQ is being restructured from a single `cmd/iq` package into isolated domain pac
 | `internal/config` | Config CRUD, tier definitions, embed model, migrations | **done** |
 | `internal/search` | DuckDuckGo web search client | **done** |
 | `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | **done** |
+| `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML | **done** |
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity | planned |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | planned |
 | `internal/tools` | Tool registry, parser, executor, signal detection | planned |
@@ -81,7 +82,7 @@ Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
 Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
 
-### Cue Definitions
+### Cue Definitions (`internal/cue`)
 
 The **`iq cue`** command manages `~/.config/iq/cues.yaml`, seeded from an embedded default set of 17 cues across 8 categories.
 
@@ -514,6 +515,8 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 | `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
 | `internal/sidecar/infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
+| `internal/cue/cue.go` | Cue struct, Load/Save, Find, ForModel, embedded default YAML |
+| `internal/cue/cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
 
 ### CLI package (`cmd/iq/`)
 
@@ -522,7 +525,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `main.go` | CLI entry point, root command, version, help routing |
 | `svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
 | `embed.go` | Embed sidecar startup, HTTP embedding calls, cue cache, cosine similarity |
-| `cue.go` | Cue CRUD, defaults, sync, embedded `cues_default.yaml` |
+| `cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
 | `cache.go` | Response cache with FNV64a hashing, TTL expiry, load/save/check/write |
 | `tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
@@ -532,7 +535,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
 | `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
-| `cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
 | `bench_corpus.yaml` | Benchmark test data (embedded in binary) |
 
 
@@ -574,3 +576,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.4   | Begin `internal/` restructuring — extract `config` as first domain package; planned: search, sidecar, embed, cache, tools, kb |
 | 0.6.5   | Extract `search` to `internal/search` domain package |
 | 0.6.6   | Extract `sidecar` to `internal/sidecar` domain package |
+| 0.6.7   | Extract `cue` to `internal/cue` domain package |

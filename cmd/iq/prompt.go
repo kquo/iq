@@ -17,6 +17,7 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 	"iq/internal/config"
+	"iq/internal/cue"
 )
 
 // ── OpenAI-compatible types ───────────────────────────────────────────────────
@@ -141,37 +142,37 @@ type routeResult struct {
 	TierSource    string // "cue_override", "suggested_tier", "fallback"
 }
 
-func resolveRoute(cueName string, cues []Cue) (*routeResult, error) {
-	_, cue := findCue(cues, cueName)
-	if cue == nil {
+func resolveRoute(cueName string, cues []cue.Cue) (*routeResult, error) {
+	_, c := cue.Find(cues, cueName)
+	if c == nil {
 		return nil, fmt.Errorf("cue %q not found", cueName)
 	}
 
 	// Direct model override on the cue — kept for power users but not
 	// actively promoted. Find which tier it belongs to and pick its sidecar.
-	if cue.Model != "" {
-		tier := config.TierForModel(cue.Model)
+	if c.Model != "" {
+		tier := config.TierForModel(c.Model)
 		if tier == "" {
-			return nil, fmt.Errorf("cue %q has model %q but it is not in any tier pool", cueName, cue.Model)
+			return nil, fmt.Errorf("cue %q has model %q but it is not in any tier pool", cueName, c.Model)
 		}
-		sidecar, err := pickSidecar(tier, false)
+		sc, err := pickSidecar(tier, false)
 		if err != nil {
 			return nil, fmt.Errorf("cue model override: %w", err)
 		}
 		return &routeResult{
 			CueName:       cueName,
-			Category:      cue.Category,
-			SuggestedTier: cue.SuggestedTier,
-			SystemPrompt:  cue.SystemPrompt,
+			Category:      c.Category,
+			SuggestedTier: c.SuggestedTier,
+			SystemPrompt:  c.SystemPrompt,
 			Tier:          tier,
-			Port:          sidecar.Port,
-			ModelID:       sidecar.Model,
+			Port:          sc.Port,
+			ModelID:       sc.Model,
 			TierSource:    "cue_override",
 		}, nil
 	}
 
 	// Use suggested_tier, fall back to "fast".
-	tier := cue.SuggestedTier
+	tier := c.SuggestedTier
 	tierSource := "suggested_tier"
 	if tier != "fast" && tier != "slow" {
 		tier = "fast"
@@ -194,9 +195,9 @@ func resolveRoute(cueName string, cues []Cue) (*routeResult, error) {
 
 	return &routeResult{
 		CueName:       cueName,
-		Category:      cue.Category,
-		SuggestedTier: cue.SuggestedTier,
-		SystemPrompt:  cue.SystemPrompt,
+		Category:      c.Category,
+		SuggestedTier: c.SuggestedTier,
+		SystemPrompt:  c.SystemPrompt,
 		Tier:          tier,
 		Port:          sidecar.Port,
 		ModelID:       sidecar.Model,
@@ -616,7 +617,7 @@ type promptOpts struct {
 
 func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
 	trace := opts.dryRun || opts.debug
-	cues, err := loadCues()
+	cues, err := cue.Load()
 	if err != nil {
 		return sess, err
 	}

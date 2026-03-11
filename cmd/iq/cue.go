@@ -2,118 +2,17 @@ package main
 
 import (
 	"bufio"
-	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
-	"iq/internal/config"
+	"iq/internal/cue"
 )
-
-//go:embed cues_default.yaml
-var defaultCuesYAML string
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type Cue struct {
-	Name          string `yaml:"name"`
-	Category      string `yaml:"category"`
-	Description   string `yaml:"description"`
-	SystemPrompt  string `yaml:"system_prompt"`
-	SuggestedTier string `yaml:"suggested_tier"`
-	Model         string `yaml:"model"`
-}
-
-// ── Roles file path ───────────────────────────────────────────────────────────
-
-func cuesPath() (string, error) {
-	dir, err := config.Dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "cues.yaml"), nil
-}
-
-// ── Load / save ───────────────────────────────────────────────────────────────
-
-func loadCues() ([]Cue, error) {
-	path, err := cuesPath()
-	if err != nil {
-		return nil, err
-	}
-
-	// Seed from defaults if file does not exist yet.
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := saveCuesRaw([]byte(defaultCuesYAML), path); err != nil {
-			return nil, fmt.Errorf("failed to seed cues file: %w", err)
-		}
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var cues []Cue
-	if err := yaml.Unmarshal(data, &cues); err != nil {
-		return nil, fmt.Errorf("failed to parse cues.yaml: %w", err)
-	}
-	return cues, nil
-}
-
-func saveCues(cues []Cue) error {
-	path, err := cuesPath()
-	if err != nil {
-		return err
-	}
-	data, err := yaml.Marshal(cues)
-	if err != nil {
-		return err
-	}
-	return saveCuesRaw(data, path)
-}
-
-func saveCuesRaw(data []byte, path string) error {
-	return os.WriteFile(path, data, 0644)
-}
-
-func loadDefaultCues() ([]Cue, error) {
-	var cues []Cue
-	if err := yaml.Unmarshal([]byte(defaultCuesYAML), &cues); err != nil {
-		return nil, err
-	}
-	return cues, nil
-}
-
-// ── Lookup helpers ────────────────────────────────────────────────────────────
-
-func findCue(cues []Cue, name string) (int, *Cue) {
-	for i := range cues {
-		if cues[i].Name == name {
-			return i, &cues[i]
-		}
-	}
-	return -1, nil
-}
-
-// cueForModel returns the cue name assigned to a model ID, or "<unassigned>".
-func cueForModel(modelID string) string {
-	cues, err := loadCues()
-	if err != nil {
-		return "<unassigned>"
-	}
-	for _, c := range cues {
-		if c.Model == modelID {
-			return c.Name
-		}
-	}
-	return "<unassigned>"
-}
 
 // ── $EDITOR helper ────────────────────────────────────────────────────────────
 
@@ -206,7 +105,7 @@ func newCueListCmd() *cobra.Command {
 		Short:        "List all cues",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
@@ -257,25 +156,25 @@ func newCueShowCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
-			_, cue := findCue(cues, args[0])
-			if cue == nil {
+			_, c := cue.Find(cues, args[0])
+			if c == nil {
 				return fmt.Errorf("cue %q not found", args[0])
 			}
 
 			model := "<unassigned>"
-			if cue.Model != "" {
-				model = cue.Model
+			if c.Model != "" {
+				model = c.Model
 			}
-			fmt.Printf("%-16s %s\n", "NAME", cue.Name)
-			fmt.Printf("%-16s %s\n", "CATEGORY", cue.Category)
-			fmt.Printf("%-16s %s\n", "DESCRIPTION", cue.Description)
-			fmt.Printf("%-16s %s\n", "SUGGESTED TIER", cue.SuggestedTier)
+			fmt.Printf("%-16s %s\n", "NAME", c.Name)
+			fmt.Printf("%-16s %s\n", "CATEGORY", c.Category)
+			fmt.Printf("%-16s %s\n", "DESCRIPTION", c.Description)
+			fmt.Printf("%-16s %s\n", "SUGGESTED TIER", c.SuggestedTier)
 			fmt.Printf("%-16s %s\n", "MODEL", model)
-			fmt.Printf("%-16s\n%s\n", "SYSTEM PROMPT", indentBlock(cue.SystemPrompt, "  "))
+			fmt.Printf("%-16s\n%s\n", "SYSTEM PROMPT", indentBlock(c.SystemPrompt, "  "))
 			return nil
 		},
 	}
@@ -304,11 +203,11 @@ func newCueAddCmd() *cobra.Command {
 		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
-			if _, existing := findCue(cues, name); existing != nil {
+			if _, existing := cue.Find(cues, name); existing != nil {
 				return fmt.Errorf("cue %q already exists; use 'iq cue edit %s' to modify it", name, name)
 			}
 
@@ -340,7 +239,7 @@ system_prompt: |
 			if err != nil {
 				return err
 			}
-			var newCue Cue
+			var newCue cue.Cue
 			if err := yaml.Unmarshal(data, &newCue); err != nil {
 				return fmt.Errorf("failed to parse edited cue: %w", err)
 			}
@@ -352,7 +251,7 @@ system_prompt: |
 			}
 
 			cues = append(cues, newCue)
-			if err := saveCues(cues); err != nil {
+			if err := cue.Save(cues); err != nil {
 				return err
 			}
 			invalidateCueEmbeddings()
@@ -376,22 +275,22 @@ func newCueEditCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
-			idx, cue := findCue(cues, args[0])
-			if cue == nil {
+			idx, c := cue.Find(cues, args[0])
+			if c == nil {
 				return fmt.Errorf("cue %q not found", args[0])
 			}
 
 			// Serialize just this cue (without model — managed via assign).
-			editCue := Cue{
-				Name:          cue.Name,
-				Category:      cue.Category,
-				Description:   cue.Description,
-				SystemPrompt:  cue.SystemPrompt,
-				SuggestedTier: cue.SuggestedTier,
+			editCue := cue.Cue{
+				Name:          c.Name,
+				Category:      c.Category,
+				Description:   c.Description,
+				SystemPrompt:  c.SystemPrompt,
+				SuggestedTier: c.SuggestedTier,
 			}
 			data, err := yaml.Marshal(editCue)
 			if err != nil {
@@ -418,15 +317,15 @@ func newCueEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var updatedCue Cue
+			var updatedCue cue.Cue
 			if err := yaml.Unmarshal(updated, &updatedCue); err != nil {
 				return fmt.Errorf("failed to parse edited cue: %w", err)
 			}
 			// Preserve existing model assignment.
-			updatedCue.Model = cue.Model
+			updatedCue.Model = c.Model
 			cues[idx] = updatedCue
 
-			if err := saveCues(cues); err != nil {
+			if err := cue.Save(cues); err != nil {
 				return err
 			}
 			invalidateCueEmbeddings()
@@ -447,20 +346,20 @@ func newCueRmCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
-			idx, cue := findCue(cues, args[0])
-			if cue == nil {
+			idx, c := cue.Find(cues, args[0])
+			if c == nil {
 				return fmt.Errorf("cue %q not found", args[0])
 			}
-			if cue.Model != "" && !force {
-				return fmt.Errorf("cue %q has model %q assigned; use --force to remove anyway", cue.Name, cue.Model)
+			if c.Model != "" && !force {
+				return fmt.Errorf("cue %q has model %q assigned; use --force to remove anyway", c.Name, c.Model)
 			}
 
 			cues = append(cues[:idx], cues[idx+1:]...)
-			if err := saveCues(cues); err != nil {
+			if err := cue.Save(cues); err != nil {
 				return err
 			}
 			invalidateCueEmbeddings()
@@ -483,12 +382,12 @@ func newCueAssignCmd() *cobra.Command {
 		Args:         argsUsage(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cueName, modelID := args[0], args[1]
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
-			idx, cue := findCue(cues, cueName)
-			if cue == nil {
+			idx, c := cue.Find(cues, cueName)
+			if c == nil {
 				return fmt.Errorf("cue %q not found", cueName)
 			}
 
@@ -501,7 +400,7 @@ func newCueAssignCmd() *cobra.Command {
 			}
 
 			cues[idx].Model = modelID
-			if err := saveCues(cues); err != nil {
+			if err := cue.Save(cues); err != nil {
 				return err
 			}
 			invalidateCueEmbeddings()
@@ -520,21 +419,21 @@ func newCueUnassignCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
-			idx, cue := findCue(cues, args[0])
-			if cue == nil {
+			idx, c := cue.Find(cues, args[0])
+			if c == nil {
 				return fmt.Errorf("cue %q not found", args[0])
 			}
-			if cue.Model == "" {
+			if c.Model == "" {
 				fmt.Printf("Role %q has no model assigned.\n", args[0])
 				return nil
 			}
-			prev := cue.Model
+			prev := c.Model
 			cues[idx].Model = ""
-			if err := saveCues(cues); err != nil {
+			if err := cue.Save(cues); err != nil {
 				return err
 			}
 			fmt.Printf("Unassigned %s from %s\n", prev, args[0])
@@ -552,7 +451,7 @@ func newCueResetCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			defaults, err := loadDefaultCues()
+			defaults, err := cue.LoadDefaults()
 			if err != nil {
 				return err
 			}
@@ -560,16 +459,16 @@ func newCueResetCmd() *cobra.Command {
 			// Single cue reset.
 			if len(args) == 1 {
 				name := args[0]
-				_, defaultCue := findCue(defaults, name)
+				_, defaultCue := cue.Find(defaults, name)
 				if defaultCue == nil {
 					return fmt.Errorf("cue %q is not a built-in cue and cannot be reset", name)
 				}
 
-				cues, err := loadCues()
+				cues, err := cue.Load()
 				if err != nil {
 					return err
 				}
-				idx, existing := findCue(cues, name)
+				idx, existing := cue.Find(cues, name)
 				if existing != nil && existing.Model != "" {
 					fmt.Printf("Warning: cue %q has model %q assigned — assignment will be cleared.\n",
 						name, existing.Model)
@@ -588,7 +487,7 @@ func newCueResetCmd() *cobra.Command {
 				} else {
 					cues = append(cues, restored)
 				}
-				if err := saveCues(cues); err != nil {
+				if err := cue.Save(cues); err != nil {
 					return err
 				}
 				invalidateCueEmbeddings()
@@ -597,7 +496,7 @@ func newCueResetCmd() *cobra.Command {
 			}
 
 			// Full reset — show exactly what will be lost.
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
@@ -607,8 +506,8 @@ func newCueResetCmd() *cobra.Command {
 				defaultNames[r.Name] = true
 			}
 
-			var assigned []Cue
-			var custom []Cue
+			var assigned []cue.Cue
+			var custom []cue.Cue
 			for _, c := range cues {
 				if c.Model != "" {
 					assigned = append(assigned, c)
@@ -632,7 +531,7 @@ func newCueResetCmd() *cobra.Command {
 				}
 			}
 
-			path, _ := cuesPath()
+			path, _ := cue.Path()
 			fmt.Printf("\nA backup will be written to %s.bak\n", path)
 			fmt.Printf("\nType \"reset\" to confirm, or anything else to abort: ")
 
@@ -649,7 +548,7 @@ func newCueResetCmd() *cobra.Command {
 				os.WriteFile(path+".bak", data, 0644)
 			}
 
-			if err := saveCuesRaw([]byte(defaultCuesYAML), path); err != nil {
+			if err := cue.SaveRaw([]byte(cue.DefaultCuesYAML), path); err != nil {
 				return fmt.Errorf("failed to write defaults: %w", err)
 			}
 			invalidateCueEmbeddings()
@@ -667,11 +566,11 @@ func newCueSyncCmd() *cobra.Command {
 		Short:        "Add new built-in cues without overwriting existing ones",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			defaults, err := loadDefaultCues()
+			defaults, err := cue.LoadDefaults()
 			if err != nil {
 				return err
 			}
-			cues, err := loadCues()
+			cues, err := cue.Load()
 			if err != nil {
 				return err
 			}
@@ -694,7 +593,7 @@ func newCueSyncCmd() *cobra.Command {
 				return nil
 			}
 
-			if err := saveCues(cues); err != nil {
+			if err := cue.Save(cues); err != nil {
 				return err
 			}
 			invalidateCueEmbeddings()

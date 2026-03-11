@@ -20,6 +20,7 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"iq/internal/config"
+	"iq/internal/cue"
 	"iq/internal/sidecar"
 )
 
@@ -958,7 +959,7 @@ func newLmShowCmd() *cobra.Command {
 			fmt.Printf("%-12s %s\n", "EST MEM", estMemMB(disk))
 			fmt.Printf("%-12s %s\n", "PULLED", pulled)
 			fmt.Printf("%-12s %s\n", "CACHE", cacheDir)
-			fmt.Printf("%-12s %s\n", "CUE", cueForModel(entry.ID))
+			fmt.Printf("%-12s %s\n", "CUE", cue.ForModel(entry.ID))
 
 			tier := config.TierForModel(entry.ID)
 			if tier == "" {

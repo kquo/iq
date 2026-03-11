@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 	"iq/internal/config"
+	"iq/internal/cue"
 	"iq/internal/sidecar"
 )
 
@@ -577,7 +578,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	fmt.Fprintf(os.Stderr, "  model       %s\n", modelID)
 	fmt.Fprintf(os.Stderr, "  corpus      %d cue inputs (bench_corpus.yaml)\n", len(corpus.CueInputs))
 
-	cues, err := loadCues()
+	cues, err := cue.Load()
 	if err != nil {
 		return BenchResult{}, err
 	}

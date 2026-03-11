@@ -8,6 +8,7 @@ import (
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/cue"
 	"iq/internal/sidecar"
 )
 
@@ -57,15 +58,15 @@ func newProbeCmd() *cobra.Command {
 			// Resolve system prompt — from cue or literal.
 			systemPrompt := system
 			if cueName != "" {
-				cues, err := loadCues()
+				cues, err := cue.Load()
 				if err != nil {
 					return err
 				}
-				_, cue := findCue(cues, cueName)
-				if cue == nil {
+				_, c := cue.Find(cues, cueName)
+				if c == nil {
 					return fmt.Errorf("cue %q not found", cueName)
 				}
-				systemPrompt = cue.SystemPrompt
+				systemPrompt = c.SystemPrompt
 			}
 
 			// KB retrieval — prepend context to system prompt.

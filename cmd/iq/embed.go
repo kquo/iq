@@ -17,6 +17,7 @@ import (
 
 	"github.com/queone/utl"
 	"iq/internal/config"
+	"iq/internal/cue"
 	"iq/internal/sidecar"
 )
 
@@ -330,7 +331,7 @@ func invalidateCueEmbeddings() {
 
 // cueEmbeddingsStale returns true if the cache is missing, uses a different
 // model, or is missing any cue present in the current set.
-func cueEmbeddingsStale(cues []Cue, model string) bool {
+func cueEmbeddingsStale(cues []cue.Cue, model string) bool {
 	cache, err := loadCueEmbeddings()
 	if err != nil || cache == nil {
 		return true
@@ -348,7 +349,7 @@ func cueEmbeddingsStale(cues []Cue, model string) bool {
 
 // refreshCueEmbeddings embeds all cue name+description strings and writes the
 // result to the cache file. Always uses the "cue" role model.
-func refreshCueEmbeddings(cues []Cue, model string) error {
+func refreshCueEmbeddings(cues []cue.Cue, model string) error {
 	texts := make([]string, len(cues))
 	names := make([]string, len(cues))
 	for i, c := range cues {
@@ -387,7 +388,7 @@ type embedClassifyTrace struct {
 // embedClassify returns the best-matching cue name for the input using
 // cosine similarity against pre-computed cue description embeddings.
 // Falls back to "initial" on any error.
-func embedClassify(input string, cues []Cue, model string) (string, *embedClassifyTrace, error) {
+func embedClassify(input string, cues []cue.Cue, model string) (string, *embedClassifyTrace, error) {
 	t0 := time.Now()
 	cacheHit := true
 
