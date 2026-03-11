@@ -15,6 +15,7 @@ import (
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/config"
 )
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ type KBIndex struct {
 // ── Storage ───────────────────────────────────────────────────────────────────
 
 func kbPath() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}

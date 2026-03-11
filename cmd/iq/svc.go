@@ -18,6 +18,7 @@ import (
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/config"
 )
 
 //go:embed infer_server.py
@@ -48,7 +49,7 @@ type svcState struct {
 }
 
 func runDir() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}
@@ -452,19 +453,19 @@ func stopSidecar(modelID string) error {
 // resolveModels returns the model IDs to act on given an optional arg.
 // Arg may be a tier name ("fast"/"slow"), a model ID, or empty (all assigned).
 func resolveModels(arg string) ([]string, error) {
-	cfg, err := loadConfig()
+	cfg, err := config.Load(nil)
 	if err != nil {
 		return nil, err
 	}
 	if arg == "" {
-		all := allAssignedModels()
+		all := config.AllAssignedModels()
 		if len(all) == 0 {
 			return nil, fmt.Errorf("no models assigned — run 'iq tier add <tier> <model>' first")
 		}
 		return all, nil
 	}
 	// Tier name?
-	for _, t := range tierOrder {
+	for _, t := range config.TierOrder {
 		if t == arg {
 			models := cfg.Tiers[t]
 			if len(models) == 0 {
@@ -474,7 +475,7 @@ func resolveModels(arg string) ([]string, error) {
 		}
 	}
 	// Model ID?
-	for _, t := range tierOrder {
+	for _, t := range config.TierOrder {
 		for _, m := range cfg.Tiers[t] {
 			if m == arg {
 				return []string{m}, nil
@@ -487,7 +488,7 @@ func resolveModels(arg string) ([]string, error) {
 // ── Status (shared logic) ─────────────────────────────────────────────────────
 
 func printStatus() error {
-	cfg, err := loadConfig()
+	cfg, err := config.Load(nil)
 	if err != nil {
 		return err
 	}
@@ -505,7 +506,7 @@ func printStatus() error {
 	var rows []statusRow
 	var totalKB int64
 
-	for _, tier := range tierOrder {
+	for _, tier := range config.TierOrder {
 		for _, model := range cfg.Tiers[tier] {
 			state, _ := readState(model)
 			endpoint := ""
@@ -529,7 +530,7 @@ func printStatus() error {
 	// Embed sidecar row.
 	{
 		slug := embedSlugConst
-		model := embedModel(cfg)
+		model := config.EmbedModel(cfg)
 		eState, _ := readState(slug)
 		endpoint := ""
 		if eState != nil {
@@ -566,7 +567,7 @@ func printStatus() error {
 	modelW += 2
 
 	// CONFIG line aligned with MODEL column.
-	cfgPath, _ := configPath()
+	cfgPath, _ := config.Path()
 	fmt.Printf("%-*s  %-*s\n", tierW, "CONFIG", modelW, cfgPath)
 
 	// Header.
@@ -680,12 +681,12 @@ func newStartCmd() *cobra.Command {
 			// Start embed sidecar first when starting everything (no specific target).
 			if arg == "" {
 				// First-run hint: no tier models and embed model not downloaded.
-				if len(allAssignedModels()) == 0 {
-					cfg, err := loadConfig()
+				if len(config.AllAssignedModels()) == 0 {
+					cfg, err := config.Load(nil)
 					if err != nil {
 						return err
 					}
-					emDir := hfCacheDir(embedModel(cfg))
+					emDir := hfCacheDir(config.EmbedModel(cfg))
 					if _, err := os.Stat(emDir); err != nil {
 						fmt.Println("No models configured. Recommended setup:")
 						fmt.Println()
@@ -705,7 +706,7 @@ func newStartCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  error starting embed: %s\n", err.Error())
 				}
 				// Hint when embed started but no tier models configured yet.
-				if len(allAssignedModels()) == 0 {
+				if len(config.AllAssignedModels()) == 0 {
 					fmt.Println("No models configured. Recommended setup:")
 					fmt.Println()
 					fmt.Println("  iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit")
@@ -723,7 +724,7 @@ func newStartCmd() *cobra.Command {
 				return err
 			}
 			for _, modelID := range models {
-				tier := tierForModel(modelID)
+				tier := config.TierForModel(modelID)
 				state, _ := readState(modelID)
 				if state != nil && pidAlive(state.PID) {
 					fmt.Printf("  pid %-7d  %s  %s\n",
@@ -855,11 +856,11 @@ func newTierShowCmd() *cobra.Command {
 		Short:        "Show current tier assignments",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
-			for _, t := range tierOrder {
+			for _, t := range config.TierOrder {
 				models := cfg.Tiers[t]
 				if len(models) == 0 {
 					fmt.Printf("%-6s  %s\n", t, utl.Gra("<empty>"))
@@ -885,7 +886,7 @@ func newTierAddCmd() *cobra.Command {
 			if tier != "fast" && tier != "slow" {
 				return fmt.Errorf("unknown tier %q — valid tiers: fast, slow", tier)
 			}
-			cfg, err := loadConfig()
+			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
@@ -906,7 +907,7 @@ func newTierAddCmd() *cobra.Command {
 				}
 			}
 			cfg.Tiers[tier] = append(cfg.Tiers[tier], modelID)
-			if err := saveConfig(cfg); err != nil {
+			if err := config.Save(cfg); err != nil {
 				return err
 			}
 			fmt.Printf("%-6s  %s\n", tier, utl.Gre(modelID))
@@ -923,7 +924,7 @@ func newTierRmCmd() *cobra.Command {
 		Args:         argsUsage(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tier, modelID := args[0], args[1]
-			cfg, err := loadConfig()
+			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
@@ -938,7 +939,7 @@ func newTierRmCmd() *cobra.Command {
 			if !found {
 				return fmt.Errorf("%s is not in the %s tier", modelID, tier)
 			}
-			if err := saveConfig(cfg); err != nil {
+			if err := config.Save(cfg); err != nil {
 				return err
 			}
 			fmt.Printf("removed %s from %s tier\n", modelID, tier)
@@ -963,7 +964,7 @@ func printEmbedHelp() {
 	fmt.Printf("  downloaded first with 'iq lm get <model>'.\n")
 	fmt.Printf("  Changing embed model invalidates kb.json — re-ingest required.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("DEFAULT"))
-	fmt.Printf("  %s\n\n", utl.Gra(defaultEmbedModel))
+	fmt.Printf("  %s\n\n", utl.Gra(config.DefaultEmbedModel))
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s embed show\n", n)
 	fmt.Printf("  $ %s embed set mlx-community/bge-small-en-v1.5-bf16\n\n", n)
@@ -992,7 +993,7 @@ func newEmbedShowCmd() *cobra.Command {
 		Short:        "Show configured embed model",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
@@ -1000,7 +1001,7 @@ func newEmbedShowCmd() *cobra.Command {
 			if cfg.EmbedModel == "" {
 				suffix = utl.Gra("  (default)")
 			}
-			fmt.Printf("embed_model  %s%s\n", utl.Gre(embedModel(cfg)), suffix)
+			fmt.Printf("embed_model  %s%s\n", utl.Gre(config.EmbedModel(cfg)), suffix)
 			return nil
 		},
 	}
@@ -1014,12 +1015,12 @@ func newEmbedSetCmd() *cobra.Command {
 		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			modelName := args[0]
-			cfg, err := loadConfig()
+			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
 			cfg.EmbedModel = modelName
-			if err := saveConfig(cfg); err != nil {
+			if err := config.Save(cfg); err != nil {
 				return err
 			}
 			invalidateCueEmbeddings()
@@ -1043,16 +1044,16 @@ func newEmbedRmCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
 			cfg.EmbedModel = ""
-			if err := saveConfig(cfg); err != nil {
+			if err := config.Save(cfg); err != nil {
 				return err
 			}
 			invalidateCueEmbeddings()
-			fmt.Printf("embed_model  %s\n", utl.Gra("(default) "+defaultEmbedModel))
+			fmt.Printf("embed_model  %s\n", utl.Gra("(default) "+config.DefaultEmbedModel))
 			kbP, _ := kbPath()
 			if _, err := os.Stat(kbP); err == nil {
 				fmt.Printf("%s\n", utl.Yel("warning: embed_model changed — existing kb.json is stale"))
@@ -1180,9 +1181,9 @@ func newDocCmd() *cobra.Command {
 			checks = append(checks, embPkgCheck)
 
 			// ── embed model cache ──
-			cfg2, cfgErr2 := loadConfig()
+			cfg2, cfgErr2 := config.Load(nil)
 			if cfgErr2 == nil {
-				emID := embedModel(cfg2)
+				emID := config.EmbedModel(cfg2)
 				cacheDir := hfCacheDir(emID)
 				_, statErr := os.Stat(cacheDir)
 				ok := statErr == nil
@@ -1197,11 +1198,11 @@ func newDocCmd() *cobra.Command {
 			}
 
 			// ── tier model cache dirs ──
-			cfg, cfgErr := loadConfig()
+			cfg, cfgErr := config.Load(nil)
 			if cfgErr != nil {
 				return cfgErr
 			}
-			for _, t := range tierOrder {
+			for _, t := range config.TierOrder {
 				for _, model := range cfg.Tiers[t] {
 					cacheDir := hfCacheDir(model)
 					_, statErr := os.Stat(cacheDir)

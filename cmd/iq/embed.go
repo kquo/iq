@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/queone/utl"
+	"iq/internal/config"
 )
 
 //go:embed embed_server.py
@@ -65,12 +66,12 @@ func mlxVenvPython() (string, error) {
 // startEmbedSidecar extracts embed_server.py, finds the venv Python, and
 // spawns the single embedding sidecar.
 func startEmbedSidecar() error {
-	cfg, err := loadConfig()
+	cfg, err := config.Load(nil)
 	if err != nil {
 		return err
 	}
 
-	modelID := embedModel(cfg)
+	modelID := config.EmbedModel(cfg)
 	slug := embedSlugConst
 	port := embedPortConst
 
@@ -246,12 +247,12 @@ func embedTexts(texts []string, task string) ([][]float32, error) {
 		return nil, fmt.Errorf("embed sidecar not running — run: iq start")
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := config.Load(nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return embedTextsOnPort(texts, embedModel(cfg), state.Port, task)
+	return embedTextsOnPort(texts, config.EmbedModel(cfg), state.Port, task)
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────
@@ -279,7 +280,7 @@ type cueEmbeddingCache struct {
 }
 
 func cueEmbeddingsPath() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}

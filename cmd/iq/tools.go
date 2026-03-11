@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/queone/utl"
+	"iq/internal/config"
 )
 
 // ── Tool types ───────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ func toolAllowedPaths() []string {
 			roots = append(roots, cwd)
 		}
 	}
-	cfg, err := loadConfig()
+	cfg, err := config.Load(nil)
 	if err == nil {
 		for _, p := range cfg.ToolPaths {
 			abs, err := filepath.Abs(p)
@@ -917,7 +918,7 @@ func toolSignalsVersion() uint32 {
 }
 
 func toolEmbeddingsPath() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}

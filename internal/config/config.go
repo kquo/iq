@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -22,28 +22,47 @@ type Config struct {
 	KbModel  string `yaml:"kb_model,omitempty"`
 }
 
-var tierOrder = []string{"fast", "slow"}
+// TierOrder defines the canonical tier ordering.
+var TierOrder = []string{"fast", "slow"}
 
-const defaultEmbedModel = "mlx-community/bge-small-en-v1.5-bf16"
+// DefaultEmbedModel is the fallback embed model when none is configured.
+const DefaultEmbedModel = "mlx-community/bge-small-en-v1.5-bf16"
 
-// embedModel returns the configured embed model (shared by cue + KB).
-func embedModel(cfg *Config) string {
+// EmbedModel returns the configured embed model (shared by cue + KB).
+func EmbedModel(cfg *Config) string {
 	if cfg.EmbedModel != "" {
 		return cfg.EmbedModel
 	}
-	return defaultEmbedModel
+	return DefaultEmbedModel
 }
 
-func configPath() (string, error) {
-	dir, err := iqConfigDir()
+// Dir returns ~/.config/iq, creating it if needed.
+func Dir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".config", "iq")
+	return dir, os.MkdirAll(dir, 0755)
+}
+
+// Path returns the full path to config.yaml.
+func Path() (string, error) {
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "config.yaml"), nil
 }
 
-func loadConfig() (*Config, error) {
-	path, err := configPath()
+// DiskUsageFunc is a callback for measuring model disk usage during migration.
+// Injected by cmd/iq to avoid pulling HF cache logic into config.
+type DiskUsageFunc func(modelID string) int64
+
+// Load reads and returns the config, performing legacy migrations as needed.
+// diskUsage is optional — only needed for migrating the old 4-tier format.
+func Load(diskUsage DiskUsageFunc) (*Config, error) {
+	path, err := Path()
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +85,8 @@ func loadConfig() (*Config, error) {
 			_, hasOldB := probe.Tiers["balanced"]
 			_, hasOldC := probe.Tiers["quality"]
 			if hasOld || hasOldB || hasOldC {
-				cfg = migrateOldConfig(probe.Tiers)
-				if err := saveConfig(cfg); err == nil {
+				cfg = migrateOldConfig(probe.Tiers, diskUsage)
+				if err := Save(cfg); err == nil {
 					fmt.Fprintf(os.Stderr, "%s\n",
 						utl.Gra("config.yaml migrated from 4-tier to 2-tier pool format"))
 				}
@@ -83,7 +102,7 @@ func loadConfig() (*Config, error) {
 			}
 			cfg.CueModel = ""
 			cfg.KbModel = ""
-			if err := saveConfig(cfg); err == nil {
+			if err := Save(cfg); err == nil {
 				fmt.Fprintf(os.Stderr, "%s\n",
 					utl.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
 			}
@@ -91,7 +110,7 @@ func loadConfig() (*Config, error) {
 		if cfg.Tiers == nil {
 			cfg.Tiers = map[string][]string{"fast": {}, "slow": {}}
 		}
-		for _, t := range tierOrder {
+		for _, t := range TierOrder {
 			if cfg.Tiers[t] == nil {
 				cfg.Tiers[t] = []string{}
 			}
@@ -104,7 +123,7 @@ func loadConfig() (*Config, error) {
 
 // migrateOldConfig converts the old tiny/fast/balanced/quality single-model-per-tier
 // format to the new fast/slow pool format using the 2GB disk threshold.
-func migrateOldConfig(old map[string]string) *Config {
+func migrateOldConfig(old map[string]string, diskUsage DiskUsageFunc) *Config {
 	cfg := &Config{Tiers: map[string][]string{"fast": {}, "slow": {}}}
 	oldToNew := map[string]string{
 		"tiny":     "fast",
@@ -120,12 +139,14 @@ func migrateOldConfig(old map[string]string) *Config {
 		}
 		seen[id] = true
 		newTier := oldToNew[oldTier]
-		disk := diskUsage(hfCacheDir(id))
-		if disk > 0 {
-			if disk >= 2*1024*1024*1024 {
-				newTier = "slow"
-			} else {
-				newTier = "fast"
+		if diskUsage != nil {
+			disk := diskUsage(id)
+			if disk > 0 {
+				if disk >= 2*1024*1024*1024 {
+					newTier = "slow"
+				} else {
+					newTier = "fast"
+				}
 			}
 		}
 		cfg.Tiers[newTier] = append(cfg.Tiers[newTier], id)
@@ -133,8 +154,9 @@ func migrateOldConfig(old map[string]string) *Config {
 	return cfg
 }
 
-func saveConfig(cfg *Config) error {
-	path, err := configPath()
+// Save writes the config to disk.
+func Save(cfg *Config) error {
+	path, err := Path()
 	if err != nil {
 		return err
 	}
@@ -145,13 +167,13 @@ func saveConfig(cfg *Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// tierForModel returns "fast" or "slow" if the model is in a tier pool, else "".
-func tierForModel(modelID string) string {
-	cfg, err := loadConfig()
+// TierForModel returns "fast" or "slow" if the model is in a tier pool, else "".
+func TierForModel(modelID string) string {
+	cfg, err := Load(nil)
 	if err != nil {
 		return ""
 	}
-	for _, t := range tierOrder {
+	for _, t := range TierOrder {
 		if slices.Contains(cfg.Tiers[t], modelID) {
 			return t
 		}
@@ -159,14 +181,14 @@ func tierForModel(modelID string) string {
 	return ""
 }
 
-// allAssignedModels returns all model IDs assigned to any tier, in tier order.
-func allAssignedModels() []string {
-	cfg, err := loadConfig()
+// AllAssignedModels returns all model IDs assigned to any tier, in tier order.
+func AllAssignedModels() []string {
+	cfg, err := Load(nil)
 	if err != nil {
 		return nil
 	}
 	var out []string
-	for _, t := range tierOrder {
+	for _, t := range TierOrder {
 		out = append(out, cfg.Tiers[t]...)
 	}
 	return out

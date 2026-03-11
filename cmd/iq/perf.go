@@ -19,6 +19,7 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+	"iq/internal/config"
 )
 
 //go:embed bench_corpus.yaml
@@ -102,7 +103,7 @@ type BenchStore struct {
 
 // benchStorePath returns ~/.config/iq/benchmarks.json.
 func benchStorePath() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}
@@ -934,7 +935,7 @@ func newPerfBenchCmd() *cobra.Command {
 				return err
 			}
 
-			cfg, err := loadConfig()
+			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
@@ -957,14 +958,14 @@ func newPerfBenchCmd() *cobra.Command {
 				case "kb":
 					mid := modelID
 					if mid == "" {
-						mid = embedModel(cfg)
+						mid = config.EmbedModel(cfg)
 					}
 					fmt.Printf("benchmarking kb  model:%s ...\n", mid)
 					result, rerr = runKBBench(mid, corpus)
 				case "cue":
 					mid := modelID
 					if mid == "" {
-						mid = embedModel(cfg)
+						mid = config.EmbedModel(cfg)
 					}
 					fmt.Printf("benchmarking cue  model:%s ...\n", mid)
 					result, rerr = runCueBench(mid, corpus)

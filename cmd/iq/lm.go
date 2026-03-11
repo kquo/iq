@@ -19,6 +19,7 @@ import (
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/config"
 )
 
 const hfAPIBase = "https://huggingface.co/api/models"
@@ -141,18 +142,8 @@ func hfEnrichModels(models []hfModel) {
 
 // ── Manifest ─────────────────────────────────────────────────────────────────
 
-// iqConfigDir returns ~/.config/iq, creating it if needed.
-func iqConfigDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(home, ".config", "iq")
-	return dir, os.MkdirAll(dir, 0755)
-}
-
 func manifestPath() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}
@@ -779,8 +770,8 @@ func newLmListCmd() *cobra.Command {
 
 			fmt.Printf("%-55s  %-24s  %8s  %-10s  %8s  %10s  %s\n",
 				"MODEL", "TASK", "DISK", "PULLED", "PARAMS", "EST MEM", "TIER")
-			cfg, _ := loadConfig()
-			emM := embedModel(cfg)
+			cfg, _ := config.Load(nil)
+			emM := config.EmbedModel(cfg)
 			for _, e := range entries {
 				disk := diskUsage(hfCacheDir(e.ID))
 				pulled := ""
@@ -791,7 +782,7 @@ func newLmListCmd() *cobra.Command {
 				if e.ID == emM {
 					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "embed"))
 				} else {
-					tier := tierForModel(e.ID)
+					tier := config.TierForModel(e.ID)
 					tierRaw := "<unset>"
 					if tier != "" {
 						tierRaw = tier
@@ -968,7 +959,7 @@ func newLmShowCmd() *cobra.Command {
 			fmt.Printf("%-12s %s\n", "CACHE", cacheDir)
 			fmt.Printf("%-12s %s\n", "CUE", cueForModel(entry.ID))
 
-			tier := tierForModel(entry.ID)
+			tier := config.TierForModel(entry.ID)
 			if tier == "" {
 				suggested := suggestTier(entry.ID)
 				fmt.Printf("%-12s %s\n", "TIER", utl.Gra("<unset>"))
@@ -1005,8 +996,8 @@ func newLmRmCmd() *cobra.Command {
 			cacheDir := hfCacheDir(model)
 
 			// Warn and auto-clear if model is the embed model.
-			cfg, _ := loadConfig()
-			if cfg != nil && model == embedModel(cfg) {
+			cfg, _ := config.Load(nil)
+			if cfg != nil && model == config.EmbedModel(cfg) {
 				s, _ := readState(embedSlugConst)
 				if s != nil && pidAlive(s.PID) {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping embed sidecar"))
@@ -1016,13 +1007,13 @@ func newLmRmCmd() *cobra.Command {
 				}
 				fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: clearing embed_model assignment"))
 				cfg.EmbedModel = ""
-				if err := saveConfig(cfg); err != nil {
+				if err := config.Save(cfg); err != nil {
 					return fmt.Errorf("failed to update config: %w", err)
 				}
 			}
 
 			// Warn and auto-clear if model is assigned to a tier.
-			if t := tierForModel(model); t != "" {
+			if t := config.TierForModel(model); t != "" {
 				state, _ := readState(model)
 				if state != nil && pidAlive(state.PID) {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping "+model+" sidecar"))
@@ -1032,7 +1023,7 @@ func newLmRmCmd() *cobra.Command {
 				}
 				fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: removing "+model+" from "+t+" tier"))
 				// Reload config in case it was modified above.
-				cfg, _ = loadConfig()
+				cfg, _ = config.Load(nil)
 				if cfg != nil {
 					for i, m := range cfg.Tiers[t] {
 						if m == model {
@@ -1040,7 +1031,7 @@ func newLmRmCmd() *cobra.Command {
 							break
 						}
 					}
-					if err := saveConfig(cfg); err != nil {
+					if err := config.Save(cfg); err != nil {
 						return fmt.Errorf("failed to update config: %w", err)
 					}
 				}

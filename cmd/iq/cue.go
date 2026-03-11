@@ -13,6 +13,7 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+	"iq/internal/config"
 )
 
 //go:embed cues_default.yaml
@@ -32,7 +33,7 @@ type Cue struct {
 // ── Roles file path ───────────────────────────────────────────────────────────
 
 func cuesPath() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}

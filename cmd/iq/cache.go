@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"iq/internal/config"
 )
 
 const (
@@ -33,7 +35,7 @@ type cacheHitResult struct {
 }
 
 func responseCachePath() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
+	"iq/internal/config"
 )
 
 // ── OpenAI-compatible types ───────────────────────────────────────────────────
@@ -60,7 +61,7 @@ type session struct {
 }
 
 func sessionsDir() (string, error) {
-	dir, err := iqConfigDir()
+	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}
@@ -149,7 +150,7 @@ func resolveRoute(cueName string, cues []Cue) (*routeResult, error) {
 	// Direct model override on the cue — kept for power users but not
 	// actively promoted. Find which tier it belongs to and pick its sidecar.
 	if cue.Model != "" {
-		tier := tierForModel(cue.Model)
+		tier := config.TierForModel(cue.Model)
 		if tier == "" {
 			return nil, fmt.Errorf("cue %q has model %q but it is not in any tier pool", cueName, cue.Model)
 		}
@@ -641,10 +642,10 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial cue (run: iq start)"))
 			cueName = "initial"
 		} else {
-			cfg2, cfgErr := loadConfig()
-			em := defaultEmbedModel
+			cfg2, cfgErr := config.Load(nil)
+			em := config.DefaultEmbedModel
 			if cfgErr == nil {
-				em = embedModel(cfg2)
+				em = config.EmbedModel(cfg2)
 			}
 			cueName, et, err = embedClassify(input, candidates, em)
 			if err != nil {
@@ -716,9 +717,9 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		if kbErr == nil && len(results) > 0 {
 			kbContext = KBContext(results)
 			if trace {
-				em := defaultEmbedModel
-				if cfg2, cfgErr := loadConfig(); cfgErr == nil {
-					em = embedModel(cfg2)
+				em := config.DefaultEmbedModel
+				if cfg2, cfgErr := config.Load(nil); cfgErr == nil {
+					em = config.EmbedModel(cfg2)
 				}
 				printStep3KB(results, em, time.Since(t3))
 			}

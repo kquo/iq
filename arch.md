@@ -30,6 +30,22 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 ```
 
 
+## Package Structure
+
+IQ is being restructured from a single `cmd/iq` package into isolated domain packages under `internal/`. Each package owns one conceptual domain — its types, helpers, constants, and persistence logic — and exports a clean API consumed by `cmd/iq` and by sibling packages.
+
+| Package | Domain | Status |
+|---------|--------|--------|
+| `internal/config` | Config CRUD, tier definitions, embed model, migrations | **done** |
+| `internal/search` | DuckDuckGo web search client | planned |
+| `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | planned |
+| `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity | planned |
+| `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | planned |
+| `internal/tools` | Tool registry, parser, executor, signal detection | planned |
+| `internal/kb` | Knowledge base index, chunking, hybrid search, ingest | planned |
+
+The `cmd/iq` package remains the CLI entry point — it wires commands (cobra), flags, the prompt pipeline, REPL, and orchestration. Domain logic migrates out; orchestration stays.
+
 ## Components
 
 ### Model Management
@@ -50,9 +66,9 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 `iq lm rm` auto-clears tier assignments and stops running sidecars (including the embed sidecar) with yellow warnings before prompting for confirmation. The confirmation prompt is printed in yellow with `[y/N]` in default color.
 
-### Configuration
+### Configuration (`internal/config`)
 
-Manages `~/.config/iq/config.yaml`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
+Manages `~/.config/iq/config.yaml`. Extracted to `internal/config` as the first domain package in the restructuring. Exports `Config` struct, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `TierOrder`, and `DefaultEmbedModel`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
 
 ```
 fast    sub-2GB models — used for quick inference tasks
@@ -357,7 +373,7 @@ STEP 1b  TOOL DETECT
   -T/--no-tools flag? → forced
   hasFilePath(input)? → enabled (deterministic)
   else: cosine_similarity(input_vec, tool_signal_vecs[])
-  best score ≥ 0.66 → tools enabled
+  best score ≥ 0.60 → tools enabled
     │
     ▼
 STEP 2  RESOLVE ROUTE
@@ -490,10 +506,17 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 ## Source Files
 
+### Domain packages (`internal/`)
+
+| File | Purpose |
+|------|---------|
+| `internal/config/config.go` | Config struct, Load/Save, tier helpers, embed model, legacy migrations |
+
+### CLI package (`cmd/iq/`)
+
 | File | Purpose |
 |------|---------|
 | `main.go` | CLI entry point, root command, version, help routing |
-| `cfg.go` | Config CRUD, tier migration, embed model helper |
 | `svc.go` | Sidecar lifecycle, port allocation, pool dispatch, status, tier/embed commands |
 | `embed.go` | Embed sidecar startup, HTTP embedding calls, cue cache, cosine similarity |
 | `cue.go` | Cue CRUD, defaults, sync, embedded `cues_default.yaml` |
@@ -548,3 +571,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.1   | Robust tool arg parsing (broken JSON, unquoted keys, `=` separators, `--flag=value` CLI format); print successful tool output directly instead of pass 2 re-inference; inject cwd into tool system prompt; PASS/GUARD/latency debug trace format; parse `<tool:NAME>` routing prefix on follow-up passes |
 | 0.6.2   | Tool use benchmark (`iq perf bench --type tool`): 14 prompts across 7 tools, measures routing accuracy and execution success; `-v` flag for per-prompt debug detail |
 | 0.6.3   | Web search tool: DuckDuckGo integration via `web_search` tool and embed signal; short-circuit skips routing grammar for web queries; synthesis prompt with date injection; toolMinScore 0.66→0.60 |
+| 0.6.4   | Begin `internal/` restructuring — extract `config` as first domain package; planned: search, sidecar, embed, cache, tools, kb |
