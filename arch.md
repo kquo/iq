@@ -87,7 +87,7 @@ slow    2GB+ models    — used for quality inference
 Resolution order: **per-tier override > global config > hardcoded default**. Pointer types (`*float64`, `*int`) distinguish "not set" from "set to zero."
 
 ```yaml
-# Global defaults (optional — omit to use hardcoded defaults)
+# Global defaults (populated on first creation; editable)
 repetition_penalty: 1.3
 temperature: 0.7
 max_tokens: 8192
@@ -292,7 +292,7 @@ In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), eight read-only to
 | `calc` | `expression` (required) | Evaluate math: `+`, `-`, `*`, `/`, `%`, parentheses, decimals |
 | `search_text` | `pattern` (required), `path` | Regex search across files (max 50 matches, skips .git/vendor/etc.) |
 | `count_lines` | `path` (required) | Count lines in a file |
-| `web_search` | `query` (required), `count` | Search the web via DuckDuckGo (default 3 results, max 20) |
+| `web_search` | `query` (required), `count` | Search the web via DuckDuckGo with Brave fallback (default 3 results, max 20) |
 
 The tool system prompt (`buildRoutingToolPrompt`) is appended to the system message when tools are active. It lists all available tools with their parameter schemas, the current working directory, and instructs the model to emit `<tool:TOOL_NAME>` (followed by JSON arguments) or `<no_tool>` (followed by a direct answer) as its first output. The routing grammar logits processor enforces this structurally.
 
@@ -354,14 +354,20 @@ To reset to the embedded version, delete the file and restart: `rm ~/.config/iq/
 
 ### Web Search Library
 
-A DuckDuckGo client library in `internal/search`. It provides `Search()` and `SearchWithOption()` functions for HTML scraping with retry logic for 202 throttling responses. Used by the `web_search` tool.
+A web search client in `internal/search`. Primary backend is DuckDuckGo HTML scraping; Brave Search API serves as a JSON-based fallback when `brave_api_key` is configured.
+
+- **Rate limiter**: 1-second minimum interval between DDG requests (`sync.Mutex` + `time.Time`)
+- **Pinned CSS selectors**: `.result`, `.result__title a`, `.result__url`, `.result__snippet` — validated by HTML fixture test
+- **Retry logic**: exponential backoff on DDG 202 (throttling) responses, up to 3 retries
+- **Brave fallback**: if DDG fails and `brave_api_key` is set in config.yaml, queries the Brave Search API (`search.SetBraveAPIKey()` wired at prompt startup)
+- **Public API**: `Search()`, `SearchWithOption()` — signatures unchanged; fallback is transparent
 
 
 ## File Layout
 
 ```
 ~/.config/iq/
-├── config.yaml                  # tier pool assignments + embed model + tool_paths
+├── config.yaml                  # tier pool assignments + embed model + tool_paths + brave_api_key
 ├── models.json                  # manifest of downloaded models (id, pulled_at, hf_cache_path, task)
 ├── cues.yaml                    # cue definitions (seeded from embedded defaults)
 ├── cue_embeddings.json          # cue description embeddings (auto-built, versioned)
@@ -626,3 +632,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.14  | Replace 24-bit timestamp session IDs with 32-bit crypto/rand |
 | 0.6.15  | Add test assertion for tool/signal registry coverage drift |
 | 0.7.0   | Configurable inference parameters: per-tier and global `repetition_penalty`, `temperature`, `max_tokens`; structured `TierConfig` with auto-migration from flat-list format; temperature support in `infer_server.py` |
+| 0.7.1   | Web search hardening: rate limiter, pinned CSS selectors with fixture test, Brave Search API fallback; config.yaml populates all defaults on first creation |

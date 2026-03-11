@@ -23,6 +23,7 @@ import (
 	"iq/internal/cue"
 	"iq/internal/embed"
 	"iq/internal/kb"
+	"iq/internal/search"
 	"iq/internal/tools"
 )
 
@@ -726,6 +727,11 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	// Resolve inference parameters: per-tier > global > hardcoded default.
 	inferCfg, _ := config.Load(nil)
 	ip := config.ResolveInferParams(inferCfg, route.Tier)
+
+	// Wire Brave Search fallback key if configured.
+	if inferCfg.BraveAPIKey != "" {
+		search.SetBraveAPIKey(inferCfg.BraveAPIKey)
+	}
 
 	// ── Step 3: KB RETRIEVE ──
 	var kbContext string

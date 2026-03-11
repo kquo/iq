@@ -82,6 +82,7 @@ type Config struct {
 	InferParams `yaml:",inline"`
 	EmbedModel  string   `yaml:"embed_model,omitempty"`
 	ToolPaths   []string `yaml:"tool_paths,omitempty"`
+	BraveAPIKey string   `yaml:"brave_api_key,omitempty"` // Brave Search fallback API key
 	// Legacy fields — migrated to EmbedModel on load.
 	CueModel string `yaml:"cue_model,omitempty"`
 	KbModel  string `yaml:"kb_model,omitempty"`
@@ -140,6 +141,22 @@ func emptyTiers() map[string]*TierConfig {
 	}
 }
 
+// defaultConfig returns a new Config with all hardcoded defaults populated.
+func defaultConfig() *Config {
+	rp := float64(DefaultRepetitionPenalty)
+	temp := float64(DefaultTemperature)
+	mt := DefaultMaxTokens
+	return &Config{
+		Tiers: emptyTiers(),
+		InferParams: InferParams{
+			RepetitionPenalty: &rp,
+			Temperature:       &temp,
+			MaxTokens:         &mt,
+		},
+		EmbedModel: DefaultEmbedModel,
+	}
+}
+
 // Load reads and returns the config, performing legacy migrations as needed.
 // diskUsage is optional — only needed for migrating the old 4-tier format.
 func Load(diskUsage DiskUsageFunc) (*Config, error) {
@@ -150,6 +167,8 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 	cfg := &Config{Tiers: emptyTiers()}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
+		cfg = defaultConfig()
+		_ = Save(cfg)
 		return cfg, nil
 	}
 	if err != nil {

@@ -2,17 +2,118 @@ package search
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 )
+
+// ── CSS selectors for DDG HTML parsing ───────────────────────────────────────
+
+const (
+	selectorResult        = ".result"
+	selectorResultTitle   = ".result__title a"
+	selectorResultURL     = ".result__url"
+	selectorResultSnippet = ".result__snippet"
+)
+
+// ── Rate limiter ─────────────────────────────────────────────────────────────
+
+const ddgMinInterval = 1 * time.Second
+
+var (
+	rateMu      sync.Mutex
+	lastRequest time.Time
+)
+
+// throttle enforces a minimum interval between DDG HTTP requests.
+func throttle() {
+	rateMu.Lock()
+	defer rateMu.Unlock()
+	if elapsed := time.Since(lastRequest); elapsed < ddgMinInterval {
+		time.Sleep(ddgMinInterval - elapsed)
+	}
+	lastRequest = time.Now()
+}
+
+// ── Brave Search fallback ────────────────────────────────────────────────────
+
+const braveSearchURL = "https://api.search.brave.com/res/v1/web/search"
+
+var braveAPIKey string
+
+// SetBraveAPIKey configures the Brave Search API key used as fallback.
+func SetBraveAPIKey(key string) {
+	braveAPIKey = key
+}
+
+type braveResponse struct {
+	Web struct {
+		Results []braveResult `json:"results"`
+	} `json:"web"`
+}
+
+type braveResult struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+}
+
+// searchBrave queries the Brave Search API and returns results.
+func searchBrave(query string, apiKey string, maxResults int, timeout time.Duration) (*[]SearchResult, error) {
+	if apiKey == "" {
+		return nil, errors.New("brave_api_key not configured")
+	}
+
+	u, _ := url.Parse(braveSearchURL)
+	q := u.Query()
+	q.Set("q", query)
+	q.Set("count", fmt.Sprintf("%d", maxResults))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Subscription-Token", apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brave search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("brave search returned status %d", resp.StatusCode)
+	}
+
+	var br braveResponse
+	if err := json.NewDecoder(resp.Body).Decode(&br); err != nil {
+		return nil, fmt.Errorf("brave search JSON decode failed: %w", err)
+	}
+
+	results := make([]SearchResult, 0, len(br.Web.Results))
+	for _, r := range br.Web.Results {
+		results = append(results, SearchResult{
+			Title:   r.Title,
+			Link:    r.URL,
+			Snippet: r.Description,
+		})
+	}
+	return &results, nil
+}
+
+// ── DDG types and helpers ────────────────────────────────────────────────────
 
 type SearchParam struct {
 	Query string
@@ -113,15 +214,15 @@ func parse(r io.Reader) (*[]SearchResult, error) {
 		result []SearchResult
 		item   SearchResult
 	)
-	doc.Find(".result").Each(func(i int, s *goquery.Selection) {
-		item.Title = s.Find(".result__title a").Text()
+	doc.Find(selectorResult).Each(func(i int, s *goquery.Selection) {
+		item.Title = s.Find(selectorResultTitle).Text()
 
 		item.Link = extractLink(
-			s.Find(".result__url").AttrOr("href", ""),
+			s.Find(selectorResultURL).AttrOr("href", ""),
 		)
 
 		item.Snippet = removeHtmlTagsFromText(
-			s.Find(".result__snippet").Text(),
+			s.Find(selectorResultSnippet).Text(),
 		)
 
 		result = append(result, item)
@@ -176,9 +277,10 @@ func extractLink(href string) string {
 // doRequestWithRetry executes an HTTP request, retrying on 202 responses.
 // DuckDuckGo occasionally returns 202 (throttling/async) — a brief pause and
 // retry is usually sufficient to get a real 200 back.
-func doRequestWithRetry(client *http.Client, req *http.Request, opt *ClientOption, maxRetries int) (*http.Response, error) {
+func doRequestWithRetry(client *http.Client, req *http.Request, maxRetries int) (*http.Response, error) {
 	backoff := 500 * time.Millisecond
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		throttle()
 		// Clone the request so it can be retried (body is nil for GET so this is safe)
 		clone := req.Clone(req.Context())
 		resp, err := client.Do(clone)
@@ -199,7 +301,10 @@ func doRequestWithRetry(client *http.Client, req *http.Request, opt *ClientOptio
 	return nil, fmt.Errorf("max retries exceeded")
 }
 
-func SearchWithOption(param *SearchParam, opt *ClientOption, maxResults int) (*[]SearchResult, error) {
+// ── Public API ───────────────────────────────────────────────────────────────
+
+// searchDDG performs a DuckDuckGo HTML search (the primary path).
+func searchDDG(param *SearchParam, opt *ClientOption, maxResults int) (*[]SearchResult, error) {
 	allResults := []SearchResult{}
 	pageSize := 10
 	pagesNeeded := (maxResults + pageSize - 1) / pageSize
@@ -235,7 +340,7 @@ func SearchWithOption(param *SearchParam, opt *ClientOption, maxResults int) (*[
 		req.Header.Add("Cookie", "kl=wt-wt")
 		req.Header.Add("Content-Type", "x-www-form-urlencoded")
 
-		resp, err := doRequestWithRetry(client, req, opt, 3)
+		resp, err := doRequestWithRetry(client, req, 3)
 		if err != nil {
 			return nil, err
 		}
@@ -257,6 +362,23 @@ func SearchWithOption(param *SearchParam, opt *ClientOption, maxResults int) (*[
 	}
 
 	return &allResults, nil
+}
+
+// SearchWithOption queries DDG, falling back to Brave Search if configured.
+func SearchWithOption(param *SearchParam, opt *ClientOption, maxResults int) (*[]SearchResult, error) {
+	results, ddgErr := searchDDG(param, opt, maxResults)
+	if ddgErr == nil {
+		return results, nil
+	}
+	// DDG failed — try Brave fallback if configured.
+	if braveAPIKey != "" {
+		braveResults, braveErr := searchBrave(param.Query, braveAPIKey, maxResults, opt.Timeout)
+		if braveErr == nil {
+			return braveResults, nil
+		}
+		return nil, fmt.Errorf("%w (brave fallback also failed: %v)", ddgErr, braveErr)
+	}
+	return nil, ddgErr
 }
 
 func Search(param *SearchParam, maxResults int) (*[]SearchResult, error) {
