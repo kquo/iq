@@ -69,7 +69,7 @@ func printConfigHelp() {
 	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s config\n", n)
 	fmt.Printf("  $ %s config show\n", n)
-	fmt.Printf("  $ %s config validate\n\n", n)
+	fmt.Printf("  $ %s config validate\n", n)
 }
 
 // ── config show ──────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ func runConfigShow() error {
 	}
 
 	// ── config.yaml ──
-	cfgSection("CONFIG")
+	fmt.Printf("%s\n", utl.Whi2("CONFIG"))
 	cfgField("path", cfgPathStr())
 
 	// Print in config.yaml order: global params, tiers (with resolved params), then extras.

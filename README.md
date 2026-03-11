@@ -56,6 +56,32 @@ iq "explain how transformers work"
 
 Any MLX-compatible embedding model works for `embed`, and any MLX-compatible generative model works for `fast` / `slow` tiers. Use `iq lm search` to browse available models.
 
+## Find Your Best Models
+
+Every Apple Silicon Mac has different memory and thermal characteristics. Use `iq perf sweep` to benchmark candidate models on your hardware and pick the best fit:
+
+```bash
+# Download a few candidates to compare (smaller models are faster, larger ones more capable)
+iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit    # 3B — lightweight, fast
+iq lm get mlx-community/gemma-3-4b-it-4bit             # 4B — balanced
+iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit      # 7B — more capable, uses more memory
+
+# Sweep benchmarks each model: temporarily assigns → starts sidecar → benches → stops → restores config
+iq perf sweep --tier fast \
+  --models mlx-community/Llama-3.2-3B-Instruct-4bit,mlx-community/gemma-3-4b-it-4bit,mlx-community/Qwen2.5-7B-Instruct-4bit
+
+# Review the comparison table any time
+iq perf show
+```
+
+The sweep prints a comparison table at the end showing throughput, latency, and quality metrics for each model. Assign the winner to a tier:
+
+```bash
+iq tier add fast mlx-community/gemma-3-4b-it-4bit   # or whichever model scored best
+```
+
+By default sweep runs inference benchmarks (`--type infer`). Add `--type tool` or `--type cue` to compare tool-routing or classification accuracy as well.
+
 ```bash
 # Debug: see classification and routing without inferring
 iq -n "explain how transformers work"
@@ -76,7 +102,7 @@ Run `iq` without arguments to see the **usage**.
 
 ```bash
 $ iq
-iq v0.6.2
+iq v0.7.8
 Work with IQ from the command line.
 ...
 ```

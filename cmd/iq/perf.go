@@ -893,6 +893,7 @@ func printPerfHelp() {
 	fmt.Printf("  iq perf <subcommand> [flags]\n\n")
 	fmt.Printf("%s\n", utl.Whi2("SUBCOMMANDS"))
 	fmt.Printf("  %-15s %s\n", "bench", "Run benchmark for a model")
+	fmt.Printf("  %-15s %s\n", "sweep", "Auto-assign, start, bench, stop across N models")
 	fmt.Printf("  %-15s %s\n", "show", "Show benchmark comparison table")
 	fmt.Printf("  %-15s %s\n\n", "clear", "Remove benchmark results")
 	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
@@ -906,6 +907,7 @@ func printPerfHelp() {
 	fmt.Printf("  iq perf bench --type infer --model mlx-community/gemma-3-1b-it-4bit\n")
 	fmt.Printf("  iq perf bench --type tool --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit\n")
 	fmt.Printf("  iq perf bench --type cue --models model-a,model-b,model-c\n")
+	fmt.Printf("  iq perf sweep --tier fast --models model-a,model-b --type infer\n")
 	fmt.Printf("  iq perf show\n")
 	fmt.Printf("  iq perf show --type kb\n")
 	fmt.Printf("  iq perf clear --model <id>\n")
@@ -924,7 +926,7 @@ func newPerfCmd() *cobra.Command {
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		printPerfHelp()
 	})
-	cmd.AddCommand(newPerfBenchCmd(), newPerfShowCmd(), newPerfClearCmd())
+	cmd.AddCommand(newPerfBenchCmd(), newPerfSweepCmd(), newPerfShowCmd(), newPerfClearCmd())
 	return cmd
 }
 
@@ -1051,6 +1053,168 @@ func newPerfBenchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&modelsFlag, "models", "", "Comma-separated model IDs for comparison benchmarks")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show debug detail for each prompt (tool bench)")
 	return cmd
+}
+
+// newPerfSweepCmd automates model comparison: for each model it temporarily
+// assigns to a tier, starts the sidecar, runs benchmarks, stops the sidecar,
+// and restores the original tier config. Produces a comparison table at the end.
+func newPerfSweepCmd() *cobra.Command {
+	var tier string
+	var modelsFlag string
+	var benchType string
+	var verbose bool
+
+	cmd := &cobra.Command{
+		Use:          "sweep",
+		Short:        "Auto-assign, start, bench, stop across N models",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if modelsFlag == "" {
+				return fmt.Errorf("--models is required for sweep")
+			}
+			if tier == "" {
+				tier = "fast"
+			}
+
+			var models []string
+			for m := range strings.SplitSeq(modelsFlag, ",") {
+				m = strings.TrimSpace(m)
+				if m != "" {
+					models = append(models, m)
+				}
+			}
+			if len(models) == 0 {
+				return fmt.Errorf("no models specified")
+			}
+
+			// Determine bench types.
+			var types []string
+			if benchType != "" {
+				types = []string{benchType}
+			} else {
+				types = []string{"infer"}
+			}
+
+			corpus, err := loadBenchCorpus()
+			if err != nil {
+				return err
+			}
+
+			bs, err := loadBenchStore()
+			if err != nil {
+				return err
+			}
+
+			// Save original tier config for restoration.
+			origCfg, err := config.Load(nil)
+			if err != nil {
+				return err
+			}
+			origModels := make([]string, len(origCfg.TierModels(tier)))
+			copy(origModels, origCfg.TierModels(tier))
+
+			// Sweep each model.
+			for mi, mid := range models {
+				fmt.Fprintf(os.Stderr, "\n%s  %s (%d/%d)\n",
+					utl.Whi2("SWEEP"), mid, mi+1, len(models))
+
+				// Temporarily assign model to tier.
+				cfg, err := config.Load(nil)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "  error loading config: %s\n", err)
+					continue
+				}
+				if !slices.Contains(cfg.TierModels(tier), mid) {
+					cfg.Tiers[tier].Models = append(cfg.Tiers[tier].Models, mid)
+					if err := config.Save(cfg); err != nil {
+						fmt.Fprintf(os.Stderr, "  error saving config: %s\n", err)
+						continue
+					}
+					fmt.Fprintf(os.Stderr, "  tier        temporarily assigned %s → %s\n", mid, tier)
+				} else {
+					fmt.Fprintf(os.Stderr, "  tier        %s already in %s\n", mid, tier)
+				}
+
+				// Start sidecar.
+				fmt.Fprintf(os.Stderr, "  starting    sidecar for %s ...\n", mid)
+				if err := startSidecar(tier, mid); err != nil {
+					fmt.Fprintf(os.Stderr, "  error: %s — skipping\n", err)
+					sweepCleanupModel(mid, tier, origModels)
+					continue
+				}
+
+				// Run each bench type.
+				for _, t := range types {
+					var result BenchResult
+					var rerr error
+					switch t {
+					case "kb":
+						fmt.Fprintf(os.Stderr, "  bench       kb ...\n")
+						result, rerr = runKBBench(mid, corpus)
+					case "cue":
+						fmt.Fprintf(os.Stderr, "  bench       cue ...\n")
+						result, rerr = runCueBench(mid, corpus)
+					case "tool":
+						fmt.Fprintf(os.Stderr, "  bench       tool ...\n")
+						result, rerr = runToolBench(mid, corpus, verbose)
+					case "infer":
+						fmt.Fprintf(os.Stderr, "  bench       infer ...\n")
+						result, rerr = runInferBench(mid, corpus)
+					}
+					if rerr != nil {
+						fmt.Fprintf(os.Stderr, "  bench error: %v\n", rerr)
+						continue
+					}
+					upsertResult(bs, result)
+					fmt.Fprintf(os.Stderr, "  result      %s\n", formatBenchRow(result))
+				}
+
+				// Stop sidecar and restore tier.
+				fmt.Fprintf(os.Stderr, "  stopping    sidecar for %s\n", mid)
+				if err := sidecar.Stop(mid); err != nil {
+					fmt.Fprintf(os.Stderr, "  error stopping: %s\n", err)
+				}
+				sweepCleanupModel(mid, tier, origModels)
+			}
+
+			// Save results.
+			if err := saveBenchStore(bs); err != nil {
+				return err
+			}
+
+			// Print comparison table.
+			fmt.Println()
+			fmt.Println(utl.Whi2("COMPARISON"))
+			printPerfTable(resultsFor(bs, "", benchType), benchType)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&tier, "tier", "fast", "Tier to assign models to during sweep")
+	cmd.Flags().StringVar(&modelsFlag, "models", "", "Comma-separated model IDs to sweep (required)")
+	cmd.Flags().StringVar(&benchType, "type", "", "Benchmark type: infer, tool, kb, cue (default: infer)")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show debug detail for each prompt (tool bench)")
+	return cmd
+}
+
+// sweepCleanupModel removes a model from the tier if it wasn't in the original config.
+func sweepCleanupModel(modelID, tier string, origModels []string) {
+	if slices.Contains(origModels, modelID) {
+		return // was already assigned, leave it
+	}
+	cfg, err := config.Load(nil)
+	if err != nil {
+		return
+	}
+	filtered := cfg.Tiers[tier].Models[:0]
+	for _, m := range cfg.Tiers[tier].Models {
+		if m != modelID {
+			filtered = append(filtered, m)
+		}
+	}
+	cfg.Tiers[tier].Models = filtered
+	config.Save(cfg)
+	fmt.Fprintf(os.Stderr, "  tier        restored (removed %s from %s)\n", modelID, tier)
 }
 
 func newPerfShowCmd() *cobra.Command {

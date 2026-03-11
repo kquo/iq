@@ -26,6 +26,11 @@ import (
 	"iq/internal/tools"
 )
 
+// kbTimeout is the maximum time to wait for async KB retrieval before
+// proceeding without context. Keeps the prompt pipeline responsive even
+// if the embed sidecar is slow or the KB is large.
+const kbTimeout = 5 * time.Second
+
 // ── Session ───────────────────────────────────────────────────────────────────
 
 type session struct {
@@ -522,6 +527,24 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		printStep1Classify(et)
 	}
 
+	// ── Step 3: KB PREFETCH (async) ──
+	// Launch KB retrieval early so it runs concurrently with Steps 1b and 2.
+	// The result is collected before Step 4 ASSEMBLE with a timeout; on
+	// failure or timeout the prompt proceeds without KB context.
+	type kbResult struct {
+		results []kb.Result
+		err     error
+	}
+	var kbCh chan kbResult
+	kbEnabled := kb.Exists() && !opts.noKB && embed.SidecarAlive() && sess == nil
+	if kbEnabled {
+		kbCh = make(chan kbResult, 1)
+		go func() {
+			results, kbErr := kb.Search(input, kb.DefaultK)
+			kbCh <- kbResult{results, kbErr}
+		}()
+	}
+
 	// ── Step 1b: TOOL DETECT ──
 	useTools := false
 	var tt *tools.ClassifyTrace
@@ -577,22 +600,31 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	// Wire search client with Brave fallback key if configured.
 	tools.SetSearchClient(search.NewClient(inferCfg.BraveAPIKey))
 
-	// ── Step 3: KB RETRIEVE ──
+	// ── Step 3: KB COLLECT ──
+	// Collect the async KB prefetch result with a timeout.
 	var kbContext string
-	if kb.Exists() && !opts.noKB && embed.SidecarAlive() {
+	if kbCh != nil {
 		t3 := time.Now()
-		results, kbErr := kb.Search(input, kb.DefaultK)
-		if kbErr == nil && len(results) > 0 {
-			kbContext = kb.Context(results)
-			if trace {
-				em := config.DefaultEmbedModel
-				if cfg2, cfgErr := config.Load(nil); cfgErr == nil {
-					em = config.EmbedModel(cfg2)
+		select {
+		case kr := <-kbCh:
+			if kr.err == nil && len(kr.results) > 0 {
+				kbContext = kb.Context(kr.results)
+				if trace {
+					em := config.DefaultEmbedModel
+					if cfg2, cfgErr := config.Load(nil); cfgErr == nil {
+						em = config.EmbedModel(cfg2)
+					}
+					printStep3KB(kr.results, em, time.Since(t3))
 				}
-				printStep3KB(results, em, time.Since(t3))
+			} else if kr.err != nil {
+				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kr.err.Error()))
 			}
-		} else if kbErr != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kbErr.Error()))
+		case <-time.After(kbTimeout):
+			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search timed out — skipping context"))
+			if trace {
+				traceStep("3 ", "KB RETRIEVE")
+				traceField("result", fmt.Sprintf("timeout after %s", kbTimeout))
+			}
 		}
 	}
 

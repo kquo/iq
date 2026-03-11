@@ -332,10 +332,13 @@ Benchmark types:
 
 **Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, models must already be running.
 
+**Automated sweep** — `iq perf sweep --models m1,m2 --tier fast --type infer` automates the full tier-assignment cycle: for each model it temporarily assigns to the tier, starts the sidecar, runs benchmarks, stops the sidecar, and restores the original tier config. Produces a comparison table at the end.
+
 Commands:
 ```
 iq perf bench [--type <type>] [--model <id>] [-v]             # run benchmarks
 iq perf bench --type cue --models model-a,model-b,model-c     # compare models
+iq perf sweep --models m1,m2 --tier fast --type infer          # automated sweep
 iq perf show [model] [type]                                    # display stored results
 iq perf clear                                                  # wipe benchmark history
 ```
@@ -426,23 +429,28 @@ STEP 1  CLASSIFY — POST /embed → embed :27000                    resolve cue
   highest-score cue name ◄─────────────────────────────────────┘
     │
     ▼
-STEP 1b  TOOL DETECT
-  -T/--no-tools flag? → forced
-  hasFilePath(input)? → enabled (deterministic)
-  else: cosine_similarity(input_vec, tool_signal_vecs[])
-  best score ≥ 0.60 → tools enabled
-    │
-    ▼
-STEP 2  RESOLVE ROUTE
-  cue.model override  →  pickSidecar(tier, false)
-  cue.suggested_tier  →  pickSidecar(tier, false)
-  fallback            →  pickSidecar("fast", false)
-    │
-    ▼
-STEP 3  KB RETRIEVE  (if kb.json exists && embed running && !--no-kb)
-  POST /embed → query vector (embed :27000)
-  hybrid scoring: cosine_similarity + keyword boost — Go, in-memory
-  top-3 chunks (score ≥ 0.72) → plain text context block
+STEP 3  KB PREFETCH (async, launched here — runs concurrently with 1b and 2)
+  goroutine: POST /embed → query vector → hybrid search → top-3 chunks
+  5s timeout — on timeout or error, prompt proceeds without KB context
+    │                     ┌─ concurrently ─┐
+    ▼                     │                │
+STEP 1b  TOOL DETECT      │                │
+  -T/--no-tools flag? → forced             │
+  hasFilePath(input)? → enabled            │
+  else: cosine_similarity(input_vec,       │
+        tool_signal_vecs[])                │
+  best score ≥ 0.60 → tools enabled        │
+    │                     │                │
+    ▼                     │                │
+STEP 2  RESOLVE ROUTE     │                │
+  cue.model override  →  pickSidecar      │
+  cue.suggested_tier  →  pickSidecar      │
+  fallback            →  pickSidecar       │
+    │                     │                │
+    ▼                     └────────────────┘
+STEP 3  KB COLLECT  (blocks with 5s timeout to receive async KB result)
+  received: top-3 chunks (score ≥ 0.72) → plain text context block
+  timeout/error: proceed without KB context
     │
     ▼
 STEP 4  ASSEMBLE
@@ -655,3 +663,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.5   | Concurrency-safe `search.Client` struct replaces package-level braveAPIKey; tool execution safety: 30s timeout, 32KB output cap, ReadOnly/confirm gating |
 | 0.7.6   | Hybrid cue classification: keyword boost prevents embedding drift; strict tool schema validation (ValidateCall/ParseCallsStrict); multi-model benchmark harness (--models flag) |
 | 0.7.7   | `iq config show/validate`: canonical config inspection and validation command |
+| 0.7.8   | Async KB prefetch with 5s timeout; `iq perf sweep` automates model comparison; README onboarding guide |
