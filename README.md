@@ -62,9 +62,9 @@ Every Apple Silicon Mac has different memory and thermal characteristics. Use `i
 
 ```bash
 # Download a few candidates to compare (smaller models are faster, larger ones more capable)
-iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit    # 3B — lightweight, fast
+iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit     # 3B — lightweight, fast
 iq lm get mlx-community/gemma-3-4b-it-4bit             # 4B — balanced
-iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit      # 7B — more capable, uses more memory
+iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit       # 7B — more capable, uses more memory
 
 # Sweep benchmarks each model: temporarily assigns → starts sidecar → benches → stops → restores config
 iq perf sweep --tier fast \

@@ -7,12 +7,12 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 ## System Diagram
 
 ```
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                               iq CLI (Go)                                     │
-│                                                                               │
-│  iq lm   iq start/stop  iq cue   iq kb   iq ask    iq pry   iq perf iq config │
-│  (models) (service)    (cues)  (RAG)   (infer)   (raw)    (bench) (schema)    │
-└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                               iq CLI (Go)                                    │
+│                                                                              │
+│ iq lm    iq start/stop  iq cue  iq kb   iq ask    iq pry   iq perf iq config │
+│ (models)  (service)     (cues)  (RAG)   (infer)   (raw)    (bench) (schema)  │
+└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬───────────┘
      │          │          │        │       │         │            │
      ▼          ▼          ▼        ▼       ▼         ▼            ▼
 ┌─────────┐ ┌──────┐ ┌────────┐ ┌──────────────────────┐ ┌──────────────────┐
