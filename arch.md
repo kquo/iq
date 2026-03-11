@@ -242,7 +242,7 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 3 — KB RETRIEVE.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-3 most similar chunks are retrieved via hybrid scoring and injected as plain text context in the user message. Skipped silently if KB is empty or unavailable.
 
-**Step 4 — ASSEMBLE.** Combines system prompt (from cue, plus tool instructions if tools enabled), session history (if any), and user message (with KB context prepended if any) into the structured message array sent to inference.
+**Step 4 — ASSEMBLE.** Combines system prompt (from cue, plus tool instructions if tools enabled), session history (if any), and user message (with KB context prepended if any) into the structured message array sent to inference. `--dump-prompt <file>` writes this array as indented JSON and exits before inference (use `-` for stdout).
 
 **Step 4b — CACHE CHECK.** Computes an FNV64a hash over the assembled message array and model ID, then looks up the hash in `~/.config/iq/response_cache.json`. On a hit (entry exists and is within the 1-hour TTL), the cached response is returned immediately and inference is skipped entirely. Disabled in session mode, when tools are enabled (tool results depend on live execution), and via `--no-cache`.
 
@@ -271,6 +271,7 @@ When tools are enabled, inference runs in a non-streaming loop driven entirely b
 -T, --tools         Force enable read-only tool use
     --no-tools      Disable tool use
 -n, --dry-run       Trace steps 1–4, skip inference
+    --dump-prompt <f> Write assembled messages as JSON (- for stdout), skip inference
 -d, --debug         Trace all steps including inference
     --no-stream     Collect full response before printing
 ```
@@ -634,3 +635,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.0   | Configurable inference parameters: per-tier and global `repetition_penalty`, `temperature`, `max_tokens`; structured `TierConfig` with auto-migration from flat-list format; temperature support in `infer_server.py` |
 | 0.7.1   | Web search hardening: rate limiter, pinned CSS selectors with fixture test, Brave Search API fallback; config.yaml populates all defaults on first creation |
 | 0.7.2   | Housekeeping: rename search.SearchParam/SearchResult → Param/Result; unify chatMessage/cache.Message into config.Message; broaden MlxVenvPython fallback paths (PIPX_HOME, /opt/homebrew/bin); config.Load resilient to read-only filesystems |
+| 0.7.3   | `--dump-prompt` flag writes assembled message array as JSON before inference; end-to-end orchestration test with mock sidecar (httptest); build.sh v2.2.0: indented output, `-v` tests, green command echo |

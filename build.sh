@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build 2.1.2
+# build 2.2.0
 set -euo pipefail  # Fail immediately on any error
 Gre='\e[1;32m' Red='\e[1;31m' Mag='\e[1;35m' Yel='\e[1;33m' Blu='\e[1;34m' Rst='\e[0m'
 
@@ -17,6 +17,9 @@ else
     BUILD_TARGETS=("$@")
 fi
 Prg=$(head -1 go.mod | awk -F'/' '{print $NF}' | awk '{print $NF}')
+
+# indent pipes each line through sed to add 4-space prefix.
+indent() { sed 's/^/    /'; }
 
 # Detect OS
 case "$OSTYPE" in
@@ -37,47 +40,59 @@ else
 fi
 
 # Update dependencies
-printf "==> Update go.mod to reflect actual dependencies\ngo mod tidy\n"
+printf "==> Update go.mod to reflect actual dependencies\n"
+printf "    ${Gre}go mod tidy${Rst}\n"
 go mod tidy
 
 # Format Go code
-printf "\n==> Format Go code according to standard rules\ngo fmt $PKG_SCOPE\n"
+printf "\n==> Format Go code according to standard rules\n"
+printf "    ${Gre}go fmt $PKG_SCOPE${Rst}\n"
 FMT_OUTPUT=$(go fmt $PKG_SCOPE || true)
 if [ -z "$FMT_OUTPUT" ]; then
     printf "    No formatting changes needed.\n"
 else
-    printf "    $FMT_OUTPUT\n"
+    printf "%s\n" "$FMT_OUTPUT" | indent
 fi
 
 # Automatically fix Go code
-printf "\n==> Automatically fix code for API/language changes\ngo fix $PKG_SCOPE\n"
+printf "\n==> Automatically fix code for API/language changes\n"
+printf "    ${Gre}go fix $PKG_SCOPE${Rst}\n"
 FIX_OUTPUT=$(go fix $PKG_SCOPE || true)
 if [ -z "$FIX_OUTPUT" ]; then
     printf "    No fixes applied.\n"
 else
-    printf "    $FIX_OUTPUT\n"
+    printf "%s\n" "$FIX_OUTPUT" | indent
 fi
 
 # Vet code
-printf "\n==> Check code for potential issues\ngo vet $PKG_SCOPE\n"
+printf "\n==> Check code for potential issues\n"
+printf "    ${Gre}go vet $PKG_SCOPE${Rst}\n"
 VET_OUTPUT=$(go vet $PKG_SCOPE 2>&1 || true)
 if [ -z "$VET_OUTPUT" ]; then
     printf "    No issues found by go vet.\n"
 else
-    printf "    $VET_OUTPUT\n"
+    printf "%s\n" "$VET_OUTPUT" | indent
 fi
 
 # Run tests
-printf "\n==> Run tests for all packages in the repository\ngo test $PKG_SCOPE\n"
-go test $PKG_SCOPE
+printf "\n==> Run tests for all packages in the repository\n"
+printf "    ${Gre}go test -v $PKG_SCOPE${Rst}\n"
+go test -v $PKG_SCOPE 2>&1 | indent
 
 # Install staticcheck
-printf "\n==> Install static analysis tool for Go\ngo install honnef.co/go/tools/cmd/staticcheck@latest\n"
+printf "\n==> Install static analysis tool for Go\n"
+printf "    ${Gre}go install honnef.co/go/tools/cmd/staticcheck@latest${Rst}\n"
 go install honnef.co/go/tools/cmd/staticcheck@latest
 
 # Run staticcheck
-printf "\n==> Analyze Go code for potential issues\nstaticcheck $PKG_SCOPE\n"
-staticcheck $PKG_SCOPE
+printf "\n==> Analyze Go code for potential issues\n"
+printf "    ${Gre}staticcheck $PKG_SCOPE${Rst}\n"
+SC_OUTPUT=$(staticcheck $PKG_SCOPE 2>&1 || true)
+if [ -z "$SC_OUTPUT" ]; then
+    printf "    No issues found by staticcheck.\n"
+else
+    printf "%s\n" "$SC_OUTPUT" | indent
+fi
 
 # Function to check if a utility should be built
 should_build() {
@@ -110,10 +125,8 @@ for UTIL_DIR in ./cmd/*; do
         fi
         ProgramVersion=$(grep -o 'program_version.*"[^"]*"' "cmd/${UTIL}/main.go" | cut -d'"' -f2 || echo "unknown_version")
         printf "\n==> Building and installing ${Gre}${UTIL} v${ProgramVersion}${Rst}\n"
-        (
-            set -x
-            go build -o "${BINDIR}/${UTIL}${EXT}" -ldflags "-s -w" "$UTIL_DIR"
-        )
+        printf "    ${Gre}go build -o ${BINDIR}/${UTIL}${EXT} -ldflags \"-s -w\" $UTIL_DIR${Rst}\n"
+        go build -o "${BINDIR}/${UTIL}${EXT}" -ldflags "-s -w" "$UTIL_DIR"
         printf "    ${Gre}$(ls -l ${BINDIR}/${UTIL}${EXT} | awk '{printf "%'"'"'10d    %s %2s %5s     %s", $5, $6, $7, $8, $9}')${Rst}\n"
         BUILT_COUNT=$((BUILT_COUNT + 1))
     fi
@@ -123,7 +136,7 @@ done
 if [ $BUILT_COUNT -eq 0 ]; then
     printf "\n${Yel}Warning: No utilities were built.${Rst}\n"
     if [ ${#BUILD_TARGETS[@]} -gt 0 ]; then
-        printf "Check that the specified utilities exist in ./cmd/\n"
+        printf "    Check that the specified utilities exist in ./cmd/\n"
     fi
 fi
 

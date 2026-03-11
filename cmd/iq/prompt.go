@@ -612,20 +612,21 @@ func truncate(s string, n int) string {
 // ── Core prompt execution ─────────────────────────────────────────────────────
 
 type promptOpts struct {
-	cueName   string
-	category  string
-	tier      string
-	sessionID string
-	dryRun    bool
-	debug     bool
-	noStream  bool
-	noKB      bool
-	noCache   bool
-	toolMode  string // "" = auto, "on", "off"
+	cueName    string
+	category   string
+	tier       string
+	sessionID  string
+	dryRun     bool
+	debug      bool
+	noStream   bool
+	noKB       bool
+	noCache    bool
+	toolMode   string // "" = auto, "on", "off"
+	dumpPrompt string // file path ("-" for stdout), write assembled messages as JSON
 }
 
 func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
-	trace := opts.dryRun || opts.debug
+	trace := opts.dryRun || opts.debug || opts.dumpPrompt != ""
 	cues, err := cue.Load()
 	if err != nil {
 		return sess, err
@@ -787,6 +788,23 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	}
 	if trace {
 		printStep4Assemble(messages)
+	}
+
+	// ── Dump prompt ──
+	if opts.dumpPrompt != "" {
+		data, jErr := json.MarshalIndent(messages, "", "  ")
+		if jErr != nil {
+			return sess, fmt.Errorf("dump-prompt: %w", jErr)
+		}
+		if opts.dumpPrompt == "-" {
+			fmt.Println(string(data))
+		} else {
+			if jErr := os.WriteFile(opts.dumpPrompt, append(data, '\n'), 0644); jErr != nil {
+				return sess, fmt.Errorf("dump-prompt: %w", jErr)
+			}
+			fmt.Fprintf(os.Stderr, "prompt written to %s\n", opts.dumpPrompt)
+		}
+		return sess, nil
 	}
 
 	// ── Step 4b: CACHE CHECK ──
@@ -1360,6 +1378,7 @@ func addPromptFlags(cmd *cobra.Command, opts *promptOpts) {
 	cmd.Flags().StringVar(&opts.tier, "tier", "", "Override tier directly")
 	cmd.Flags().StringVarP(&opts.sessionID, "session", "s", "", "Load/continue a session by ID")
 	cmd.Flags().BoolVarP(&opts.dryRun, "dry-run", "n", false, "Trace steps 1-4, skip inference")
+	cmd.Flags().StringVar(&opts.dumpPrompt, "dump-prompt", "", "Write assembled message array as JSON to file (- for stdout), skip inference")
 	cmd.Flags().BoolVarP(&opts.debug, "debug", "d", false, "Trace all steps including inference")
 	cmd.Flags().BoolVarP(&opts.noKB, "no-kb", "K", false, "Disable knowledge base retrieval")
 	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable response cache")
