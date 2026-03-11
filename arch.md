@@ -41,7 +41,7 @@ IQ is being restructured from a single `cmd/iq` package into isolated domain pac
 | `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | **done** |
 | `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML | **done** |
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier | **done** |
-| `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | planned |
+| `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | **done** |
 | `internal/tools` | Tool registry, parser, executor, signal detection | planned |
 | `internal/kb` | Knowledge base index, chunking, hybrid search, ingest | planned |
 
@@ -519,6 +519,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/cue/cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
 | `internal/embed/embed.go` | Embed sidecar lifecycle, HTTP embedding calls, cosine similarity, cue classifier |
 | `internal/embed/embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
+| `internal/cache/cache.go` | Response cache with FNV64a hashing, TTL expiry, check/write |
 
 ### CLI package (`cmd/iq/`)
 
@@ -528,7 +529,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
 | `cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
-| `cache.go` | Response cache with FNV64a hashing, TTL expiry, load/save/check/write |
 | `tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
 | `tools_test.go` | Tests for calc, parseToolCalls, validatePath, hasFilePath, tool registry |
 | `kb.go` | KB index, structure-aware chunking, hybrid search, ingest, CLI commands |
@@ -578,3 +578,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.6   | Extract `sidecar` to `internal/sidecar` domain package |
 | 0.6.7   | Extract `cue` to `internal/cue` domain package |
 | 0.6.8   | Extract `embed` to `internal/embed` domain package |
+| 0.6.9   | Extract `cache` to `internal/cache` domain package |

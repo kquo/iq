@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
+	"iq/internal/cache"
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
@@ -381,12 +382,12 @@ func printStep4Assemble(messages []chatMessage) {
 }
 
 // printStep4bCacheCheck prints the cache lookup trace.
-func printStep4bCacheCheck(r *cacheHitResult) {
+func printStep4bCacheCheck(r *cache.HitResult) {
 	traceStep("4b", "CACHE CHECK")
 	traceField("task", "Hash messages and check response cache")
 	traceField("key", r.Key)
 	if r.Hit {
-		traceField("result", fmt.Sprintf("hit (age: %s, model: %s)", formatAge(r.Age), r.Model))
+		traceField("result", fmt.Sprintf("hit (age: %s, model: %s)", cache.FormatAge(r.Age), r.Model))
 	} else {
 		traceField("result", "miss")
 	}
@@ -398,7 +399,7 @@ func printStep5bCacheWrite(key string, elapsed time.Duration) {
 	traceStep("5b", "CACHE WRITE")
 	traceField("task", "Store response in cache")
 	traceField("key", key)
-	traceField("ttl", fmt.Sprintf("%dm", int(responseCacheTTL.Minutes())))
+	traceField("ttl", fmt.Sprintf("%dm", int(cache.TTL.Minutes())))
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
@@ -779,8 +780,12 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	var response string
 
 	if useCache {
-		cacheK = cacheKey(messages, route.ModelID)
-		resp, hitInfo := cacheCheck(cacheK)
+		cm := make([]cache.Message, len(messages))
+		for i, m := range messages {
+			cm[i] = cache.Message{Role: m.Role, Content: m.Content}
+		}
+		cacheK = cache.Key(cm, route.ModelID)
+		resp, hitInfo := cache.Check(cacheK)
 		if trace {
 			printStep4bCacheCheck(hitInfo)
 		}
@@ -1138,7 +1143,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		// ── Step 5b: CACHE WRITE ──
 		if useCache && response != "" {
 			t5b := time.Now()
-			cacheWrite(cacheK, response, route.ModelID, route.CueName)
+			cache.Write(cacheK, response, route.ModelID, route.CueName)
 			if trace {
 				printStep5bCacheWrite(cacheK, time.Since(t5b))
 			}
