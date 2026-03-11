@@ -32,20 +32,20 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 
 ## Package Structure
 
-IQ is being restructured from a single `cmd/iq` package into isolated domain packages under `internal/`. Each package owns one conceptual domain — its types, helpers, constants, and persistence logic — and exports a clean API consumed by `cmd/iq` and by sibling packages.
+Domain logic lives in isolated packages under `internal/`. Each package owns one conceptual domain — its types, helpers, constants, and persistence logic — and exports a clean API consumed by `cmd/iq` and by sibling packages.
 
-| Package | Domain | Status |
-|---------|--------|--------|
-| `internal/config` | Config CRUD, tier definitions, embed model, migrations | **done** |
-| `internal/search` | DuckDuckGo web search client | **done** |
-| `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | **done** |
-| `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML | **done** |
-| `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier | **done** |
-| `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | **done** |
-| `internal/tools` | Tool registry, parser, executor, signal detection | **done** |
-| `internal/kb` | Knowledge base index, chunking, hybrid search, ingest | **done** |
+| Package | Domain |
+|---------|--------|
+| `internal/config` | Config CRUD, tier definitions, embed model, migrations |
+| `internal/search` | DuckDuckGo web search client |
+| `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files |
+| `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML |
+| `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier |
+| `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) |
+| `internal/tools` | Tool registry, parser, executor, signal detection |
+| `internal/kb` | Knowledge base index, chunking, hybrid search, ingest |
 
-The `cmd/iq` package remains the CLI entry point — it wires commands (cobra), flags, the prompt pipeline, REPL, and orchestration. Domain logic migrates out; orchestration stays.
+The `cmd/iq` package is the CLI entry point — it wires commands (cobra), flags, the prompt pipeline, REPL, and orchestration.
 
 ## Components
 
@@ -69,7 +69,7 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 ### Configuration
 
-Manages `~/.config/iq/config.yaml`. Extracted to `internal/config` as the first domain package in the restructuring. Exports `Config` struct, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `TierOrder`, and `DefaultEmbedModel`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
+Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Config` struct, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `TierOrder`, and `DefaultEmbedModel`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
 
 ```
 fast    sub-2GB models — used for quick inference tasks
@@ -521,7 +521,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/embed/embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `internal/cache/cache.go` | Response cache with FNV64a hashing, TTL expiry, check/write |
 | `internal/tools/tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
-| `internal/tools/tools_test.go` | Tests for calcEval (internal) |
+| `internal/tools/tools_test.go` | Tests for calcEval, ParseCalls, ValidatePath, HasFilePath, routing, registry |
 | `internal/kb/kb.go` | KB index types, chunking strategies, hybrid search, ingest, persistence |
 
 ### CLI package (`cmd/iq/`)
@@ -533,7 +533,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
 | `tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
-| `tools_test.go` | Tests for ParseCalls, ValidatePath, HasFilePath, tool registry via tools package |
 | `kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
 | `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |

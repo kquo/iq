@@ -143,7 +143,7 @@ if [ -n "$TAG_ARG" ] && [ -n "$MSG_ARG" ]; then
     git push
 else
     printf "\n==> To release as ${Gre}$NextTag${Rst}, adjust comment and run below one-liner:\n"
-    printf "\n    TAG=${Gre}$NextTag${Rst} && git add . && git commit -m \"${Gre}<insert comment>${Rst}\" && git tag \$TAG && git push origin \$TAG && git push\n\n"
+    printf "\n    ./build.sh ${Gre}$NextTag${Rst} \"${Gre}<insert comment>${Rst}\"\n\n"
 fi
 
 exit 0
