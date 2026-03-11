@@ -594,3 +594,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.12  | Update arch.md section headers and file paths; minor build.sh adjustment |
 | 0.6.13  | Python sidecar dev hot-reload from `~/.config/iq/`; fix `~` not expanded in PATH for `mlx_lm.server` lookup; move tools tests to `internal/tools` |
 | 0.6.14  | Replace 24-bit timestamp session IDs with 32-bit crypto/rand |
+| 0.6.15  | Add test assertion for tool/signal registry coverage drift |

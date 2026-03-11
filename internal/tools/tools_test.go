@@ -366,3 +366,31 @@ func TestToolRegistryNames(t *testing.T) {
 		}
 	}
 }
+
+// TestSignalRegistryCoverage ensures every tool in Registry is referenced by at
+// least one Signal, and every tool referenced by a Signal exists in Registry.
+func TestSignalRegistryCoverage(t *testing.T) {
+	// Build set of registered tool names.
+	registered := make(map[string]bool, len(Registry))
+	for _, tool := range Registry {
+		registered[tool.Name] = true
+	}
+
+	// Collect all tool names referenced by signals.
+	signaled := make(map[string]bool)
+	for _, s := range Signals {
+		for _, name := range s.Tools {
+			signaled[name] = true
+			if !registered[name] {
+				t.Errorf("signal %q references tool %q which is not in Registry", s.Name, name)
+			}
+		}
+	}
+
+	// Check every registered tool appears in at least one signal.
+	for _, tool := range Registry {
+		if !signaled[tool.Name] {
+			t.Errorf("tool %q is in Registry but not referenced by any Signal", tool.Name)
+		}
+	}
+}
