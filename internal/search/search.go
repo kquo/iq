@@ -25,35 +25,41 @@ const (
 	selectorResultSnippet = ".result__snippet"
 )
 
-// ── Rate limiter ─────────────────────────────────────────────────────────────
+// ── Client ──────────────────────────────────────────────────────────────────
 
 const ddgMinInterval = 1 * time.Second
 
-var (
+// Client carries search configuration and per-instance rate-limit state.
+// It replaces the former package-level braveAPIKey variable and global mutex,
+// eliminating the latent data race on concurrent access.
+type Client struct {
+	BraveAPIKey string
+	Option      *ClientOption
 	rateMu      sync.Mutex
 	lastRequest time.Time
-)
+}
+
+// NewClient returns a Client with the given Brave API key and default options.
+func NewClient(braveAPIKey string) *Client {
+	return &Client{
+		BraveAPIKey: braveAPIKey,
+		Option:      defaultClientOption,
+	}
+}
 
 // throttle enforces a minimum interval between DDG HTTP requests.
-func throttle() {
-	rateMu.Lock()
-	defer rateMu.Unlock()
-	if elapsed := time.Since(lastRequest); elapsed < ddgMinInterval {
+func (c *Client) throttle() {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	if elapsed := time.Since(c.lastRequest); elapsed < ddgMinInterval {
 		time.Sleep(ddgMinInterval - elapsed)
 	}
-	lastRequest = time.Now()
+	c.lastRequest = time.Now()
 }
 
 // ── Brave Search fallback ────────────────────────────────────────────────────
 
 const braveSearchURL = "https://api.search.brave.com/res/v1/web/search"
-
-var braveAPIKey string
-
-// SetBraveAPIKey configures the Brave Search API key used as fallback.
-func SetBraveAPIKey(key string) {
-	braveAPIKey = key
-}
 
 type braveResponse struct {
 	Web struct {
@@ -68,8 +74,8 @@ type braveResult struct {
 }
 
 // searchBrave queries the Brave Search API and returns results.
-func searchBrave(query string, apiKey string, maxResults int, timeout time.Duration) (*[]Result, error) {
-	if apiKey == "" {
+func (c *Client) searchBrave(query string, maxResults int, timeout time.Duration) (*[]Result, error) {
+	if c.BraveAPIKey == "" {
 		return nil, errors.New("brave_api_key not configured")
 	}
 
@@ -83,7 +89,7 @@ func searchBrave(query string, apiKey string, maxResults int, timeout time.Durat
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-Subscription-Token", apiKey)
+	req.Header.Set("X-Subscription-Token", c.BraveAPIKey)
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: timeout}
@@ -277,10 +283,10 @@ func extractLink(href string) string {
 // doRequestWithRetry executes an HTTP request, retrying on 202 responses.
 // DuckDuckGo occasionally returns 202 (throttling/async) — a brief pause and
 // retry is usually sufficient to get a real 200 back.
-func doRequestWithRetry(client *http.Client, req *http.Request, maxRetries int) (*http.Response, error) {
+func (c *Client) doRequestWithRetry(client *http.Client, req *http.Request, maxRetries int) (*http.Response, error) {
 	backoff := 500 * time.Millisecond
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		throttle()
+		c.throttle()
 		// Clone the request so it can be retried (body is nil for GET so this is safe)
 		clone := req.Clone(req.Context())
 		resp, err := client.Do(clone)
@@ -304,7 +310,7 @@ func doRequestWithRetry(client *http.Client, req *http.Request, maxRetries int) 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 // searchDDG performs a DuckDuckGo HTML search (the primary path).
-func searchDDG(param *Param, opt *ClientOption, maxResults int) (*[]Result, error) {
+func (c *Client) searchDDG(param *Param, opt *ClientOption, maxResults int) (*[]Result, error) {
 	allResults := []Result{}
 	pageSize := 10
 	pagesNeeded := (maxResults + pageSize - 1) / pageSize
@@ -340,7 +346,7 @@ func searchDDG(param *Param, opt *ClientOption, maxResults int) (*[]Result, erro
 		req.Header.Add("Cookie", "kl=wt-wt")
 		req.Header.Add("Content-Type", "x-www-form-urlencoded")
 
-		resp, err := doRequestWithRetry(client, req, 3)
+		resp, err := c.doRequestWithRetry(client, req, 3)
 		if err != nil {
 			return nil, err
 		}
@@ -365,14 +371,14 @@ func searchDDG(param *Param, opt *ClientOption, maxResults int) (*[]Result, erro
 }
 
 // SearchWithOption queries DDG, falling back to Brave Search if configured.
-func SearchWithOption(param *Param, opt *ClientOption, maxResults int) (*[]Result, error) {
-	results, ddgErr := searchDDG(param, opt, maxResults)
+func (c *Client) SearchWithOption(param *Param, opt *ClientOption, maxResults int) (*[]Result, error) {
+	results, ddgErr := c.searchDDG(param, opt, maxResults)
 	if ddgErr == nil {
 		return results, nil
 	}
 	// DDG failed — try Brave fallback if configured.
-	if braveAPIKey != "" {
-		braveResults, braveErr := searchBrave(param.Query, braveAPIKey, maxResults, opt.Timeout)
+	if c.BraveAPIKey != "" {
+		braveResults, braveErr := c.searchBrave(param.Query, maxResults, opt.Timeout)
 		if braveErr == nil {
 			return braveResults, nil
 		}
@@ -381,6 +387,25 @@ func SearchWithOption(param *Param, opt *ClientOption, maxResults int) (*[]Resul
 	return nil, ddgErr
 }
 
+// Search queries DDG with default options, falling back to Brave if configured.
+func (c *Client) Search(param *Param, maxResults int) (*[]Result, error) {
+	opt := c.Option
+	if opt == nil {
+		opt = defaultClientOption
+	}
+	return c.SearchWithOption(param, opt, maxResults)
+}
+
+// ── Convenience free functions (backward-compatible, use default client) ─────
+
+var defaultClient = &Client{Option: defaultClientOption}
+
+// Search queries DDG using a default client (no Brave fallback).
 func Search(param *Param, maxResults int) (*[]Result, error) {
-	return SearchWithOption(param, defaultClientOption, maxResults)
+	return defaultClient.Search(param, maxResults)
+}
+
+// SearchWithOption queries DDG with custom options using a default client.
+func SearchWithOption(param *Param, opt *ClientOption, maxResults int) (*[]Result, error) {
+	return defaultClient.SearchWithOption(param, opt, maxResults)
 }

@@ -37,12 +37,12 @@ Domain logic lives in isolated packages under `internal/`. Each package owns one
 | Package | Domain |
 |---------|--------|
 | `internal/config` | Config CRUD, tier definitions, embed model, migrations |
-| `internal/search` | DuckDuckGo web search client |
+| `internal/search` | DuckDuckGo web search client with Brave fallback; `Client` struct for concurrency-safe config |
 | `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files, HTTP transport (Call/Stream/RawCall) |
 | `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML |
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity, cue classifier |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) |
-| `internal/tools` | Tool registry, parser, executor, signal detection |
+| `internal/tools` | Tool registry, parser, executor (timeout + output cap), signal detection, confirm mode |
 | `internal/lm` | HuggingFace API client, model search/enrich, manifest CRUD, model parsing, formatting helpers |
 | `internal/kb` | Knowledge base index, chunking, hybrid search, ingest |
 
@@ -285,6 +285,8 @@ When tools are enabled, inference runs in a non-streaming loop driven entirely b
 
 In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), eight read-only tools are available. All file-access tools enforce path security: only the current working directory and paths listed in `config.yaml` `tool_paths` are allowed. Paths are resolved through symlinks and checked via prefix matching.
 
+**Execution safety** — every tool handler runs inside a goroutine with a 30-second timeout (`ExecuteTimeout`). If the handler does not return in time, the call returns a timeout error instead of blocking the inference loop. Tool output injected into the conversation context is capped at 32 KB (`MaxOutputBytes`); longer output is truncated with a marker. Each tool carries a `ReadOnly` flag (true for all current tools); future write tools will require `--confirm` mode to execute.
+
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `get_time` | *(none)* | Current date, time, timezone, day of week |
@@ -356,13 +358,14 @@ To reset to the embedded version, delete the file and restart: `rm ~/.config/iq/
 
 ### Web Search Library
 
-A web search client in `internal/search`. Primary backend is DuckDuckGo HTML scraping; Brave Search API serves as a JSON-based fallback when `brave_api_key` is configured.
+A `Client` struct in `internal/search` carries configuration (Brave API key) and per-instance rate-limit state, replacing the former package-level variable and eliminating a latent data race on concurrent access. Primary backend is DuckDuckGo HTML scraping; Brave Search API serves as a JSON-based fallback when `brave_api_key` is configured.
 
-- **Rate limiter**: 1-second minimum interval between DDG requests (`sync.Mutex` + `time.Time`)
+- **Client struct**: `search.NewClient(braveAPIKey)` — each client owns its own rate limiter and config; wired via `tools.SetSearchClient()` at prompt startup
+- **Rate limiter**: 1-second minimum interval between DDG requests (per-client `sync.Mutex` + `time.Time`)
 - **Pinned CSS selectors**: `.result`, `.result__title a`, `.result__url`, `.result__snippet` — validated by HTML fixture test
 - **Retry logic**: exponential backoff on DDG 202 (throttling) responses, up to 3 retries
-- **Brave fallback**: if DDG fails and `brave_api_key` is set in config.yaml, queries the Brave Search API (`search.SetBraveAPIKey()` wired at prompt startup)
-- **Public API**: `Search()`, `SearchWithOption()` — signatures unchanged; fallback is transparent
+- **Brave fallback**: if DDG fails and `brave_api_key` is set in config.yaml, queries the Brave Search API
+- **Public API**: `Client.Search()`, `Client.SearchWithOption()` — method-based; free-function wrappers `Search()`, `SearchWithOption()` use a default client for backward compatibility
 
 
 ## File Layout
@@ -641,3 +644,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.2   | Housekeeping: rename search.SearchParam/SearchResult → Param/Result; unify chatMessage/cache.Message into config.Message; broaden MlxVenvPython fallback paths (PIPX_HOME, /opt/homebrew/bin); config.Load resilient to read-only filesystems |
 | 0.7.3   | `--dump-prompt` flag writes assembled message array as JSON before inference; end-to-end orchestration test with mock sidecar (httptest); build.sh v2.2.0: indented output, `-v` tests, green command echo |
 | 0.7.4   | Extract sidecar HTTP transport to `internal/sidecar/transport.go`; extract LM domain logic (~500 lines) to `internal/lm/lm.go`; `cmd/iq/lm.go` becomes thin CLI shim |
+| 0.7.5   | Concurrency-safe `search.Client` struct replaces package-level braveAPIKey; tool execution safety: 30s timeout, 32KB output cap, ReadOnly/confirm gating |

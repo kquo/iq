@@ -30,6 +30,7 @@ type Param struct {
 type Tool struct {
 	Name, Description string
 	Params            []Param
+	ReadOnly          bool // true for all current tools; future write tools set false
 	Handler           func(args map[string]any) (string, error)
 }
 
@@ -136,6 +137,7 @@ func toolGetTime() Tool {
 	return Tool{
 		Name:        "get_time",
 		Description: "Get the current date, time, and timezone",
+		ReadOnly:    true,
 		Handler: func(args map[string]any) (string, error) {
 			now := time.Now()
 			return now.Format("2006-01-02 15:04:05 MST (Monday)"), nil
@@ -147,6 +149,7 @@ func toolReadFile() Tool {
 	return Tool{
 		Name:        "read_file",
 		Description: "Read the contents of a file (max 64KB)",
+		ReadOnly:    true,
 		Params: []Param{
 			{Name: "path", Type: "string", Description: "File path to read", Required: true},
 		},
@@ -183,6 +186,7 @@ func toolListDir() Tool {
 	return Tool{
 		Name:        "list_dir",
 		Description: "List the entries in a directory",
+		ReadOnly:    true,
 		Params: []Param{
 			{Name: "path", Type: "string", Description: "Directory path to list", Required: true},
 		},
@@ -217,6 +221,7 @@ func toolFileInfo() Tool {
 	return Tool{
 		Name:        "file_info",
 		Description: "Get file metadata: size, modification time, permissions",
+		ReadOnly:    true,
 		Params: []Param{
 			{Name: "path", Type: "string", Description: "File path", Required: true},
 		},
@@ -249,6 +254,7 @@ func toolCalc() Tool {
 	return Tool{
 		Name:        "calc",
 		Description: "Evaluate a math expression (supports +, -, *, /, %, parentheses, decimals)",
+		ReadOnly:    true,
 		Params: []Param{
 			{Name: "expression", Type: "string", Description: "Math expression to evaluate", Required: true},
 		},
@@ -273,6 +279,7 @@ func toolSearchText() Tool {
 	return Tool{
 		Name:        "search_text",
 		Description: "Search for a regex pattern in files under a directory",
+		ReadOnly:    true,
 		Params: []Param{
 			{Name: "pattern", Type: "string", Description: "Regex pattern to search for", Required: true},
 			{Name: "path", Type: "string", Description: "Directory or file to search (default: current directory)", Required: false},
@@ -372,6 +379,7 @@ func toolCountLines() Tool {
 	return Tool{
 		Name:        "count_lines",
 		Description: "Count lines in a file",
+		ReadOnly:    true,
 		Params: []Param{
 			{Name: "path", Type: "string", Description: "File path to count lines in", Required: true},
 		},
@@ -401,6 +409,7 @@ func toolWebSearch() Tool {
 	return Tool{
 		Name:        "web_search",
 		Description: "Search the web for current information using DuckDuckGo",
+		ReadOnly:    true,
 		Params: []Param{
 			{Name: "query", Type: "string", Description: "Search query", Required: true},
 			{Name: "count", Type: "number", Description: "Max results to return (default: 3)", Required: false},
@@ -418,7 +427,11 @@ func toolWebSearch() Tool {
 			if err != nil {
 				return "", err
 			}
-			results, err := search.Search(param, maxResults)
+			sc := searchClient
+			if sc == nil {
+				sc = search.NewClient("")
+			}
+			results, err := sc.Search(param, maxResults)
 			if err != nil {
 				return "", fmt.Errorf("web search failed: %w", err)
 			}
@@ -503,19 +516,63 @@ func BuildRoutingPrompt() string {
 	return b.String()
 }
 
+// ── Search client ────────────────────────────────────────────────────────────
+
+var searchClient *search.Client
+
+// SetSearchClient configures the search client used by the web_search tool.
+// Called once at prompt startup with the Brave API key from config.
+func SetSearchClient(c *search.Client) { searchClient = c }
+
+// ── Confirm mode ────────────────────────────────────────────────────────────
+
+var confirmMode bool
+
+// SetConfirmMode enables or disables confirmation for non-read-only tools.
+func SetConfirmMode(v bool) { confirmMode = v }
+
 // ── Executor ─────────────────────────────────────────────────────────────────
 
-// Execute dispatches a tool call to its handler.
+const (
+	// ExecuteTimeout is the maximum time a tool handler may run.
+	ExecuteTimeout = 30 * time.Second
+	// MaxOutputBytes caps tool output injected into the conversation context.
+	MaxOutputBytes = 32 * 1024
+)
+
+// Execute dispatches a tool call to its handler with timeout and output limits.
 func Execute(call Call) Result {
 	t := FindTool(call.Name)
 	if t == nil {
 		return Result{Call: call, Error: fmt.Sprintf("unknown tool: %s", call.Name)}
 	}
-	output, err := t.Handler(call.Args)
-	if err != nil {
-		return Result{Call: call, Error: err.Error()}
+	if !t.ReadOnly && !confirmMode {
+		return Result{Call: call, Error: fmt.Sprintf("tool %q requires --confirm (write operation)", call.Name)}
 	}
-	return Result{Call: call, Output: output}
+
+	type handlerResult struct {
+		output string
+		err    error
+	}
+	ch := make(chan handlerResult, 1)
+	go func() {
+		output, err := t.Handler(call.Args)
+		ch <- handlerResult{output, err}
+	}()
+
+	select {
+	case hr := <-ch:
+		if hr.err != nil {
+			return Result{Call: call, Error: hr.err.Error()}
+		}
+		output := hr.output
+		if len(output) > MaxOutputBytes {
+			output = output[:MaxOutputBytes] + "\n... (output truncated)"
+		}
+		return Result{Call: call, Output: output}
+	case <-time.After(ExecuteTimeout):
+		return Result{Call: call, Error: fmt.Sprintf("tool %q timed out after %s", call.Name, ExecuteTimeout)}
+	}
 }
 
 // FormatResult formats a tool result for injection into the conversation.

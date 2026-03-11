@@ -569,10 +569,8 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	inferCfg, _ := config.Load(nil)
 	ip := config.ResolveInferParams(inferCfg, route.Tier)
 
-	// Wire Brave Search fallback key if configured.
-	if inferCfg.BraveAPIKey != "" {
-		search.SetBraveAPIKey(inferCfg.BraveAPIKey)
-	}
+	// Wire search client with Brave fallback key if configured.
+	tools.SetSearchClient(search.NewClient(inferCfg.BraveAPIKey))
 
 	// ── Step 3: KB RETRIEVE ──
 	var kbContext string
