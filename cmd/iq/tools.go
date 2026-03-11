@@ -15,6 +15,7 @@ import (
 
 	"github.com/queone/utl"
 	"iq/internal/config"
+	"iq/internal/search"
 )
 
 // ── Tool types ───────────────────────────────────────────────────────────────
@@ -418,11 +419,11 @@ func toolWebSearch() tool {
 			if n, ok := args["count"].(float64); ok && n > 0 {
 				maxResults = min(int(n), 20)
 			}
-			param, err := NewSearchParam(query)
+			param, err := search.NewSearchParam(query)
 			if err != nil {
 				return "", err
 			}
-			results, err := Search(param, maxResults)
+			results, err := search.Search(param, maxResults)
 			if err != nil {
 				return "", fmt.Errorf("web search failed: %w", err)
 			}

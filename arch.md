@@ -37,7 +37,7 @@ IQ is being restructured from a single `cmd/iq` package into isolated domain pac
 | Package | Domain | Status |
 |---------|--------|--------|
 | `internal/config` | Config CRUD, tier definitions, embed model, migrations | **done** |
-| `internal/search` | DuckDuckGo web search client | planned |
+| `internal/search` | DuckDuckGo web search client | **done** |
 | `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | planned |
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity | planned |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | planned |
@@ -315,9 +315,9 @@ pipx install mlx-lm
 pipx inject mlx-lm mlx-embedding-models
 ```
 
-### Web Search Library (`search.go`)
+### Web Search Library (`internal/search`)
 
-A DuckDuckGo client library is included as infrastructure. It provides `Search()` and `SearchWithOption()` functions for HTML scraping with retry logic for 202 throttling responses. Currently available for future tool integration but not wired into any user-facing command.
+A DuckDuckGo client library in `internal/search`. It provides `Search()` and `SearchWithOption()` functions for HTML scraping with retry logic for 202 throttling responses. Used by the `web_search` tool.
 
 
 ## File Layout
@@ -511,6 +511,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | File | Purpose |
 |------|---------|
 | `internal/config/config.go` | Config struct, Load/Save, tier helpers, embed model, legacy migrations |
+| `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 
 ### CLI package (`cmd/iq/`)
 
@@ -528,8 +529,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
-| `search.go` | DuckDuckGo HTML search client, used by `web_search` tool |
-| `search_test.go` | Tests for DuckDuckGo search client |
 | `infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 | `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
@@ -572,3 +571,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.2   | Tool use benchmark (`iq perf bench --type tool`): 14 prompts across 7 tools, measures routing accuracy and execution success; `-v` flag for per-prompt debug detail |
 | 0.6.3   | Web search tool: DuckDuckGo integration via `web_search` tool and embed signal; short-circuit skips routing grammar for web queries; synthesis prompt with date injection; toolMinScore 0.66→0.60 |
 | 0.6.4   | Begin `internal/` restructuring — extract `config` as first domain package; planned: search, sidecar, embed, cache, tools, kb |
+| 0.6.5   | Extract `search` to `internal/search` domain package |
