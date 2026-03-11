@@ -10,6 +10,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ── Shared types ────────────────────────────────────────────────────────────
+
+// Message is a role+content pair used across inference, session, and cache.
+type Message struct {
+	Role    string `json:"role" yaml:"role"`
+	Content string `json:"content" yaml:"content"`
+}
+
 // ── Inference parameters ─────────────────────────────────────────────────────
 
 // Hardcoded defaults when nothing is configured.
@@ -159,10 +167,12 @@ func defaultConfig() *Config {
 
 // Load reads and returns the config, performing legacy migrations as needed.
 // diskUsage is optional — only needed for migrating the old 4-tier format.
+// On read-only filesystems, returns in-memory defaults without error.
 func Load(diskUsage DiskUsageFunc) (*Config, error) {
 	path, err := Path()
 	if err != nil {
-		return nil, err
+		// Cannot resolve config dir (e.g. read-only FS) — return defaults.
+		return defaultConfig(), nil
 	}
 	cfg := &Config{Tiers: emptyTiers()}
 	data, err := os.ReadFile(path)

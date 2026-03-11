@@ -710,7 +710,7 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 
 	t0 := time.Now()
 	for pi, prompt := range corpus.InferPrompts {
-		messages := []chatMessage{
+		messages := []config.Message{
 			{Role: "user", Content: prompt.Text},
 		}
 		fmt.Fprintf(os.Stderr, "    %d/%d  %-25s ...",
@@ -788,7 +788,7 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 
 	t0 := time.Now()
 	for pi, tp := range corpus.ToolPrompts {
-		messages := []chatMessage{
+		messages := []config.Message{
 			{Role: "system", Content: sysprompt},
 			{Role: "user", Content: tp.Text},
 		}

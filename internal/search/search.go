@@ -68,7 +68,7 @@ type braveResult struct {
 }
 
 // searchBrave queries the Brave Search API and returns results.
-func searchBrave(query string, apiKey string, maxResults int, timeout time.Duration) (*[]SearchResult, error) {
+func searchBrave(query string, apiKey string, maxResults int, timeout time.Duration) (*[]Result, error) {
 	if apiKey == "" {
 		return nil, errors.New("brave_api_key not configured")
 	}
@@ -102,9 +102,9 @@ func searchBrave(query string, apiKey string, maxResults int, timeout time.Durat
 		return nil, fmt.Errorf("brave search JSON decode failed: %w", err)
 	}
 
-	results := make([]SearchResult, 0, len(br.Web.Results))
+	results := make([]Result, 0, len(br.Web.Results))
 	for _, r := range br.Web.Results {
-		results = append(results, SearchResult{
+		results = append(results, Result{
 			Title:   r.Title,
 			Link:    r.URL,
 			Snippet: r.Description,
@@ -115,7 +115,7 @@ func searchBrave(query string, apiKey string, maxResults int, timeout time.Durat
 
 // ── DDG types and helpers ────────────────────────────────────────────────────
 
-type SearchParam struct {
+type Param struct {
 	Query string
 }
 
@@ -150,18 +150,18 @@ func NewClientOption(referrer, userAgent string, timeout time.Duration) *ClientO
 	}
 }
 
-func NewSearchParam(query string) (*SearchParam, error) {
+func NewParam(query string) (*Param, error) {
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil, errors.New("search query is empty")
 	}
 
-	return &SearchParam{
+	return &Param{
 		Query: q,
 	}, nil
 }
 
-func (param *SearchParam) buildURL() (*url.URL, error) {
+func (param *Param) buildURL() (*url.URL, error) {
 	u := &url.URL{
 		Scheme: "https",
 		Host:   "html.duckduckgo.com",
@@ -179,7 +179,7 @@ func (param *SearchParam) buildURL() (*url.URL, error) {
 	return u, nil
 }
 
-func buildRequest(param *SearchParam, opt *ClientOption) (*http.Request, error) {
+func buildRequest(param *Param, opt *ClientOption) (*http.Request, error) {
 	u, err := param.buildURL()
 	if err != nil {
 		return nil, err
@@ -198,21 +198,21 @@ func buildRequest(param *SearchParam, opt *ClientOption) (*http.Request, error) 
 	return req, nil
 }
 
-type SearchResult struct {
+type Result struct {
 	Title   string `json:"title"`
 	Link    string `json:"link"`
 	Snippet string `json:"snippet"`
 }
 
-func parse(r io.Reader) (*[]SearchResult, error) {
+func parse(r io.Reader) (*[]Result, error) {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse HTML document: %w", err)
 	}
 
 	var (
-		result []SearchResult
-		item   SearchResult
+		result []Result
+		item   Result
 	)
 	doc.Find(selectorResult).Each(func(i int, s *goquery.Selection) {
 		item.Title = s.Find(selectorResultTitle).Text()
@@ -304,8 +304,8 @@ func doRequestWithRetry(client *http.Client, req *http.Request, maxRetries int) 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 // searchDDG performs a DuckDuckGo HTML search (the primary path).
-func searchDDG(param *SearchParam, opt *ClientOption, maxResults int) (*[]SearchResult, error) {
-	allResults := []SearchResult{}
+func searchDDG(param *Param, opt *ClientOption, maxResults int) (*[]Result, error) {
+	allResults := []Result{}
 	pageSize := 10
 	pagesNeeded := (maxResults + pageSize - 1) / pageSize
 	if maxResults == 0 {
@@ -319,7 +319,7 @@ func searchDDG(param *SearchParam, opt *ClientOption, maxResults int) (*[]Search
 	for page := 0; page < pagesNeeded; page++ {
 		offset := page * pageSize
 
-		paramWithOffset := &SearchParam{Query: param.Query}
+		paramWithOffset := &Param{Query: param.Query}
 
 		u, err := paramWithOffset.buildURL()
 		if err != nil {
@@ -365,7 +365,7 @@ func searchDDG(param *SearchParam, opt *ClientOption, maxResults int) (*[]Search
 }
 
 // SearchWithOption queries DDG, falling back to Brave Search if configured.
-func SearchWithOption(param *SearchParam, opt *ClientOption, maxResults int) (*[]SearchResult, error) {
+func SearchWithOption(param *Param, opt *ClientOption, maxResults int) (*[]Result, error) {
 	results, ddgErr := searchDDG(param, opt, maxResults)
 	if ddgErr == nil {
 		return results, nil
@@ -381,6 +381,6 @@ func SearchWithOption(param *SearchParam, opt *ClientOption, maxResults int) (*[
 	return nil, ddgErr
 }
 
-func Search(param *SearchParam, maxResults int) (*[]SearchResult, error) {
+func Search(param *Param, maxResults int) (*[]Result, error) {
 	return SearchWithOption(param, defaultClientOption, maxResults)
 }

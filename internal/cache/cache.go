@@ -34,11 +34,8 @@ type HitResult struct {
 	Elapsed time.Duration
 }
 
-// Message is a minimal role+content pair used for cache key computation.
-type Message struct {
-	Role    string
-	Content string
-}
+// Message is an alias for config.Message for cache key computation.
+type Message = config.Message
 
 func responsePath() (string, error) {
 	dir, err := config.Dir()

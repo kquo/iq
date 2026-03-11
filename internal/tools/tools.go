@@ -414,7 +414,7 @@ func toolWebSearch() Tool {
 			if n, ok := args["count"].(float64); ok && n > 0 {
 				maxResults = min(int(n), 20)
 			}
-			param, err := search.NewSearchParam(query)
+			param, err := search.NewParam(query)
 			if err != nil {
 				return "", err
 			}

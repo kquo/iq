@@ -141,11 +141,11 @@ func newProbeCmd() *cobra.Command {
 					sc.Tier, sc.Model, sc.Port, cueTag)))
 
 			// Build messages.
-			var messages []chatMessage
+			var messages []config.Message
 			if systemPrompt != "" {
-				messages = append(messages, chatMessage{Role: "system", Content: systemPrompt})
+				messages = append(messages, config.Message{Role: "system", Content: systemPrompt})
 			}
-			messages = append(messages, chatMessage{Role: "user", Content: message})
+			messages = append(messages, config.Message{Role: "user", Content: message})
 
 			// Resolve inference parameters for this tier.
 			probeCfg, _ := config.Load(nil)

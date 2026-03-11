@@ -48,12 +48,20 @@ func SidecarAlive() bool {
 func MlxVenvPython() (string, error) {
 	serverPath, err := exec.LookPath("mlx_lm.server")
 	if err != nil {
-		// exec.LookPath does not expand ~ in PATH entries; check manually.
+		// exec.LookPath does not expand ~ in PATH entries; check well-known locations.
+		var candidates []string
+		if pipxHome := os.Getenv("PIPX_HOME"); pipxHome != "" {
+			candidates = append(candidates, filepath.Join(pipxHome, "venvs", "mlx-lm", "bin", "mlx_lm.server"))
+		}
 		if home, hErr := os.UserHomeDir(); hErr == nil {
-			candidate := filepath.Join(home, ".local", "bin", "mlx_lm.server")
-			if info, sErr := os.Stat(candidate); sErr == nil && !info.IsDir() {
-				serverPath = candidate
+			candidates = append(candidates, filepath.Join(home, ".local", "bin", "mlx_lm.server"))
+		}
+		candidates = append(candidates, "/opt/homebrew/bin/mlx_lm.server")
+		for _, c := range candidates {
+			if info, sErr := os.Stat(c); sErr == nil && !info.IsDir() {
+				serverPath = c
 				err = nil
+				break
 			}
 		}
 		if err != nil {

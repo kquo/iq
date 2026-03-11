@@ -29,18 +29,13 @@ import (
 
 // ── OpenAI-compatible types ───────────────────────────────────────────────────
 
-type chatMessage struct {
-	Role    string `json:"role" yaml:"role"`
-	Content string `json:"content" yaml:"content"`
-}
-
 type chatRequest struct {
-	Messages          []chatMessage `json:"messages"`
-	Stream            bool          `json:"stream"`
-	MaxTokens         int           `json:"max_tokens,omitempty"`
-	RepetitionPenalty float64       `json:"repetition_penalty,omitempty"`
-	Temperature       float64       `json:"temperature,omitempty"`
-	RoutingGrammar    *routeGrammar `json:"routing_grammar,omitempty"`
+	Messages          []config.Message `json:"messages"`
+	Stream            bool             `json:"stream"`
+	MaxTokens         int              `json:"max_tokens,omitempty"`
+	RepetitionPenalty float64          `json:"repetition_penalty,omitempty"`
+	Temperature       float64          `json:"temperature,omitempty"`
+	RoutingGrammar    *routeGrammar    `json:"routing_grammar,omitempty"`
 }
 
 type routeGrammar struct {
@@ -59,14 +54,14 @@ type chatStreamChunk struct {
 // ── Session ───────────────────────────────────────────────────────────────────
 
 type session struct {
-	ID          string        `yaml:"id"`
-	Name        string        `yaml:"name"`
-	Description string        `yaml:"description"`
-	Cue         string        `yaml:"cue"`
-	Tier        string        `yaml:"tier"`
-	Created     string        `yaml:"created"`
-	Updated     string        `yaml:"updated"`
-	Messages    []chatMessage `yaml:"messages"`
+	ID          string           `yaml:"id"`
+	Name        string           `yaml:"name"`
+	Description string           `yaml:"description"`
+	Cue         string           `yaml:"cue"`
+	Tier        string           `yaml:"tier"`
+	Created     string           `yaml:"created"`
+	Updated     string           `yaml:"updated"`
+	Messages    []config.Message `yaml:"messages"`
 }
 
 func sessionsDir() (string, error) {
@@ -383,7 +378,7 @@ func printStep3KB(results []kb.Result, model string, elapsed time.Duration) {
 }
 
 // printStep4Assemble prints the full message array that will be sent.
-func printStep4Assemble(messages []chatMessage) {
+func printStep4Assemble(messages []config.Message) {
 	traceStep("4 ", "ASSEMBLE")
 	traceField("task", "Combine system prompt, session history, and user message into message array")
 	for _, m := range messages {
@@ -478,18 +473,18 @@ func doSidecarCall(port int, req chatRequest) (string, error) {
 	return stripThinkBlocks(content), nil
 }
 
-func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int, ip config.ResolvedParams) (string, error) {
+func callSidecar(port int, messages []config.Message, stream bool, maxTokens int, ip config.ResolvedParams) (string, error) {
 	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature}
 	return doSidecarCall(port, req)
 }
 
 // callSidecarWithGrammar sends an inference request with an optional routing grammar.
-func callSidecarWithGrammar(port int, messages []chatMessage, maxTokens int, grammar *routeGrammar, ip config.ResolvedParams) (string, error) {
+func callSidecarWithGrammar(port int, messages []config.Message, maxTokens int, grammar *routeGrammar, ip config.ResolvedParams) (string, error) {
 	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature, RoutingGrammar: grammar}
 	return doSidecarCall(port, req)
 }
 
-func streamSidecar(port int, messages []chatMessage, ip config.ResolvedParams) (string, error) {
+func streamSidecar(port int, messages []config.Message, ip config.ResolvedParams) (string, error) {
 	req := chatRequest{Messages: messages, Stream: true, MaxTokens: ip.MaxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -576,7 +571,7 @@ Return only valid JSON, nothing else.`
 		}
 		nameCfg, _ := config.Load(nil)
 		nameIP := config.ResolveInferParams(nameCfg, "fast")
-		response, err := callSidecar(sidecar.Port, []chatMessage{
+		response, err := callSidecar(sidecar.Port, []config.Message{
 			{Role: "system", Content: systemMsg},
 			{Role: "user", Content: excerpt.String()},
 		}, false, 60, nameIP)
@@ -754,14 +749,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 	// ── Step 4: ASSEMBLE ──
 
-	var messages []chatMessage
+	var messages []config.Message
 	if sess != nil && len(sess.Messages) > 0 {
 		messages = append(messages, sess.Messages...)
 		// If tools active, inject tool prompt into existing system message.
 		if useTools && len(messages) > 0 && messages[0].Role == "system" {
 			messages[0].Content += tools.BuildRoutingPrompt()
 		}
-		messages = append(messages, chatMessage{Role: "user", Content: input})
+		messages = append(messages, config.Message{Role: "user", Content: input})
 	} else if kbContext != "" {
 		// Use the cue's system prompt (or a generic fallback) and inject KB
 		// context as a prefix in the user message, immediately before the
@@ -775,8 +770,8 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			sysprompt += tools.BuildRoutingPrompt()
 		}
 		userContent := kbContext + "\n\n" + input
-		messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
-		messages = append(messages, chatMessage{Role: "user", Content: userContent})
+		messages = append(messages, config.Message{Role: "system", Content: sysprompt})
+		messages = append(messages, config.Message{Role: "user", Content: userContent})
 	} else {
 		sysprompt := route.SystemPrompt
 		if useTools {
@@ -786,9 +781,9 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			sysprompt += tools.BuildRoutingPrompt()
 		}
 		if sysprompt != "" {
-			messages = append(messages, chatMessage{Role: "system", Content: sysprompt})
+			messages = append(messages, config.Message{Role: "system", Content: sysprompt})
 		}
-		messages = append(messages, chatMessage{Role: "user", Content: input})
+		messages = append(messages, config.Message{Role: "user", Content: input})
 	}
 	if trace {
 		printStep4Assemble(messages)
@@ -801,11 +796,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	var response string
 
 	if useCache {
-		cm := make([]cache.Message, len(messages))
-		for i, m := range messages {
-			cm[i] = cache.Message{Role: m.Role, Content: m.Content}
-		}
-		cacheK = cache.Key(cm, route.ModelID)
+		cacheK = cache.Key(messages, route.ModelID)
 		resp, hitInfo := cache.Check(cacheK)
 		if trace {
 			printStep4bCacheCheck(hitInfo)
@@ -861,7 +852,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				if r.Error == "" && r.Output != "" {
 					// Replace the cue system prompt with a neutral web-search
 					// synthesis prompt so the model doesn't hedge or role-play.
-					synthMessages := []chatMessage{
+					synthMessages := []config.Message{
 						{Role: "system", Content: webSearchSynthPrompt()},
 						{Role: "user", Content: input},
 						{Role: "assistant", Content: "Let me search for that."},
@@ -945,8 +936,8 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						toolDone = true
 					} else {
 						// Tool failed or returned empty — let the model explain.
-						messages = append(messages, chatMessage{Role: "assistant", Content: response})
-						messages = append(messages, chatMessage{
+						messages = append(messages, config.Message{Role: "assistant", Content: response})
+						messages = append(messages, config.Message{
 							Role:    "user",
 							Content: "Tool result below. Explain the result or error briefly.\n\n" + tools.FormatResult(r),
 						})
@@ -1006,12 +997,12 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 								response = r.Output
 								toolDone = true
 							} else {
-								messages = append(messages, chatMessage{Role: "assistant", Content: "Let me check that for you."})
+								messages = append(messages, config.Message{Role: "assistant", Content: "Let me check that for you."})
 								synthPrompt := "Tool result below. Explain the result or error briefly.\n\n"
 								if needsSynth && r.Error == "" {
 									synthPrompt = webSearchSynthPrompt()
 								}
-								messages = append(messages, chatMessage{
+								messages = append(messages, config.Message{
 									Role:    "user",
 									Content: synthPrompt + tools.FormatResult(r),
 								})
@@ -1065,7 +1056,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					}
 
 					// Append assistant message (raw, with tool_call blocks).
-					messages = append(messages, chatMessage{Role: "assistant", Content: response})
+					messages = append(messages, config.Message{Role: "assistant", Content: response})
 
 					// Execute each tool and collect results.
 					var resultBlock strings.Builder
@@ -1104,7 +1095,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					if hasWebSearch && allOK {
 						synthPrompt = webSearchSynthPrompt()
 					}
-					messages = append(messages, chatMessage{
+					messages = append(messages, config.Message{
 						Role:    "user",
 						Content: synthPrompt + strings.TrimSpace(resultBlock.String()),
 					})
@@ -1179,12 +1170,12 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				sess.ID = opts.sessionID
 			}
 			if route.SystemPrompt != "" {
-				sess.Messages = append(sess.Messages, chatMessage{Role: "system", Content: route.SystemPrompt})
+				sess.Messages = append(sess.Messages, config.Message{Role: "system", Content: route.SystemPrompt})
 			}
 		}
 		sess.Messages = append(sess.Messages,
-			chatMessage{Role: "user", Content: input},
-			chatMessage{Role: "assistant", Content: response},
+			config.Message{Role: "user", Content: input},
+			config.Message{Role: "assistant", Content: response},
 		)
 		if err := saveSession(sess); err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: failed to save session: "+err.Error()))

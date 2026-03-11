@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var param = &SearchParam{
+var param = &Param{
 	Query: "golang",
 }
 
@@ -83,7 +83,7 @@ func TestBraveResponseParse(t *testing.T) {
 func TestSearch(t *testing.T) {
 	var (
 		err     error
-		results *[]SearchResult
+		results *[]Result
 		backoff = 500 * time.Millisecond
 		retries = 3
 	)

@@ -69,7 +69,7 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 ### Configuration
 
-Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Config`, `TierConfig`, `InferParams`, `ResolvedParams` structs, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `ResolveInferParams()`, `TierOrder`, and `DefaultEmbedModel`. Tiers are **pools** — each tier holds a list of model IDs and optional inference parameter overrides.
+Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Message`, `Config`, `TierConfig`, `InferParams`, `ResolvedParams` structs, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `ResolveInferParams()`, `TierOrder`, and `DefaultEmbedModel`. `Message` is the shared role+content type used across inference, session persistence, and cache key computation. `Load()` returns in-memory defaults on read-only filesystems. Tiers are **pools** — each tier holds a list of model IDs and optional inference parameter overrides.
 
 ```
 fast    sub-2GB models — used for quick inference tasks
@@ -633,3 +633,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.15  | Add test assertion for tool/signal registry coverage drift |
 | 0.7.0   | Configurable inference parameters: per-tier and global `repetition_penalty`, `temperature`, `max_tokens`; structured `TierConfig` with auto-migration from flat-list format; temperature support in `infer_server.py` |
 | 0.7.1   | Web search hardening: rate limiter, pinned CSS selectors with fixture test, Brave Search API fallback; config.yaml populates all defaults on first creation |
+| 0.7.2   | Housekeeping: rename search.SearchParam/SearchResult → Param/Result; unify chatMessage/cache.Message into config.Message; broaden MlxVenvPython fallback paths (PIPX_HOME, /opt/homebrew/bin); config.Load resilient to read-only filesystems |
