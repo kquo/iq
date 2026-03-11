@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 	"iq/internal/config"
+	"iq/internal/sidecar"
 )
 
 //go:embed bench_corpus.yaml
@@ -325,8 +326,8 @@ type benchSidecar struct {
 // released with releaseBenchSidecar when done.
 func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 	// Check if the live sidecar already serves the requested model.
-	state, err := readState(embedSlugConst)
-	if err == nil && state != nil && pidAlive(state.PID) && state.Model == modelID {
+	state, err := sidecar.ReadState(embedSlugConst)
+	if err == nil && state != nil && sidecar.PidAlive(state.PID) && state.Model == modelID {
 		return &benchSidecar{
 			ModelID: modelID,
 			Port:    state.Port,
@@ -338,7 +339,7 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 	// Spin up a temporary sidecar on a dynamic port.
 	fmt.Fprintf(os.Stderr, "  starting    temporary embed sidecar for %s ...\n", modelID)
 
-	port, err := nextAvailablePort()
+	port, err := sidecar.NextAvailablePort()
 	if err != nil {
 		return nil, fmt.Errorf("no available port for bench sidecar: %w", err)
 	}
@@ -400,13 +401,13 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 				}, nil
 			}
 		}
-		if !pidAlive(pid) {
+		if !sidecar.PidAlive(pid) {
 			fmt.Fprintf(os.Stderr, " %s\n", utl.Gra("failed"))
-			printLastLogLines(benchLogPath, 15)
+			sidecar.PrintLastLogLines(benchLogPath, 15)
 			return nil, fmt.Errorf("bench sidecar process exited unexpectedly (see log above)")
 		}
 		fmt.Fprint(os.Stderr, ".")
-		time.Sleep(sidecarPollInterval)
+		time.Sleep(sidecar.PollInterval)
 	}
 	// Timed out — kill it and dump log for troubleshooting.
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
@@ -414,7 +415,7 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 		_ = proc.Kill()
 	}
 	fmt.Fprintf(os.Stderr, " %s\n", utl.Gra("timeout"))
-	printLastLogLines(benchLogPath, 15)
+	sidecar.PrintLastLogLines(benchLogPath, 15)
 	return nil, fmt.Errorf("bench sidecar did not become ready within %s (see log above)", embedReadyTimeout)
 }
 
@@ -687,8 +688,8 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 
 // runInferBench sends prompts to a model's sidecar and measures latency and throughput.
 func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
-	state, err := readState(modelID)
-	if err != nil || state == nil || !pidAlive(state.PID) {
+	state, err := sidecar.ReadState(modelID)
+	if err != nil || state == nil || !sidecar.PidAlive(state.PID) {
 		return BenchResult{}, fmt.Errorf("model %q sidecar not running — run: iq start %q", modelID, modelID)
 	}
 
@@ -758,8 +759,8 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 // runToolBench sends each tool_prompt through the routing grammar pipeline
 // and checks that the model routes to the expected tool and that execution succeeds.
 func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResult, error) {
-	state, err := readState(modelID)
-	if err != nil || state == nil || !pidAlive(state.PID) {
+	state, err := sidecar.ReadState(modelID)
+	if err != nil || state == nil || !sidecar.PidAlive(state.PID) {
 		return BenchResult{}, fmt.Errorf("model %q sidecar not running — run: iq start %q", modelID, modelID)
 	}
 

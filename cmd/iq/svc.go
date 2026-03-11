@@ -1,453 +1,39 @@
 package main
 
 import (
-	"bufio"
-	_ "embed"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
-	"time"
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"iq/internal/config"
+	"iq/internal/sidecar"
 )
 
-//go:embed infer_server.py
-var inferServerPy string
-
-// ── Sidecar constants ─────────────────────────────────────────────────────────
-
-const sidecarReadyTimeout = 120 * time.Second
-const sidecarPollInterval = 500 * time.Millisecond
-const portBase = 27001
-
-// ── Model slug ────────────────────────────────────────────────────────────────
-
-// modelSlug converts a model ID to a filesystem-safe name for state/log files.
-// e.g. "mlx-community/SmolLM2-135M-Instruct-8bit" → "mlx-community--SmolLM2-135M-Instruct-8bit"
-func modelSlug(id string) string {
-	return strings.ReplaceAll(id, "/", "--")
+// pickSidecar wraps sidecar.PickSidecar with the local diskUsage resolver.
+func pickSidecar(tier string, preferSmallest bool) (*sidecar.State, error) {
+	return sidecar.PickSidecar(tier, preferSmallest, func(modelID string) int64 {
+		return diskUsage(hfCacheDir(modelID))
+	})
 }
 
-// ── State file ────────────────────────────────────────────────────────────────
-
-type svcState struct {
-	Tier    string `json:"tier"`
-	Model   string `json:"model"`
-	PID     int    `json:"pid"`
-	Port    int    `json:"port"`
-	Started string `json:"started"`
-}
-
-func runDir() (string, error) {
-	dir, err := config.Dir()
-	if err != nil {
-		return "", err
-	}
-	d := filepath.Join(dir, "run")
-	return d, os.MkdirAll(d, 0755)
-}
-
-func statePath(modelID string) (string, error) {
-	d, err := runDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, modelSlug(modelID)+".json"), nil
-}
-
-func logPath(modelID string) (string, error) {
-	d, err := runDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, modelSlug(modelID)+".log"), nil
-}
-
-func readState(modelID string) (*svcState, error) {
-	path, err := statePath(modelID)
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var s svcState
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, err
-	}
-	return &s, nil
-}
-
-func writeState(s *svcState) error {
-	path, err := statePath(s.Model)
-	if err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
-}
-
-// writeStateAs writes a svcState to the state file keyed by slug rather than
-// s.Model. Used for embed sidecars whose Model field holds an HF model ID that
-// would produce the wrong filename via modelSlug().
-func writeStateAs(slug string, s *svcState) error {
-	path, err := statePath(slug)
-	if err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
-}
-
-func removeState(modelID string) error {
-	path, err := statePath(modelID)
-	if err != nil {
-		return err
-	}
-	return os.Remove(path)
-}
-
-// allStates returns all state files in the run directory.
-func allStates() ([]*svcState, error) {
-	d, err := runDir()
-	if err != nil {
-		return nil, err
-	}
-	entries, err := os.ReadDir(d)
-	if err != nil {
-		return nil, err
-	}
-	var states []*svcState
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(d, e.Name()))
-		if err != nil {
-			continue
-		}
-		var s svcState
-		if err := json.Unmarshal(data, &s); err != nil {
-			continue
-		}
-		states = append(states, &s)
-	}
-	return states, nil
-}
-
-// allLiveStates returns only states where the process is still alive.
-func allLiveStates() ([]*svcState, error) {
-	all, err := allStates()
-	if err != nil {
-		return nil, err
-	}
-	var live []*svcState
-	for _, s := range all {
-		if pidAlive(s.PID) {
-			live = append(live, s)
-		}
-	}
-	return live, nil
-}
-
-// ── Port allocation ───────────────────────────────────────────────────────────
-
-// nextAvailablePort returns the lowest port >= portBase not already used by a
-// live sidecar state file.
-func nextAvailablePort() (int, error) {
-	states, err := allStates()
-	if err != nil {
-		return 0, err
-	}
-	used := map[int]bool{}
-	for _, s := range states {
-		if pidAlive(s.PID) {
-			used[s.Port] = true
-		}
-	}
-	for p := portBase; p < portBase+100; p++ {
-		if !used[p] {
-			return p, nil
-		}
-	}
-	return 0, fmt.Errorf("no available port in range %d–%d", portBase, portBase+99)
-}
-
-// ── Pool dispatcher ───────────────────────────────────────────────────────────
-
-// pickSidecar returns a live sidecar for the given tier.
-// If preferSmallest is true, it prefers the model with the smallest disk footprint
-// (used for classification to minimise latency).
-func pickSidecar(tier string, preferSmallest bool) (*svcState, error) {
-	live, err := allLiveStates()
-	if err != nil {
-		return nil, err
-	}
-	var candidates []*svcState
-	for _, s := range live {
-		if s.Tier == tier {
-			candidates = append(candidates, s)
-		}
-	}
-	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no running %s-tier sidecar — run 'iq start %s'", tier, tier)
-	}
-	if preferSmallest && len(candidates) > 1 {
-		best := candidates[0]
-		bestDisk := diskUsage(hfCacheDir(best.Model))
-		for _, c := range candidates[1:] {
-			d := diskUsage(hfCacheDir(c.Model))
-			if d > 0 && (bestDisk == 0 || d < bestDisk) {
-				best = c
-				bestDisk = d
-			}
-		}
-		return best, nil
-	}
-	return candidates[0], nil
-}
-
-// isVisionModel checks a model's config.json for vision-language model
-// indicators. Returns true if the model has vision components that mlx_lm
-// cannot load.
-func isVisionModel(modelPath string) bool {
-	data, err := os.ReadFile(filepath.Join(modelPath, "config.json"))
-	if err != nil {
-		return false // can't read config — let mlx_lm decide
-	}
-	var cfg map[string]any
-	if json.Unmarshal(data, &cfg) != nil {
-		return false
-	}
-	// Check for known VLM indicators in top-level keys.
-	for _, key := range []string{"vision_config", "visual", "vision_tower", "image_size"} {
-		if _, ok := cfg[key]; ok {
-			return true
-		}
-	}
-	// Check model_type for known VLM types.
-	if mt, ok := cfg["model_type"].(string); ok {
-		if slices.Contains([]string{"qwen2_5_vl", "qwen2_vl", "llava", "idefics", "paligemma", "mllama"}, mt) {
-			return true
-		}
-	}
-	return false
-}
-
-// ── Process helpers ───────────────────────────────────────────────────────────
-
-func pidAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return proc.Signal(syscall.Signal(0)) == nil
-}
-
-func processRSSKB(pid int) int64 {
-	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
-		return 0
-	}
-	var kb int64
-	fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &kb)
-	return kb
-}
-
-func formatUptime(since string) string {
-	t, err := time.Parse(time.RFC3339, since)
-	if err != nil {
-		return "?"
-	}
-	d := time.Since(t).Round(time.Second)
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	s := int(d.Seconds()) % 60
-	if h > 0 {
-		return fmt.Sprintf("%dh%02dm", h, m)
-	}
-	if m > 0 {
-		return fmt.Sprintf("%dm%02ds", m, s)
-	}
-	return fmt.Sprintf("%ds", s)
-}
-
-// ── Sidecar lifecycle ─────────────────────────────────────────────────────────
-
-func sidecarEndpoint(port int) string {
-	return fmt.Sprintf("http://localhost:%d", port)
-}
-
-func printLastLogLines(logFile string, n int) {
-	f, err := os.Open(logFile)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-		if len(lines) > n {
-			lines = lines[1:]
-		}
-	}
-	fmt.Fprintf(os.Stderr, "\n%s\n", utl.Gra("--- last log lines ---"))
-	for _, l := range lines {
-		fmt.Fprintf(os.Stderr, "  %s\n", l)
-	}
-	fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("--- full log: "+logFile+" ---"))
-	fmt.Fprintln(os.Stderr)
-}
-
-// startSidecar spawns the infer_server.py sidecar for the given tier/model,
-// assigns a dynamic port, writes a state file, then polls /v1/models until ready.
+// startSidecar resolves model/python paths and delegates to sidecar.StartInfer.
 func startSidecar(tier, modelID string) error {
-	port, err := nextAvailablePort()
+	modelPath, err := snapshotDir(modelID)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot resolve model path: %w", err)
 	}
-
-	lf_path, err := logPath(modelID)
+	pyPath, err := mlxVenvPython()
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot resolve Python interpreter: %w", err)
 	}
-	lf, err := os.OpenFile(lf_path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open log file: %w", err)
-	}
-
-	modelPath, snapErr := snapshotDir(modelID)
-	if snapErr != nil {
-		return fmt.Errorf("cannot resolve model path: %w", snapErr)
-	}
-
-	// Preempt: refuse to start vision-language models (VLMs). mlx_lm.load
-	// cannot handle vision_tower weights and will crash.
-	if isVisionModel(modelPath) {
-		return fmt.Errorf("model %s is a vision-language model (VLM) — IQ only supports text-only models", modelID)
-	}
-
-	pyPath, pyErr := mlxVenvPython()
-	if pyErr != nil {
-		return fmt.Errorf("cannot resolve Python interpreter: %w", pyErr)
-	}
-	scriptPath := filepath.Join(os.TempDir(), "infer_server.py")
-	if err := os.WriteFile(scriptPath, []byte(inferServerPy), 0755); err != nil {
-		return fmt.Errorf("failed to write infer script: %w", err)
-	}
-	cmd := exec.Command(pyPath, scriptPath, "--model", modelPath, "--port", strconv.Itoa(port))
-	cmd.Env = os.Environ()
-	cmd.Stdout = lf
-	cmd.Stderr = lf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-
-	if err := cmd.Start(); err != nil {
-		lf.Close()
-		return fmt.Errorf("failed to start sidecar: %w", err)
-	}
-	lf.Close()
-
-	if err := writeState(&svcState{
-		Tier:    tier,
-		Model:   modelID,
-		PID:     cmd.Process.Pid,
-		Port:    port,
-		Started: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		return fmt.Errorf("started (pid %d) but failed to write state: %w", cmd.Process.Pid, err)
-	}
-
-	// Wait for the process in a goroutine so we can detect early crashes
-	// reliably (avoids zombie-pid false positives from signal-0 checks).
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
-
-	fmt.Printf("  %-11s  pid %-7d  %s  ",
-		tier, cmd.Process.Pid, sidecarEndpoint(port))
-	healthURL := fmt.Sprintf("%s/v1/models", sidecarEndpoint(port))
-	deadline := time.Now().Add(sidecarReadyTimeout)
-	client := &http.Client{Timeout: 2 * time.Second}
-
-	for time.Now().Before(deadline) {
-		resp, err := client.Get(healthURL)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				fmt.Printf("%s\n", utl.Gre("ready"))
-				return nil
-			}
-		}
-		select {
-		case <-exited:
-			fmt.Printf("%s\n", utl.Gra("failed"))
-			printLastLogLines(lf_path, 10)
-			return fmt.Errorf("sidecar process exited unexpectedly")
-		default:
-		}
-		fmt.Print(".")
-		time.Sleep(sidecarPollInterval)
-	}
-
-	fmt.Printf("%s\n", utl.Gra("timeout"))
-	printLastLogLines(lf_path, 10)
-	return fmt.Errorf("sidecar did not become ready within %s", sidecarReadyTimeout)
-}
-
-// stopSidecar sends SIGTERM to the sidecar for a model and removes its state file.
-func stopSidecar(modelID string) error {
-	state, err := readState(modelID)
-	if err != nil {
-		return err
-	}
-	if state == nil {
-		fmt.Printf("  %s  %s\n", modelID, utl.Gra("not running"))
-		return nil
-	}
-	if !pidAlive(state.PID) {
-		fmt.Printf("  pid %-7d  %s  %s\n", state.PID, modelID, utl.Gra("already stopped (stale state removed)"))
-		removeState(modelID)
-		return nil
-	}
-	proc, err := os.FindProcess(state.PID)
-	if err != nil {
-		return err
-	}
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("failed to send SIGTERM to pid %d: %w", state.PID, err)
-	}
-	for range 20 {
-		time.Sleep(500 * time.Millisecond)
-		if !pidAlive(state.PID) {
-			break
-		}
-	}
-	if pidAlive(state.PID) {
-		proc.Signal(syscall.SIGKILL)
-	}
-	removeState(modelID)
-	fmt.Printf("  pid %-7d  %s  %s\n", state.PID, modelID, utl.Gra("stopped"))
-	return nil
+	_, err = sidecar.StartInfer(tier, modelID, modelPath, pyPath)
+	return err
 }
 
 // resolveModels returns the model IDs to act on given an optional arg.
@@ -508,22 +94,22 @@ func printStatus() error {
 
 	for _, tier := range config.TierOrder {
 		for _, model := range cfg.Tiers[tier] {
-			state, _ := readState(model)
+			state, _ := sidecar.ReadState(model)
 			endpoint := ""
 			if state != nil {
-				endpoint = sidecarEndpoint(state.Port)
+				endpoint = sidecar.Endpoint(state.Port)
 			}
-			if state == nil || !pidAlive(state.PID) {
+			if state == nil || !sidecar.PidAlive(state.PID) {
 				rows = append(rows, statusRow{tier, model, endpoint, 0, "—", false, "—"})
 				continue
 			}
-			rss := processRSSKB(state.PID)
+			rss := sidecar.ProcessRSSKB(state.PID)
 			totalKB += rss
 			mem := formatMB(rss * 1024)
 			if rss == 0 {
 				mem = "?"
 			}
-			rows = append(rows, statusRow{tier, model, endpoint, state.PID, formatUptime(state.Started), true, mem})
+			rows = append(rows, statusRow{tier, model, endpoint, state.PID, sidecar.FormatUptime(state.Started), true, mem})
 		}
 	}
 
@@ -531,21 +117,21 @@ func printStatus() error {
 	{
 		slug := embedSlugConst
 		model := config.EmbedModel(cfg)
-		eState, _ := readState(slug)
+		eState, _ := sidecar.ReadState(slug)
 		endpoint := ""
 		if eState != nil {
-			endpoint = sidecarEndpoint(eState.Port)
+			endpoint = sidecar.Endpoint(eState.Port)
 		}
-		if eState == nil || !pidAlive(eState.PID) {
+		if eState == nil || !sidecar.PidAlive(eState.PID) {
 			rows = append(rows, statusRow{slug, model, endpoint, 0, "—", false, "—"})
 		} else {
-			rss := processRSSKB(eState.PID)
+			rss := sidecar.ProcessRSSKB(eState.PID)
 			totalKB += rss
 			mem := formatMB(rss * 1024)
 			if rss == 0 {
 				mem = "?"
 			}
-			rows = append(rows, statusRow{slug, model, endpoint, eState.PID, formatUptime(eState.Started), true, mem})
+			rows = append(rows, statusRow{slug, model, endpoint, eState.PID, sidecar.FormatUptime(eState.Started), true, mem})
 		}
 	}
 	// Compute TIER column width dynamically (longest tier name).
@@ -591,7 +177,7 @@ func printStatus() error {
 		}
 	}
 
-	iqRSS := processRSSKB(os.Getpid())
+	iqRSS := sidecar.ProcessRSSKB(os.Getpid())
 	totalKB += iqRSS
 	// Last line: IQ mem left-aligned, total mem right-aligned to MEM column.
 	// Column positions: 6+2 + modelW+2 + 28+2 + 7+2 + 8+2 + 7+2 + 8 = left of MEM column
@@ -725,10 +311,10 @@ func newStartCmd() *cobra.Command {
 			}
 			for _, modelID := range models {
 				tier := config.TierForModel(modelID)
-				state, _ := readState(modelID)
-				if state != nil && pidAlive(state.PID) {
+				state, _ := sidecar.ReadState(modelID)
+				if state != nil && sidecar.PidAlive(state.PID) {
 					fmt.Printf("  pid %-7d  %s  %s\n",
-						state.PID, sidecarEndpoint(state.Port), utl.Gra("already running"))
+						state.PID, sidecar.Endpoint(state.Port), utl.Gra("already running"))
 					continue
 				}
 				if err := startSidecar(tier, modelID); err != nil {
@@ -737,44 +323,6 @@ func newStartCmd() *cobra.Command {
 			}
 			return nil
 		},
-	}
-}
-
-// killOrphanSidecars scans for any infer_server.py, mlx_lm.server, or embed_server.py
-// processes on iq ports and kills them regardless of whether they have a state file.
-// This catches processes started during manual testing or left behind by
-// interrupted starts where no state file was written.
-func killOrphanSidecars() {
-	patterns := []string{"infer_server.py", "mlx_lm.server", "embed_server.py"}
-	for _, pattern := range patterns {
-		out, err := exec.Command("pgrep", "-f", pattern).Output()
-		if err != nil {
-			continue // no matching processes
-		}
-		for pidStr := range strings.FieldsSeq(string(out)) {
-			pid, err := strconv.Atoi(pidStr)
-			if err != nil {
-				continue
-			}
-			// Confirm this process is on an iq-managed port range (270xx).
-			psOut, err := exec.Command("ps", "-p", pidStr, "-o", "command=").Output()
-			if err != nil {
-				continue
-			}
-			if !strings.Contains(string(psOut), "--port 270") {
-				continue
-			}
-			proc, err := os.FindProcess(pid)
-			if err != nil {
-				continue
-			}
-			proc.Signal(syscall.SIGTERM)
-			time.Sleep(300 * time.Millisecond)
-			if pidAlive(pid) {
-				proc.Signal(syscall.SIGKILL)
-			}
-			fmt.Printf("  pid %-7d  %s\n", pid, utl.Gra("orphan killed"))
-		}
 	}
 }
 
@@ -796,16 +344,16 @@ func newStopCmd() *cobra.Command {
 				return err
 			}
 			for _, modelID := range models {
-				if err := stopSidecar(modelID); err != nil {
+				if err := sidecar.Stop(modelID); err != nil {
 					fmt.Fprintf(os.Stderr, "  error stopping %s: %s\n", modelID, err.Error())
 				}
 			}
 			// Stop embed sidecar and sweep for orphans when stopping everything.
 			if arg == "" {
-				if err := stopSidecar(embedSlugConst); err != nil {
+				if err := sidecar.Stop(embedSlugConst); err != nil {
 					fmt.Fprintf(os.Stderr, "  error stopping embed: %s\n", err.Error())
 				}
-				killOrphanSidecars()
+				sidecar.KillOrphanSidecars()
 			}
 			return nil
 		},
@@ -1031,7 +579,7 @@ func newEmbedSetCmd() *cobra.Command {
 				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the new model.
-			stopSidecar(embedSlugConst)
+			sidecar.Stop(embedSlugConst)
 			return startEmbedSidecar()
 		},
 	}
@@ -1060,7 +608,7 @@ func newEmbedRmCmd() *cobra.Command {
 				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the default model.
-			stopSidecar(embedSlugConst)
+			sidecar.Stop(embedSlugConst)
 			return startEmbedSidecar()
 		},
 	}

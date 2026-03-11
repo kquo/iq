@@ -8,6 +8,7 @@ import (
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/sidecar"
 )
 
 // ── Help ──────────────────────────────────────────────────────────────────────
@@ -90,38 +91,38 @@ func newProbeCmd() *cobra.Command {
 			}
 
 			// Resolve sidecar — tier name or specific model ID.
-			var sidecar *svcState
+			var sc *sidecar.State
 			var err error
 			switch target {
 			case "fast", "slow":
-				sidecar, err = pickSidecar(target, false)
+				sc, err = pickSidecar(target, false)
 				if err != nil {
 					return err
 				}
 			default:
 				// Try by slug first (e.g. state file keyed by model ID).
-				sidecar, err = readState(target)
+				sc, err = sidecar.ReadState(target)
 				if err != nil {
 					return err
 				}
 				// If not found by slug, scan all live states for a matching Model field.
 				// This handles the embed sidecar whose state is keyed as "embed" but
 				// whose Model field holds the full HF model ID.
-				if sidecar == nil || !pidAlive(sidecar.PID) {
-					live, lErr := allLiveStates()
+				if sc == nil || !sidecar.PidAlive(sc.PID) {
+					live, lErr := sidecar.AllLiveStates()
 					if lErr == nil {
 						for _, s := range live {
 							if s.Model == target {
-								sidecar = s
+								sc = s
 								break
 							}
 						}
 					}
 				}
-				if sidecar == nil || !pidAlive(sidecar.PID) {
+				if sc == nil || !sidecar.PidAlive(sc.PID) {
 					return fmt.Errorf("%s is not running — run 'iq start %s' first", target, target)
 				}
-				if sidecar.Tier == "embed" {
+				if sc.Tier == "embed" {
 					return fmt.Errorf("%s is an embedding model — it does not support chat inference", target)
 				}
 			}
@@ -133,7 +134,7 @@ func newProbeCmd() *cobra.Command {
 			}
 			fmt.Fprintf(os.Stderr, "%s\n",
 				utl.Gra(fmt.Sprintf("[%s  %s  :%d%s]",
-					sidecar.Tier, sidecar.Model, sidecar.Port, cueTag)))
+					sc.Tier, sc.Model, sc.Port, cueTag)))
 
 			// Build messages.
 			var messages []chatMessage
@@ -145,13 +146,13 @@ func newProbeCmd() *cobra.Command {
 			// Infer and time it.
 			t0 := time.Now()
 			if noStream {
-				response, err := callSidecar(sidecar.Port, messages, false, 8192)
+				response, err := callSidecar(sc.Port, messages, false, 8192)
 				if err != nil {
 					return err
 				}
 				fmt.Println(response)
 			} else {
-				_, err = streamSidecar(sidecar.Port, messages)
+				_, err = streamSidecar(sc.Port, messages)
 				if err != nil {
 					return err
 				}

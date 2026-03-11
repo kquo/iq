@@ -20,6 +20,7 @@ import (
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"iq/internal/config"
+	"iq/internal/sidecar"
 )
 
 const hfAPIBase = "https://huggingface.co/api/models"
@@ -998,10 +999,10 @@ func newLmRmCmd() *cobra.Command {
 			// Warn and auto-clear if model is the embed model.
 			cfg, _ := config.Load(nil)
 			if cfg != nil && model == config.EmbedModel(cfg) {
-				s, _ := readState(embedSlugConst)
-				if s != nil && pidAlive(s.PID) {
+				s, _ := sidecar.ReadState(embedSlugConst)
+				if s != nil && sidecar.PidAlive(s.PID) {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping embed sidecar"))
-					if err := stopSidecar(embedSlugConst); err != nil {
+					if err := sidecar.Stop(embedSlugConst); err != nil {
 						return fmt.Errorf("failed to stop embed sidecar: %w", err)
 					}
 				}
@@ -1014,10 +1015,10 @@ func newLmRmCmd() *cobra.Command {
 
 			// Warn and auto-clear if model is assigned to a tier.
 			if t := config.TierForModel(model); t != "" {
-				state, _ := readState(model)
-				if state != nil && pidAlive(state.PID) {
+				state, _ := sidecar.ReadState(model)
+				if state != nil && sidecar.PidAlive(state.PID) {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping "+model+" sidecar"))
-					if err := stopSidecar(model); err != nil {
+					if err := sidecar.Stop(model); err != nil {
 						return fmt.Errorf("failed to stop sidecar: %w", err)
 					}
 				}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/queone/utl"
 	"iq/internal/config"
+	"iq/internal/sidecar"
 )
 
 //go:embed embed_server.py
@@ -38,8 +39,8 @@ const (
 
 // embedSidecarAlive returns true if the embed sidecar is running.
 func embedSidecarAlive() bool {
-	state, err := readState(embedSlugConst)
-	return err == nil && state != nil && pidAlive(state.PID)
+	state, err := sidecar.ReadState(embedSlugConst)
+	return err == nil && state != nil && sidecar.PidAlive(state.PID)
 }
 
 // mlxVenvPython locates the Python interpreter in the same venv as mlx_lm.server.
@@ -75,10 +76,10 @@ func startEmbedSidecar() error {
 	slug := embedSlugConst
 	port := embedPortConst
 
-	existing, _ := readState(slug)
-	if existing != nil && pidAlive(existing.PID) {
+	existing, _ := sidecar.ReadState(slug)
+	if existing != nil && sidecar.PidAlive(existing.PID) {
 		fmt.Printf("  %-9s  pid %-7d  %s  %s\n",
-			slug, existing.PID, sidecarEndpoint(existing.Port), utl.Gra("already running"))
+			slug, existing.PID, sidecar.Endpoint(existing.Port), utl.Gra("already running"))
 		return nil
 	}
 
@@ -88,7 +89,7 @@ func startEmbedSidecar() error {
 		return fmt.Errorf("failed to write embed script: %w", err)
 	}
 
-	logP, err := logPath(slug)
+	logP, err := sidecar.LogPath(slug)
 	if err != nil {
 		return err
 	}
@@ -118,7 +119,7 @@ func startEmbedSidecar() error {
 	}
 	lf.Close()
 
-	if err := writeStateAs(slug, &svcState{
+	if err := sidecar.WriteStateAs(slug, &sidecar.State{
 		Tier:    "embed",
 		Model:   modelID,
 		PID:     cmd.Process.Pid,
@@ -132,7 +133,7 @@ func startEmbedSidecar() error {
 		fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: failed to register embed model in manifest: "+err.Error()))
 	}
 
-	fmt.Printf("  %-11s  pid %-7d  %s  ", slug, cmd.Process.Pid, sidecarEndpoint(port))
+	fmt.Printf("  %-11s  pid %-7d  %s  ", slug, cmd.Process.Pid, sidecar.Endpoint(port))
 	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
 	deadline := time.Now().Add(embedReadyTimeout)
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -146,16 +147,16 @@ func startEmbedSidecar() error {
 				return nil
 			}
 		}
-		if !pidAlive(cmd.Process.Pid) {
+		if !sidecar.PidAlive(cmd.Process.Pid) {
 			fmt.Printf("%s\n", utl.Gra("failed"))
-			printLastLogLines(logP, 10)
+			sidecar.PrintLastLogLines(logP, 10)
 			return fmt.Errorf("embed sidecar process exited unexpectedly")
 		}
 		fmt.Print(".")
-		time.Sleep(sidecarPollInterval)
+		time.Sleep(sidecar.PollInterval)
 	}
 	fmt.Printf("%s\n", utl.Gra("timeout"))
-	printLastLogLines(logP, 10)
+	sidecar.PrintLastLogLines(logP, 10)
 	return fmt.Errorf("embed sidecar did not become ready within %s", embedReadyTimeout)
 }
 
@@ -242,8 +243,8 @@ func embedTextsOnPort(texts []string, model string, port int, task string) ([][]
 // embedTexts calls the local embed sidecar.
 // task is "query" or "document" — controls instruction prefix for models that require it.
 func embedTexts(texts []string, task string) ([][]float32, error) {
-	state, err := readState(embedSlugConst)
-	if err != nil || state == nil || !pidAlive(state.PID) {
+	state, err := sidecar.ReadState(embedSlugConst)
+	if err != nil || state == nil || !sidecar.PidAlive(state.PID) {
 		return nil, fmt.Errorf("embed sidecar not running — run: iq start")
 	}
 

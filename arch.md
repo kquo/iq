@@ -38,7 +38,7 @@ IQ is being restructured from a single `cmd/iq` package into isolated domain pac
 |---------|--------|--------|
 | `internal/config` | Config CRUD, tier definitions, embed model, migrations | **done** |
 | `internal/search` | DuckDuckGo web search client | **done** |
-| `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | planned |
+| `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files | **done** |
 | `internal/embed` | Embed sidecar startup, HTTP embedding calls, cosine similarity | planned |
 | `internal/cache` | Response cache (FNV64a hashing, TTL, load/save) | planned |
 | `internal/tools` | Tool registry, parser, executor, signal detection | planned |
@@ -95,7 +95,7 @@ Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `s
 
 `sync` merges new factory cues into an existing `cues.yaml` without overwriting user customisations — useful when upgrading IQ to a version that adds new cues.
 
-### Service Daemon
+### Service Daemon (`internal/sidecar`)
 
 The **`iq start`** / **`iq stop`** commands manage sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, written to a temp file at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
 
@@ -512,13 +512,15 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 |------|---------|
 | `internal/config/config.go` | Config struct, Load/Save, tier helpers, embed model, legacy migrations |
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
+| `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
+| `internal/sidecar/infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 
 ### CLI package (`cmd/iq/`)
 
 | File | Purpose |
 |------|---------|
 | `main.go` | CLI entry point, root command, version, help routing |
-| `svc.go` | Sidecar lifecycle, port allocation, pool dispatch, status, tier/embed commands |
+| `svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
 | `embed.go` | Embed sidecar startup, HTTP embedding calls, cue cache, cosine similarity |
 | `cue.go` | Cue CRUD, defaults, sync, embedded `cues_default.yaml` |
 | `prompt.go` | 8-step execution pipeline, session management, REPL, trace output, streaming |
@@ -529,7 +531,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `lm.go` | HuggingFace API, model search/get/list/show/rm, manifest |
 | `perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
 | `probe.go` | `iq pry` — raw sidecar access |
-| `infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
 | `embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
 | `bench_corpus.yaml` | Benchmark test data (embedded in binary) |
@@ -572,3 +573,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.3   | Web search tool: DuckDuckGo integration via `web_search` tool and embed signal; short-circuit skips routing grammar for web queries; synthesis prompt with date injection; toolMinScore 0.66→0.60 |
 | 0.6.4   | Begin `internal/` restructuring — extract `config` as first domain package; planned: search, sidecar, embed, cache, tools, kb |
 | 0.6.5   | Extract `search` to `internal/search` domain package |
+| 0.6.6   | Extract `sidecar` to `internal/sidecar` domain package |
