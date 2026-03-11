@@ -1028,9 +1028,9 @@ func newLmRmCmd() *cobra.Command {
 				// Reload config in case it was modified above.
 				cfg, _ = config.Load(nil)
 				if cfg != nil {
-					for i, m := range cfg.Tiers[t] {
+					for i, m := range cfg.TierModels(t) {
 						if m == model {
-							cfg.Tiers[t] = append(cfg.Tiers[t][:i], cfg.Tiers[t][i+1:]...)
+							cfg.Tiers[t].Models = append(cfg.Tiers[t].Models[:i], cfg.Tiers[t].Models[i+1:]...)
 							break
 						}
 					}

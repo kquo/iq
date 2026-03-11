@@ -10,16 +10,89 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ── Config file ───────────────────────────────────────────────────────────────
+// ── Inference parameters ─────────────────────────────────────────────────────
 
-// Config stores pools of models per tier and the shared embed model.
+// Hardcoded defaults when nothing is configured.
+const (
+	DefaultRepetitionPenalty = 1.3
+	DefaultTemperature       = 0.7
+	DefaultMaxTokens         = 8192
+)
+
+// InferParams holds inference parameters that can be set globally or per-tier.
+// Pointer types distinguish "not set" (nil) from "set to zero."
+type InferParams struct {
+	RepetitionPenalty *float64 `yaml:"repetition_penalty,omitempty"`
+	Temperature       *float64 `yaml:"temperature,omitempty"`
+	MaxTokens         *int     `yaml:"max_tokens,omitempty"`
+}
+
+// ResolvedParams holds the effective inference parameters after resolution.
+type ResolvedParams struct {
+	RepetitionPenalty float64
+	Temperature       float64
+	MaxTokens         int
+}
+
+// ResolveInferParams returns effective params: per-tier override > global > hardcoded default.
+func ResolveInferParams(cfg *Config, tier string) ResolvedParams {
+	p := ResolvedParams{
+		RepetitionPenalty: DefaultRepetitionPenalty,
+		Temperature:       DefaultTemperature,
+		MaxTokens:         DefaultMaxTokens,
+	}
+	// Global overrides.
+	if cfg.RepetitionPenalty != nil {
+		p.RepetitionPenalty = *cfg.RepetitionPenalty
+	}
+	if cfg.Temperature != nil {
+		p.Temperature = *cfg.Temperature
+	}
+	if cfg.MaxTokens != nil {
+		p.MaxTokens = *cfg.MaxTokens
+	}
+	// Per-tier overrides.
+	if tc, ok := cfg.Tiers[tier]; ok && tc != nil {
+		if tc.RepetitionPenalty != nil {
+			p.RepetitionPenalty = *tc.RepetitionPenalty
+		}
+		if tc.Temperature != nil {
+			p.Temperature = *tc.Temperature
+		}
+		if tc.MaxTokens != nil {
+			p.MaxTokens = *tc.MaxTokens
+		}
+	}
+	return p
+}
+
+// ── Tier config ──────────────────────────────────────────────────────────────
+
+// TierConfig holds a tier's model pool and optional inference overrides.
+type TierConfig struct {
+	Models      []string `yaml:"models"`
+	InferParams `yaml:",inline"`
+}
+
+// ── Config file ──────────────────────────────────────────────────────────────
+
+// Config stores pools of models per tier, global inference defaults, and the shared embed model.
 type Config struct {
-	Tiers      map[string][]string `yaml:"tiers"`
-	EmbedModel string              `yaml:"embed_model,omitempty"` // single embed model for cue + KB
-	ToolPaths  []string            `yaml:"tool_paths,omitempty"`  // extra allowed paths for tool use
+	Tiers       map[string]*TierConfig `yaml:"tiers"`
+	InferParams `yaml:",inline"`
+	EmbedModel  string   `yaml:"embed_model,omitempty"`
+	ToolPaths   []string `yaml:"tool_paths,omitempty"`
 	// Legacy fields — migrated to EmbedModel on load.
 	CueModel string `yaml:"cue_model,omitempty"`
 	KbModel  string `yaml:"kb_model,omitempty"`
+}
+
+// TierModels returns the model list for a tier, or nil.
+func (c *Config) TierModels(tier string) []string {
+	if tc, ok := c.Tiers[tier]; ok && tc != nil {
+		return tc.Models
+	}
+	return nil
 }
 
 // TierOrder defines the canonical tier ordering.
@@ -59,6 +132,14 @@ func Path() (string, error) {
 // Injected by cmd/iq to avoid pulling HF cache logic into config.
 type DiskUsageFunc func(modelID string) int64
 
+// emptyTiers returns a default tier map with empty model pools.
+func emptyTiers() map[string]*TierConfig {
+	return map[string]*TierConfig{
+		"fast": {Models: []string{}},
+		"slow": {Models: []string{}},
+	}
+}
+
 // Load reads and returns the config, performing legacy migrations as needed.
 // diskUsage is optional — only needed for migrating the old 4-tier format.
 func Load(diskUsage DiskUsageFunc) (*Config, error) {
@@ -66,7 +147,7 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{Tiers: map[string][]string{"fast": {}, "slow": {}}}
+	cfg := &Config{Tiers: emptyTiers()}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return cfg, nil
@@ -75,56 +156,110 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 		return nil, err
 	}
 
-	if yamlErr := yaml.Unmarshal(data, cfg); yamlErr == nil && cfg.Tiers != nil {
-		// Detect and migrate old 4-tier single-string format.
-		var probe struct {
-			Tiers map[string]string `yaml:"tiers"`
-		}
-		if yaml.Unmarshal(data, &probe) == nil {
-			_, hasOld := probe.Tiers["tiny"]
-			_, hasOldB := probe.Tiers["balanced"]
-			_, hasOldC := probe.Tiers["quality"]
-			if hasOld || hasOldB || hasOldC {
-				cfg = migrateOldConfig(probe.Tiers, diskUsage)
+	// Probe: is this the old flat-list format (tiers: {fast: [model-a, ...]})?
+	var flatProbe struct {
+		Tiers map[string]any `yaml:"tiers"`
+	}
+	if yaml.Unmarshal(data, &flatProbe) == nil && len(flatProbe.Tiers) > 0 {
+		// Check if any tier value is a list (old format) vs a map (new format).
+		for _, v := range flatProbe.Tiers {
+			if _, isList := v.([]any); isList {
+				// Old flat-list format — migrate.
+				cfg = migrateFlatTiers(data, diskUsage)
 				if err := Save(cfg); err == nil {
 					fmt.Fprintf(os.Stderr, "%s\n",
-						utl.Gra("config.yaml migrated from 4-tier to 2-tier pool format"))
+						utl.Gra("config.yaml migrated: tiers updated to structured format"))
 				}
 				return cfg, nil
 			}
+			break // only need to check one
 		}
-		// Migrate legacy cue_model / kb_model → embed_model.
-		if cfg.EmbedModel == "" && (cfg.CueModel != "" || cfg.KbModel != "") {
-			if cfg.CueModel != "" {
-				cfg.EmbedModel = cfg.CueModel
-			} else {
-				cfg.EmbedModel = cfg.KbModel
-			}
-			cfg.CueModel = ""
-			cfg.KbModel = ""
-			if err := Save(cfg); err == nil {
-				fmt.Fprintf(os.Stderr, "%s\n",
-					utl.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
-			}
-		}
-		if cfg.Tiers == nil {
-			cfg.Tiers = map[string][]string{"fast": {}, "slow": {}}
-		}
-		for _, t := range TierOrder {
-			if cfg.Tiers[t] == nil {
-				cfg.Tiers[t] = []string{}
-			}
-		}
-		return cfg, nil
 	}
 
+	// New structured format — unmarshal directly.
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return &Config{Tiers: emptyTiers()}, nil
+	}
+
+	// Migrate legacy cue_model / kb_model → embed_model.
+	if cfg.EmbedModel == "" && (cfg.CueModel != "" || cfg.KbModel != "") {
+		if cfg.CueModel != "" {
+			cfg.EmbedModel = cfg.CueModel
+		} else {
+			cfg.EmbedModel = cfg.KbModel
+		}
+		cfg.CueModel = ""
+		cfg.KbModel = ""
+		if err := Save(cfg); err == nil {
+			fmt.Fprintf(os.Stderr, "%s\n",
+				utl.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
+		}
+	}
+
+	// Ensure all canonical tiers exist.
+	if cfg.Tiers == nil {
+		cfg.Tiers = emptyTiers()
+	}
+	for _, t := range TierOrder {
+		if cfg.Tiers[t] == nil {
+			cfg.Tiers[t] = &TierConfig{Models: []string{}}
+		}
+		if cfg.Tiers[t].Models == nil {
+			cfg.Tiers[t].Models = []string{}
+		}
+	}
 	return cfg, nil
 }
 
-// migrateOldConfig converts the old tiny/fast/balanced/quality single-model-per-tier
+// migrateFlatTiers converts old flat-list tiers (and old 4-tier single-string format)
+// into the new TierConfig struct format.
+func migrateFlatTiers(data []byte, diskUsage DiskUsageFunc) *Config {
+	// Try old 4-tier single-string format first.
+	var singleProbe struct {
+		Tiers map[string]string `yaml:"tiers"`
+	}
+	if yaml.Unmarshal(data, &singleProbe) == nil {
+		_, hasOld := singleProbe.Tiers["tiny"]
+		_, hasOldB := singleProbe.Tiers["balanced"]
+		_, hasOldC := singleProbe.Tiers["quality"]
+		if hasOld || hasOldB || hasOldC {
+			return migrateOldFourTier(singleProbe.Tiers, diskUsage)
+		}
+	}
+
+	// Flat-list format: tiers: {fast: [model-a, ...], slow: [model-b, ...]}
+	var flat struct {
+		Tiers      map[string][]string `yaml:"tiers"`
+		EmbedModel string              `yaml:"embed_model,omitempty"`
+		ToolPaths  []string            `yaml:"tool_paths,omitempty"`
+		CueModel   string              `yaml:"cue_model,omitempty"`
+		KbModel    string              `yaml:"kb_model,omitempty"`
+	}
+	yaml.Unmarshal(data, &flat)
+
+	cfg := &Config{
+		Tiers:      emptyTiers(),
+		EmbedModel: flat.EmbedModel,
+		ToolPaths:  flat.ToolPaths,
+		CueModel:   flat.CueModel,
+		KbModel:    flat.KbModel,
+	}
+	for tier, models := range flat.Tiers {
+		cfg.Tiers[tier] = &TierConfig{Models: models}
+	}
+	// Ensure canonical tiers exist.
+	for _, t := range TierOrder {
+		if cfg.Tiers[t] == nil {
+			cfg.Tiers[t] = &TierConfig{Models: []string{}}
+		}
+	}
+	return cfg
+}
+
+// migrateOldFourTier converts the old tiny/fast/balanced/quality single-model-per-tier
 // format to the new fast/slow pool format using the 2GB disk threshold.
-func migrateOldConfig(old map[string]string, diskUsage DiskUsageFunc) *Config {
-	cfg := &Config{Tiers: map[string][]string{"fast": {}, "slow": {}}}
+func migrateOldFourTier(old map[string]string, diskUsage DiskUsageFunc) *Config {
+	cfg := &Config{Tiers: emptyTiers()}
 	oldToNew := map[string]string{
 		"tiny":     "fast",
 		"fast":     "fast",
@@ -149,7 +284,7 @@ func migrateOldConfig(old map[string]string, diskUsage DiskUsageFunc) *Config {
 				}
 			}
 		}
-		cfg.Tiers[newTier] = append(cfg.Tiers[newTier], id)
+		cfg.Tiers[newTier].Models = append(cfg.Tiers[newTier].Models, id)
 	}
 	return cfg
 }
@@ -174,7 +309,7 @@ func TierForModel(modelID string) string {
 		return ""
 	}
 	for _, t := range TierOrder {
-		if slices.Contains(cfg.Tiers[t], modelID) {
+		if slices.Contains(cfg.TierModels(t), modelID) {
 			return t
 		}
 	}
@@ -189,7 +324,7 @@ func AllAssignedModels() []string {
 	}
 	var out []string
 	for _, t := range TierOrder {
-		out = append(out, cfg.Tiers[t]...)
+		out = append(out, cfg.TierModels(t)...)
 	}
 	return out
 }

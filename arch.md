@@ -69,18 +69,48 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 ### Configuration
 
-Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Config` struct, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `TierOrder`, and `DefaultEmbedModel`. Tiers are **pools** — each tier holds a list of model IDs, not a single slot.
+Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Config`, `TierConfig`, `InferParams`, `ResolvedParams` structs, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `ResolveInferParams()`, `TierOrder`, and `DefaultEmbedModel`. Tiers are **pools** — each tier holds a list of model IDs and optional inference parameter overrides.
 
 ```
 fast    sub-2GB models — used for quick inference tasks
 slow    2GB+ models    — used for quality inference
 ```
 
+**Inference parameters** — three parameters can be tuned globally and/or per-tier:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `repetition_penalty` | 1.3 | Penalises repeated tokens (1.0 = off) |
+| `temperature` | 0.7 | Sampling temperature (lower = more deterministic) |
+| `max_tokens` | 8192 | Maximum tokens in response |
+
+Resolution order: **per-tier override > global config > hardcoded default**. Pointer types (`*float64`, `*int`) distinguish "not set" from "set to zero."
+
+```yaml
+# Global defaults (optional — omit to use hardcoded defaults)
+repetition_penalty: 1.3
+temperature: 0.7
+max_tokens: 8192
+
+tiers:
+  fast:
+    models:
+      - mlx-community/Llama-3.2-3B-Instruct-4bit
+    # Per-tier overrides (optional — omit to use global/hardcoded default)
+    repetition_penalty: 1.1
+    temperature: 0.5
+  slow:
+    models:
+      - mlx-community/Qwen2.5-7B-Instruct-4bit
+
+embed_model: mlx-community/bge-small-en-v1.5-bf16
+```
+
 Tier commands: `iq tier show`, `iq tier add <tier> <model>`, `iq tier rm <tier> <model>`.
 
 Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
-Auto-migration: on first load, an old four-tier config (`tiny`/`fast`/`balanced`/`quality`) is silently converted to the two-tier pool format using the 2GB disk threshold. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
+Auto-migration: on first load, old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
 
 ### Cue Definitions
 
@@ -595,3 +625,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.6.13  | Python sidecar dev hot-reload from `~/.config/iq/`; fix `~` not expanded in PATH for `mlx_lm.server` lookup; move tools tests to `internal/tools` |
 | 0.6.14  | Replace 24-bit timestamp session IDs with 32-bit crypto/rand |
 | 0.6.15  | Add test assertion for tool/signal registry coverage drift |
+| 0.7.0   | Configurable inference parameters: per-tier and global `repetition_penalty`, `temperature`, `max_tokens`; structured `TierConfig` with auto-migration from flat-list format; temperature support in `infer_server.py` |

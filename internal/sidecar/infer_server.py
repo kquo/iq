@@ -109,11 +109,11 @@ class RoutingGrammarProcessor:
 # ── Inference ─────────────────────────────────────────────────────────────────
 
 
-def _generate(messages, max_tokens, stream, repetition_penalty, routing_grammar):
+def _generate(messages, max_tokens, stream, repetition_penalty, temperature, routing_grammar):
     """Run inference and yield (text_chunk, finish_reason) tuples."""
     prompt_tokens = _apply_chat_template(messages)
 
-    kwargs = {"max_tokens": max_tokens}
+    kwargs = {"max_tokens": max_tokens, "temp": temperature}
 
     # Build logits processors list: repetition penalty + optional routing grammar.
     processors = []
@@ -207,6 +207,7 @@ class Handler(BaseHTTPRequestHandler):
                 max_tokens = body.get("max_tokens", 8192)
                 stream = body.get("stream", False)
                 rep_penalty = body.get("repetition_penalty", 1.0)
+                temperature = body.get("temperature", 0.7)
                 routing_grammar = body.get("routing_grammar")
 
                 if stream:
@@ -215,7 +216,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
                     for text, finish in _generate(
-                        messages, max_tokens, True, rep_penalty, routing_grammar
+                        messages, max_tokens, True, rep_penalty, temperature, routing_grammar
                     ):
                         chunk = _build_chat_response(
                             text, _model_id, finish_reason=finish, stream=True
@@ -228,7 +229,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     content = ""
                     for text, finish in _generate(
-                        messages, max_tokens, False, rep_penalty, routing_grammar
+                        messages, max_tokens, False, rep_penalty, temperature, routing_grammar
                     ):
                         content = text
                     resp = _build_chat_response(content, _model_id)

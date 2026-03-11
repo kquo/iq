@@ -38,6 +38,7 @@ type chatRequest struct {
 	Stream            bool          `json:"stream"`
 	MaxTokens         int           `json:"max_tokens,omitempty"`
 	RepetitionPenalty float64       `json:"repetition_penalty,omitempty"`
+	Temperature       float64       `json:"temperature,omitempty"`
 	RoutingGrammar    *routeGrammar `json:"routing_grammar,omitempty"`
 }
 
@@ -476,19 +477,19 @@ func doSidecarCall(port int, req chatRequest) (string, error) {
 	return stripThinkBlocks(content), nil
 }
 
-func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int) (string, error) {
-	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: 1.3}
+func callSidecar(port int, messages []chatMessage, stream bool, maxTokens int, ip config.ResolvedParams) (string, error) {
+	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature}
 	return doSidecarCall(port, req)
 }
 
 // callSidecarWithGrammar sends an inference request with an optional routing grammar.
-func callSidecarWithGrammar(port int, messages []chatMessage, maxTokens int, grammar *routeGrammar) (string, error) {
-	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: 1.3, RoutingGrammar: grammar}
+func callSidecarWithGrammar(port int, messages []chatMessage, maxTokens int, grammar *routeGrammar, ip config.ResolvedParams) (string, error) {
+	req := chatRequest{Messages: messages, Stream: false, MaxTokens: maxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature, RoutingGrammar: grammar}
 	return doSidecarCall(port, req)
 }
 
-func streamSidecar(port int, messages []chatMessage) (string, error) {
-	req := chatRequest{Messages: messages, Stream: true, MaxTokens: 8192, RepetitionPenalty: 1.3}
+func streamSidecar(port int, messages []chatMessage, ip config.ResolvedParams) (string, error) {
+	req := chatRequest{Messages: messages, Stream: true, MaxTokens: ip.MaxTokens, RepetitionPenalty: ip.RepetitionPenalty, Temperature: ip.Temperature}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err
@@ -572,10 +573,12 @@ Return only valid JSON, nothing else.`
 		if err != nil {
 			return
 		}
+		nameCfg, _ := config.Load(nil)
+		nameIP := config.ResolveInferParams(nameCfg, "fast")
 		response, err := callSidecar(sidecar.Port, []chatMessage{
 			{Role: "system", Content: systemMsg},
 			{Role: "user", Content: excerpt.String()},
-		}, false, 60)
+		}, false, 60, nameIP)
 		if err != nil {
 			return
 		}
@@ -720,6 +723,10 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		printStep2Route(route, time.Since(t2))
 	}
 
+	// Resolve inference parameters: per-tier > global > hardcoded default.
+	inferCfg, _ := config.Load(nil)
+	ip := config.ResolveInferParams(inferCfg, route.Tier)
+
 	// ── Step 3: KB RETRIEVE ──
 	var kbContext string
 	if kb.Exists() && !opts.noKB && embed.SidecarAlive() {
@@ -859,7 +866,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 						tPass = time.Now()
 					}
-					response, err = callSidecar(route.Port, synthMessages, false, 8192)
+					response, err = callSidecar(route.Port, synthMessages, false, ip.MaxTokens, ip)
 					if err != nil {
 						return sess, err
 					}
@@ -872,7 +879,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					if trace {
 						traceField("search_error", r.Error)
 					}
-					response, err = callSidecar(route.Port, messages, false, 8192)
+					response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
 					if err != nil {
 						return sess, err
 					}
@@ -891,7 +898,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 					tPass = time.Now()
 				}
-				response, err = callSidecarWithGrammar(route.Port, messages, 8192, grammar)
+				response, err = callSidecarWithGrammar(route.Port, messages, ip.MaxTokens, grammar, ip)
 				if err != nil {
 					return sess, err
 				}
@@ -942,7 +949,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 							tPass = time.Now()
 						}
-						response, err = callSidecar(route.Port, messages, false, 8192)
+						response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
 						if err != nil {
 							return sess, err
 						}
@@ -1007,7 +1014,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 									traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 									tPass = time.Now()
 								}
-								response, err = callSidecar(route.Port, messages, false, 8192)
+								response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
 								if err != nil {
 									return sess, err
 								}
@@ -1104,7 +1111,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 						tPass = time.Now()
 					}
-					response, err = callSidecar(route.Port, messages, false, 8192)
+					response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
 					if err != nil {
 						return sess, err
 					}
@@ -1128,7 +1135,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("mode", "non-streaming")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 				}
-				response, err = callSidecar(route.Port, messages, false, 8192)
+				response, err = callSidecar(route.Port, messages, false, ip.MaxTokens, ip)
 				if err != nil {
 					return sess, err
 				}
@@ -1138,7 +1145,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("mode", "streaming")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 				}
-				response, err = streamSidecar(route.Port, messages)
+				response, err = streamSidecar(route.Port, messages, ip)
 				if err != nil {
 					return sess, err
 				}

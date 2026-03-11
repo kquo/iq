@@ -702,6 +702,9 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	fmt.Fprintf(os.Stderr, "  corpus      %d prompts (bench_corpus.yaml)\n", len(corpus.InferPrompts))
 	fmt.Fprintf(os.Stderr, "  max_tokens  512\n")
 
+	perfCfg, _ := config.Load(nil)
+	perfIP := config.ResolveInferParams(perfCfg, state.Tier)
+
 	var latenciesMs []float64
 	var tokenCounts []float64
 
@@ -713,7 +716,7 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		fmt.Fprintf(os.Stderr, "    %d/%d  %-25s ...",
 			pi+1, len(corpus.InferPrompts), prompt.ID)
 		t1 := time.Now()
-		response, err := callSidecar(state.Port, messages, false, 512)
+		response, err := callSidecar(state.Port, messages, false, 512, perfIP)
 		elapsed := time.Since(t1)
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 
@@ -776,6 +779,9 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 	sysprompt := "You are a helpful assistant.\n" + tools.BuildRoutingPrompt()
 	grammar := &routeGrammar{ToolNames: tools.RegistryNames()}
 
+	toolCfg, _ := config.Load(nil)
+	toolIP := config.ResolveInferParams(toolCfg, state.Tier)
+
 	var latenciesMs []float64
 	routeCorrect := 0
 	execOK := 0
@@ -791,7 +797,7 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 			pi+1, len(corpus.ToolPrompts), tp.ID, tp.ExpectedTool)
 
 		t1 := time.Now()
-		response, err := callSidecarWithGrammar(state.Port, messages, 8192, grammar)
+		response, err := callSidecarWithGrammar(state.Port, messages, toolIP.MaxTokens, grammar, toolIP)
 		elapsed := time.Since(t1)
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 

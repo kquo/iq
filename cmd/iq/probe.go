@@ -8,6 +8,7 @@ import (
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
 	"iq/internal/kb"
@@ -146,16 +147,20 @@ func newProbeCmd() *cobra.Command {
 			}
 			messages = append(messages, chatMessage{Role: "user", Content: message})
 
+			// Resolve inference parameters for this tier.
+			probeCfg, _ := config.Load(nil)
+			probeIP := config.ResolveInferParams(probeCfg, sc.Tier)
+
 			// Infer and time it.
 			t0 := time.Now()
 			if noStream {
-				response, err := callSidecar(sc.Port, messages, false, 8192)
+				response, err := callSidecar(sc.Port, messages, false, probeIP.MaxTokens, probeIP)
 				if err != nil {
 					return err
 				}
 				fmt.Println(response)
 			} else {
-				_, err = streamSidecar(sc.Port, messages)
+				_, err = streamSidecar(sc.Port, messages, probeIP)
 				if err != nil {
 					return err
 				}

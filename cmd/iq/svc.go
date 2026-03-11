@@ -66,7 +66,7 @@ func resolveModels(arg string) ([]string, error) {
 	// Tier name?
 	for _, t := range config.TierOrder {
 		if t == arg {
-			models := cfg.Tiers[t]
+			models := cfg.TierModels(t)
 			if len(models) == 0 {
 				return nil, fmt.Errorf("tier %q has no models assigned", arg)
 			}
@@ -75,7 +75,7 @@ func resolveModels(arg string) ([]string, error) {
 	}
 	// Model ID?
 	for _, t := range config.TierOrder {
-		for _, m := range cfg.Tiers[t] {
+		for _, m := range cfg.TierModels(t) {
 			if m == arg {
 				return []string{m}, nil
 			}
@@ -106,7 +106,7 @@ func printStatus() error {
 	var totalKB int64
 
 	for _, tier := range config.TierOrder {
-		for _, model := range cfg.Tiers[tier] {
+		for _, model := range cfg.TierModels(tier) {
 			state, _ := sidecar.ReadState(model)
 			endpoint := ""
 			if state != nil {
@@ -422,7 +422,7 @@ func newTierShowCmd() *cobra.Command {
 				return err
 			}
 			for _, t := range config.TierOrder {
-				models := cfg.Tiers[t]
+				models := cfg.TierModels(t)
 				if len(models) == 0 {
 					fmt.Printf("%-6s  %s\n", t, utl.Gra("<empty>"))
 				} else {
@@ -451,7 +451,7 @@ func newTierAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if slices.Contains(cfg.Tiers[tier], modelID) {
+			if slices.Contains(cfg.TierModels(tier), modelID) {
 				fmt.Printf("%s is already in the %s tier\n", modelID, tier)
 				return nil
 			}
@@ -459,15 +459,15 @@ func newTierAddCmd() *cobra.Command {
 			if tier == "slow" {
 				other = "fast"
 			}
-			for i, m := range cfg.Tiers[other] {
+			for i, m := range cfg.TierModels(other) {
 				if m == modelID {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(
 						fmt.Sprintf("warning: %s moved from %s to %s", modelID, other, tier)))
-					cfg.Tiers[other] = append(cfg.Tiers[other][:i], cfg.Tiers[other][i+1:]...)
+					cfg.Tiers[other].Models = append(cfg.Tiers[other].Models[:i], cfg.Tiers[other].Models[i+1:]...)
 					break
 				}
 			}
-			cfg.Tiers[tier] = append(cfg.Tiers[tier], modelID)
+			cfg.Tiers[tier].Models = append(cfg.Tiers[tier].Models, modelID)
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
@@ -490,9 +490,9 @@ func newTierRmCmd() *cobra.Command {
 				return err
 			}
 			found := false
-			for i, m := range cfg.Tiers[tier] {
+			for i, m := range cfg.TierModels(tier) {
 				if m == modelID {
-					cfg.Tiers[tier] = append(cfg.Tiers[tier][:i], cfg.Tiers[tier][i+1:]...)
+					cfg.Tiers[tier].Models = append(cfg.Tiers[tier].Models[:i], cfg.Tiers[tier].Models[i+1:]...)
 					found = true
 					break
 				}
@@ -764,7 +764,7 @@ func newDocCmd() *cobra.Command {
 				return cfgErr
 			}
 			for _, t := range config.TierOrder {
-				for _, model := range cfg.Tiers[t] {
+				for _, model := range cfg.TierModels(t) {
 					cacheDir := hfCacheDir(model)
 					_, statErr := os.Stat(cacheDir)
 					modelOK := statErr == nil
@@ -777,7 +777,7 @@ func newDocCmd() *cobra.Command {
 					checks = append(checks, runDocCheck(t, detail, modelOK, false))
 				}
 			}
-			if len(cfg.Tiers["fast"]) == 0 && len(cfg.Tiers["slow"]) == 0 {
+			if len(cfg.TierModels("fast")) == 0 && len(cfg.TierModels("slow")) == 0 {
 				checks = append(checks, runDocCheck("tier models", utl.Gra("no models assigned"), true, true))
 			}
 
