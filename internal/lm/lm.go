@@ -578,6 +578,12 @@ type SnapshotFile struct {
 	Size int64
 }
 
+// IsModelNotDownloaded reports whether err indicates a model has not been
+// downloaded to the local HuggingFace cache yet.
+func IsModelNotDownloaded(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "no snapshots found")
+}
+
 // SnapshotDir returns the path to the most recent snapshot directory for a model,
 // which is what mlx_lm tools expect as the --model argument.
 func SnapshotDir(modelID string) (string, error) {

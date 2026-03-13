@@ -23,6 +23,7 @@ import (
 	"iq/internal/cue"
 	iembed "iq/internal/embed"
 	"iq/internal/kb"
+	"iq/internal/lm"
 	"iq/internal/sidecar"
 	"iq/internal/tools"
 )
@@ -981,6 +982,31 @@ func newPerfBenchCmd() *cobra.Command {
 			}
 
 			for _, mid := range models {
+				// Auto-start sidecar if needed for infer/tool bench types.
+				needsSidecar := false
+				for _, t := range types {
+					if t == "infer" || t == "tool" {
+						needsSidecar = true
+						break
+					}
+				}
+				var startedSidecar bool
+				if needsSidecar {
+					state, _ := sidecar.ReadState(mid)
+					if state == nil || !sidecar.PidAlive(state.PID) {
+						fmt.Fprintf(os.Stderr, "  starting    sidecar for %s ...\n", mid)
+						if err := startSidecar(benchTierFor(mid), mid); err != nil {
+							if lm.IsModelNotDownloaded(err) {
+								fmt.Fprintf(os.Stderr, "  %s\n", utl.Red(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
+							} else {
+								fmt.Fprintf(os.Stderr, "  error: %s — skipping\n", err)
+							}
+							continue
+						}
+						startedSidecar = true
+					}
+				}
+
 				for _, t := range types {
 					var result BenchResult
 					var rerr error
@@ -1004,6 +1030,13 @@ func newPerfBenchCmd() *cobra.Command {
 					}
 					upsertResult(bs, result)
 					fmt.Printf("  %s\n", formatBenchRow(result))
+				}
+
+				if startedSidecar {
+					fmt.Fprintf(os.Stderr, "  stopping    sidecar for %s\n", mid)
+					if err := sidecar.Stop(mid); err != nil {
+						fmt.Fprintf(os.Stderr, "  error stopping: %s\n", err)
+					}
 				}
 			}
 
@@ -1138,7 +1171,11 @@ func newPerfSweepCmd() *cobra.Command {
 				// Start sidecar.
 				fmt.Fprintf(os.Stderr, "  starting    sidecar for %s ...\n", mid)
 				if err := startSidecar(tier, mid); err != nil {
-					fmt.Fprintf(os.Stderr, "  error: %s — skipping\n", err)
+					if lm.IsModelNotDownloaded(err) {
+						fmt.Fprintf(os.Stderr, "  %s\n", utl.Red(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
+					} else {
+						fmt.Fprintf(os.Stderr, "  error: %s — skipping\n", err)
+					}
 					sweepCleanupModel(mid, tier, origModels)
 					continue
 				}
@@ -1195,6 +1232,20 @@ func newPerfSweepCmd() *cobra.Command {
 	cmd.Flags().StringVar(&benchType, "type", "", "Benchmark type: infer, tool, kb, cue (default: infer)")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show debug detail for each prompt (tool bench)")
 	return cmd
+}
+
+// benchTierFor returns the configured tier for modelID, defaulting to "fast".
+func benchTierFor(modelID string) string {
+	cfg, err := config.Load(nil)
+	if err != nil {
+		return "fast"
+	}
+	for _, tier := range []string{"fast", "slow"} {
+		if slices.Contains(cfg.TierModels(tier), modelID) {
+			return tier
+		}
+	}
+	return "fast"
 }
 
 // sweepCleanupModel removes a model from the tier if it wasn't in the original config.

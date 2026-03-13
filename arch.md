@@ -342,9 +342,11 @@ Benchmark types:
 - **Tool use** — sends 14 prompts (2 per tool) through the routing grammar pipeline; measures routing accuracy (did the model pick the correct tool?) and execution success rate. Use `-v` for per-prompt debug detail.
 - **Inference latency** — measures P50/P95 latency and throughput
 
-**Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, models must already be running.
+**Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, `bench` auto-starts the sidecar if not running (using the model's configured tier, defaulting to `fast`) and stops it after the run.
 
 **Automated sweep** — `iq perf sweep --models m1,m2 --tier fast --type infer` automates the full tier-assignment cycle: for each model it temporarily assigns to the tier, starts the sidecar, runs benchmarks, stops the sidecar, and restores the original tier config. Produces a comparison table at the end.
+
+**Model not downloaded** — if a model's HuggingFace snapshot is missing, both `bench` and `sweep` print a red hint: `model not downloaded — run: iq lm get <model>`.
 
 Commands:
 ```
@@ -677,3 +679,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.7   | `iq config show/validate`: canonical config inspection and validation command |
 | 0.7.8   | Async KB prefetch with 5s timeout; `iq perf sweep` automates model comparison; README onboarding guide |
 | 0.7.9   | Per-tier tuning guide in arch.md; `short|long` alias format in help; trim trailing blank lines from all help output; README "Find Your Best Models" section |
+| 0.8.0   | `iq perf bench` auto-starts/stops sidecar for infer/tool types; red download hint for missing models in bench and sweep (`lm.IsModelNotDownloaded`) |
