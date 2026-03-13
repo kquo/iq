@@ -2,7 +2,7 @@
 
 IQ is a command-line tool for managing **offline generative AI systems** on Apple Silicon. It handles local LLM downloads, runs inference sidecars via `mlx_lm`, and routes prompts through a classification layer that selects the right model and cue for each task. The underlying AI models run entirely **on-device**, while IQ provides the CLI interface, workflow management, and task orchestration — all with no cloud dependency and no data leaving your machine.
 
-For a detailed technical overview, see [arch.md](arch.md).
+For a detailed technical overview, see [arch.md](arch.md). For the feature roadmap and project philosophy, see [plan.md](plan.md).
 
 ## Why
 
