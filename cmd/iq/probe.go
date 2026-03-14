@@ -18,7 +18,7 @@ import (
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printProbeHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Send a raw message directly to a model sidecar, bypassing the IQ framework.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s pry <model|tier> [flags] <message>\n\n", n)

@@ -1249,7 +1249,7 @@ func runREPL(opts promptOpts) error {
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printPromptHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Start the interactive REPL or send a prompt. For one-shot prompts, '%s <message>' works too.\n\n", n)
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s ask [flags] [message]\n\n", n)

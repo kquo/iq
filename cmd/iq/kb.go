@@ -18,7 +18,7 @@ import (
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printKBHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Manage the IQ knowledge base for RAG-augmented prompts.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s kb <command> [flags]\n\n", n)

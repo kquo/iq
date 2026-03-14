@@ -21,7 +21,7 @@ import (
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printLmHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Work with IQ language models.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s lm <command> [flags]\n\n", n)

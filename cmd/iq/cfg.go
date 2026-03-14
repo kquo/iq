@@ -59,7 +59,7 @@ func newConfigValidateCmd() *cobra.Command {
 }
 
 func printConfigHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Inspect and validate IQ configuration.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s config [command]\n\n", n)

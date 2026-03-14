@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,12 +11,17 @@ import (
 )
 
 const (
-	program_name    = "iq"
-	program_version = "0.8.2"
+	programName    = "iq"
+	programVersion = "0.8.3"
 )
 
 // errSilent is returned when the error has already been printed.
-var errSilent = fmt.Errorf("")
+// Using a named type ensures errors.Is comparisons work correctly.
+type silentErr struct{}
+
+func (silentErr) Error() string { return "" }
+
+var errSilent error = silentErr{}
 
 // argsUsage wraps a cobra arg validator to print yellow error + help on failure.
 func argsUsage(v cobra.PositionalArgs) cobra.PositionalArgs {
@@ -30,8 +36,8 @@ func argsUsage(v cobra.PositionalArgs) cobra.PositionalArgs {
 }
 
 func printRootHelp() {
-	n := program_name
-	fmt.Printf("%s v%s\n", n, program_version)
+	n := programName
+	fmt.Printf("%s v%s\n", n, programVersion)
 	fmt.Printf("Work with IQ from the command line.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s <command> [subcommand] [flags]\n", n)
@@ -83,11 +89,11 @@ func newVersionCmd() *cobra.Command {
 		Aliases: []string{"ver"},
 		Short:   "Show the current IQ version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("%s v%s\n", program_name, program_version)
+			fmt.Printf("%s v%s\n", programName, programVersion)
 		},
 	}
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		fmt.Printf("%s v%s\n", program_name, program_version)
+		fmt.Printf("%s v%s\n", programName, programVersion)
 	})
 	return cmd
 }
@@ -121,12 +127,12 @@ func runCLI() {
 	var rootOpts promptOpts
 
 	root := &cobra.Command{
-		Use:          program_name,
+		Use:          programName,
 		SilenceUsage: true,
 		Args:         cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if v, _ := cmd.Flags().GetBool("version"); v {
-				fmt.Printf("%s v%s\n", program_name, program_version)
+				fmt.Printf("%s v%s\n", programName, programVersion)
 				return nil
 			}
 			if len(args) == 0 {
@@ -174,7 +180,7 @@ func runCLI() {
 
 	root.SilenceErrors = true
 	if err := root.Execute(); err != nil {
-		if err != errSilent {
+		if !errors.Is(err, errSilent) {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		}
 		os.Exit(1)

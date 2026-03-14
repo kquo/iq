@@ -26,16 +26,6 @@ Sorted easiest → hardest within each group.
 
 ---
 
-## Group A — Cosmetic & Mechanical (hours)
-
-**FEAT9980** — **Idiomatic Go naming**
-Rename `program_name`/`program_version` to `programName`/`programVersion`. Trivial find-and-replace in one file. Need to ensure `./build.sh` is also updated.
-
-**FEAT9970** — **Proper `errSilent` sentinel**
-Replace `fmt.Errorf("")` with a named type so `errors.Is` works correctly. Define a type, swap the one comparison in `runCLI`. Tiny blast radius.
-
----
-
 ## Group B — Structural Cleanup (1–2 days each)
 
 **FEAT9960** — **`NewRegistry()` constructor for tools**

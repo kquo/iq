@@ -211,7 +211,7 @@ func printStatus() error {
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printSvcHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Legacy alias — svc commands have moved to the root.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("NEW USAGE"))
 	fmt.Printf("  %s start [tier|model]\n", n)
@@ -377,7 +377,7 @@ func newStopCmd() *cobra.Command {
 // ── tier ──────────────────────────────────────────────────────────────────────
 
 func printTierHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Manage model tier pool assignments.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s tier <command> [flags]\n\n", n)
@@ -513,7 +513,7 @@ func newTierRmCmd() *cobra.Command {
 // ── embed ─────────────────────────────────────────────────────────────────────
 
 func printEmbedHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Manage the MLX embed model for cue classification and KB retrieval.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s embed <command>\n\n", n)

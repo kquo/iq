@@ -12,15 +12,16 @@
     - Builds binaries in $GOPATH/bin
 
 ## Versioning
-- Current version from latest Git tag, or from `program_version` in `cmd/iq/main.go`
+- Current version from latest Git tag, or from `programVersion` in `cmd/iq/main.go`
 
 ## Pre-Commit Checklist
 Before offering to run a release commit, always complete these steps in order:
 1. Audit `arch.md` against the code — grep thresholds, constants, counts,
    formats, and field orders in source files and fix any drift.
 2. Also add version row to `arch.md` with a one-line summary of the changes
-3. Bump `program_version` in `cmd/iq/main.go` to the new version string
-4. Report to user they must now run ./build.sh <tag> "<message>" — message should be a brief phrase (under 80 chars), not a changelog
+3. Bump `programVersion` in `cmd/iq/main.go` to the new version string
+4. Remove completed features from `plan.md`
+5. Report to user they must now run ./build.sh <tag> "<message>" — message should be a brief phrase (under 80 chars), not a changelog
 
 ## Coding Rules / Style
 - Follow idiomatic Go practices

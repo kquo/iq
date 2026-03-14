@@ -123,7 +123,7 @@ for UTIL_DIR in ./cmd/*; do
         if ! should_build "$UTIL"; then
             continue
         fi
-        ProgramVersion=$(grep -o 'program_version.*"[^"]*"' "cmd/${UTIL}/main.go" | cut -d'"' -f2 || echo "unknown_version")
+        ProgramVersion=$(grep -o 'programVersion.*"[^"]*"' "cmd/${UTIL}/main.go" | cut -d'"' -f2 || echo "unknown_version")
         printf "\n==> Building and installing ${Gre}${UTIL} v${ProgramVersion}${Rst}\n"
         printf "    ${Gre}go build -o ${BINDIR}/${UTIL}${EXT} -ldflags \"-s -w\" $UTIL_DIR${Rst}\n"
         go build -o "${BINDIR}/${UTIL}${EXT}" -ldflags "-s -w" "$UTIL_DIR"

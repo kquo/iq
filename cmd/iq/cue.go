@@ -35,7 +35,7 @@ func openInEditor(path string) error {
 // ── Help ──────────────────────────────────────────────────────────────────────
 
 func printCueHelp() {
-	n := program_name
+	n := programName
 	fmt.Printf("Work with IQ cues.\n\n")
 	fmt.Printf("%s\n", utl.Whi2("USAGE"))
 	fmt.Printf("  %s cue <command> [flags]\n\n", n)
