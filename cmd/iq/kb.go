@@ -10,6 +10,7 @@ import (
 
 	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/config"
 	"iq/internal/embed"
 	"iq/internal/kb"
 )
@@ -156,9 +157,13 @@ func newKbSearchCmd() *cobra.Command {
 				fmt.Printf("%s\n", utl.Gra("no results"))
 				return nil
 			}
-			fmt.Printf("%s threshold:%.2f\n\n", utl.Gra("kb search —"), kb.MinScore)
+			kbMinScore := config.DefaultKbMinScore
+			if srchCfg, cfgErr := config.Load(nil); cfgErr == nil {
+				kbMinScore = config.KBMinScore(srchCfg)
+			}
+			fmt.Printf("%s threshold:%.2f\n\n", utl.Gra("kb search —"), kbMinScore)
 			for _, r := range results {
-				willInject := r.Score >= kb.MinScore
+				willInject := r.Score >= kbMinScore
 				scoreStr := fmt.Sprintf("score:%.4f", r.Score)
 				if !willInject {
 					scoreStr = utl.Gra(scoreStr + "  (below threshold — will not inject)")

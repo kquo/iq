@@ -89,11 +89,23 @@ type Config struct {
 	Tiers       map[string]*TierConfig `yaml:"tiers"`
 	InferParams `yaml:",inline"`
 	EmbedModel  string   `yaml:"embed_model,omitempty"`
+	KbMinScore  float64  `yaml:"kb_min_score,omitempty"`
 	ToolPaths   []string `yaml:"tool_paths,omitempty"`
 	BraveAPIKey string   `yaml:"brave_api_key,omitempty"` // Brave Search fallback API key
 	// Legacy fields — migrated to EmbedModel on load.
 	CueModel string `yaml:"cue_model,omitempty"`
 	KbModel  string `yaml:"kb_model,omitempty"`
+}
+
+// DefaultKbMinScore is the minimum cosine similarity required to inject a KB chunk.
+const DefaultKbMinScore float32 = 0.72
+
+// KBMinScore returns the configured KB minimum score, or the package default.
+func KBMinScore(cfg *Config) float32 {
+	if cfg != nil && cfg.KbMinScore > 0 {
+		return float32(cfg.KbMinScore)
+	}
+	return DefaultKbMinScore
 }
 
 // TierModels returns the model list for a tier, or nil.

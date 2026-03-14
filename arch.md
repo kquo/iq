@@ -208,7 +208,7 @@ Each chunk text is prefixed with `File: path/to/file.go` metadata before embeddi
 
 **Hybrid scoring** — KB search combines cosine similarity with keyword boosting. `extractKeywords` pulls meaningful tokens from the query (splits on whitespace/punctuation, expands camelCase, keeps tokens ≥ 4 chars). Each keyword found in a chunk adds +0.05; function call patterns (`keyword(`) add an extra +0.12 to surface callsites over definitions. Total keyword boost is capped at +0.25.
 
-KB retrieval is **always-on** when `kb.json` exists and the embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing each chunk's source, line range, and similarity score.
+KB retrieval is **always-on** when `kb.json` exists and the embed sidecar is running. Disable per-prompt with `-K / --no-kb`. The minimum injection score (`kb_min_score`, default 0.72) is configurable in `config.yaml`; `iq config show` reports the effective value. The `-d / --debug` flag adds a STEP 3 KB RETRIEVE trace showing the threshold, each chunk's source, line range, and similarity score.
 
 Commands: `ingest` (alias: `in`), `list`, `search`, `rm`, `clear`.
 
@@ -255,13 +255,13 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 2 — ROUTE.** Resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
 
-**Step 3 — KB RETRIEVE.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-3 most similar chunks are retrieved via hybrid scoring and injected as plain text context in the user message. Skipped silently if KB is empty or unavailable.
+**Step 3 — KB RETRIEVE.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-3 most similar chunks are retrieved via hybrid scoring. Only chunks whose score meets the minimum threshold (`kb_min_score`, default 0.72; configurable in `config.yaml`) are injected as plain text context in the user message. If no chunks clear the threshold, KB injection is skipped entirely. Skipped silently if KB is empty or unavailable.
 
 **Step 4 — ASSEMBLE.** Combines system prompt (from cue, plus tool instructions if tools enabled), session history (if any), and user message (with KB context prepended if any) into the structured message array sent to inference. `--dump-prompt <file>` writes this array as indented JSON and exits before inference (use `-` for stdout).
 
 **Step 4b — CACHE CHECK.** Computes an FNV64a hash over the assembled message array and model ID, then looks up the hash in `~/.config/iq/response_cache.json`. On a hit (entry exists and is within the 1-hour TTL), the cached response is returned immediately and inference is skipped entirely. Disabled in session mode, when tools are enabled (tool results depend on live execution), and via `--no-cache`.
 
-**Step 5 — INFERENCE LOOP.** Sends to the target sidecar via `POST /v1/chat/completions`. Non-tool path streams tokens to stdout by default.
+**Step 5 — INFERENCE LOOP.** Sends to the target sidecar via `POST /v1/chat/completions`. Non-tool path streams tokens to stdout by default; trace mode (`-d`) forces non-streaming to prevent stdout/stderr interleaving from corrupting the debug output.
 
 When tools are enabled, inference takes one of two paths based on how tools were detected:
 
@@ -272,7 +272,7 @@ When tools are enabled, inference takes one of two paths based on how tools were
 2. **Route parse.** IQ parses the routing prefix with `parseRoutingPrefix()`. If `<tool:NAME>`, arguments are extracted by `parseRoutingArgs()` which handles valid JSON, broken JSON (unquoted keys, `=` separators), and CLI flag formats (`--key=value`). IQ executes the tool; if it succeeds, output is printed directly to the user (no pass 2). If it fails, the error is injected and the model is called again (pass 2) to explain.
 3. **Passes 2+ — standard tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), `<tool:NAME>` routing prefix format on follow-up passes, unclosed tags, and markdown-fenced JSON. Successful tool output is printed directly; errors trigger another inference pass. Loop ends when no tool calls remain, or after 5 iterations.
 
-**Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Non-streaming mode strips think blocks from the full response.
+**Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Any tokens streamed before `<think>` is detected are tracked so they are not re-printed when the final result is shown. Non-streaming mode strips think blocks from the full response.
 
 **Step 5b — CACHE WRITE.** On a cache miss, stores the inference response in `response_cache.json` keyed by the same FNV64a hash from Step 4b. Expired entries (>1 hour) are pruned on write. Skipped when cache is disabled or session mode is active.
 
@@ -483,7 +483,7 @@ STEP 4b CACHE CHECK  (if !session && !tools && !--no-cache)
     │
     ▼
 STEP 5  INFERENCE LOOP  (skipped on cache hit)
-  ├── no tools: SSE stream → stdout (token by token)
+  ├── no tools: SSE stream → stdout (token by token); non-streaming in trace mode
   └── tools: two dispatch paths
        embed short-circuit (reason=embed): execute tool directly, skip grammar pass
          ├── tool succeeds: print output directly
@@ -530,9 +530,12 @@ STEP 2  RESOLVE ROUTE
 STEP 3  KB RETRIEVE
   task          Cosine-similarity search user input against KB chunks
   call          embed bge-small-en-v1.5-bf16 @ localhost:27000
+  threshold     0.72
   chunks        3 results
-  top           score:0.7219  svc.go:245–264
-  elapsed       65ms
+  top           score:0.9053  cues_default.yaml:1–201
+  top           score:0.8298  prompt.go:293–313
+  top           score:0.8227  arch.md:226–298
+  elapsed       66ms
 
 STEP 4  ASSEMBLE
   task          Combine system prompt, session history, and user message into message array
@@ -593,7 +596,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | File | Purpose |
 |------|---------|
-| `internal/config/config.go` | Config struct, Load/Save, tier helpers, embed model, legacy migrations |
+| `internal/config/config.go` | Config struct, Load/Save, tier helpers, embed model, kb_min_score, legacy migrations |
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 | `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
 | `internal/sidecar/transport.go` | OpenAI-compatible HTTP transport: ChatRequest, Call, CallWithGrammar, Stream, RawCall, StripThinkBlocks |
@@ -685,3 +688,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.9   | Per-tier tuning guide in arch.md; `short|long` alias format in help; trim trailing blank lines from all help output; README "Find Your Best Models" section |
 | 0.8.0   | `iq perf bench` auto-starts/stops sidecar for infer/tool types; red download hint for missing models in bench and sweep (`lm.IsModelNotDownloaded`) |
 | 0.8.1   | Embed short-circuit generalized to all tool signals (FEAT9990): skip routing grammar pass when embed is confident; `extractCalcExpression` converts natural language to math for calc tool; fallback strips tool system prompt to prevent re-invocation markup leak |
+| 0.8.2   | `kb_min_score` configurable in config.yaml; STEP 3 trace shows threshold and zero-result message; `traceBlock` truncates KB chunk content to 4-line preview; trace mode forces non-streaming to fix debug output corruption; fix double-print of pre-think tokens in streaming think models |

@@ -79,7 +79,7 @@ func newProbeCmd() *cobra.Command {
 				} else if !embed.SidecarAlive() {
 					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb: embed sidecar not running — run: iq start"))
 				} else {
-					results, kbErr := kb.Search(message, kb.DefaultK)
+					results, kbErr := kb.Search(message, kb.DefaultK, config.DefaultKbMinScore)
 					if kbErr != nil {
 						fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kbErr.Error()))
 					} else if len(results) > 0 {

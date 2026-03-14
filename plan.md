@@ -113,15 +113,6 @@ Add a `version:` field to config.yaml, embedded JSON schema for validation, and 
 
 ## Group E — Routing & Intelligence
 
-**FEAT9830** — **Relevance-gated context injection**
-Currently KB chunks are injected unconditionally (top-N by similarity, regardless of score). This introduces irrelevant context that can confuse the model and cause hallucinations — e.g., a general-knowledge question gets KB noise that overrides the model's training signal and produces a confident wrong answer. The same risk applies to web results and tool outputs.
-
-Fix: gate each context source behind a relevance signal before injection:
-- **KB** — only inject chunks whose cosine similarity to the query embedding exceeds a configurable minimum (e.g., `kbMinScore`). The score is already computed during retrieval; this is a threshold check, not new work. If no chunks clear the bar, skip KB injection entirely and let the model answer from training data.
-- **Web** — only inject web results when the `web_search` embed signal fires (see FEAT9820 for promoting this to a pre-fetch RAG path).
-- **Tools** — already partially gated by embed-based tool detection (see FEAT9790).
-
-The unifying principle: every context source needs a classifier or score gate that answers "is this source relevant to this query?" before injection. Sources that don't pass are skipped. This is distinct from FEAT9750's context assembly, which handles budget/priority *after* sources are admitted — this feature defines the admission step.
 
 **FEAT9820** — **Cue-triggered web RAG** *(extends existing web_search tool)*
 Add a `current_events` cue that, when matched during classification, extracts a search query from the raw prompt, pre-fetches web results, and injects them into context at Step 3 alongside KB chunks — so the model sees fresh web data without needing a tool-call loop. Key work: query extraction before inference, a new fetcher path, and ranking/truncating web chunks vs KB chunks. Web search as a tool already exists (v0.6.3); this promotes it to a RAG source.

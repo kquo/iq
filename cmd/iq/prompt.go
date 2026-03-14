@@ -275,18 +275,40 @@ func traceBlock(role, content string, highlightUser bool) {
 		}
 	}
 
+	const kbChunkPreviewLines = 4
+	inChunk := false
+	chunkLines := 0
+	skipped := 0
+	flushSkipped := func() {
+		if skipped > 0 {
+			fmt.Fprintf(os.Stderr, "%s%s\n", utl.Gra(blockIndent),
+				utl.Gra(fmt.Sprintf("... %d more lines", skipped)))
+			skipped = 0
+		}
+	}
 	for i, l := range lines {
 		if strings.HasPrefix(l, "KB Result Chunk ") {
+			flushSkipped()
+			inChunk = true
+			chunkLines = 0
 			// KB chunk header → green
 			fmt.Fprintf(os.Stderr, "%s%s\n", utl.Gra(blockIndent), utl.Gre(l))
 		} else if i >= userStart {
+			flushSkipped()
 			// User input → green
 			fmt.Fprintf(os.Stderr, "%s%s\n", utl.Gra(blockIndent), utl.Gre(l))
+		} else if inChunk && chunkLines >= kbChunkPreviewLines {
+			chunkLines++
+			skipped++
 		} else {
-			// KB header/chunk text → gray
+			if inChunk {
+				chunkLines++
+			}
+			// KB preamble or chunk preview → gray
 			fmt.Fprintf(os.Stderr, "%s%s\n", utl.Gra(blockIndent), utl.Gra(l))
 		}
 	}
+	flushSkipped()
 }
 
 // printStep1Classify prints the embedding classification trace.
@@ -350,14 +372,19 @@ func printStep2Route(route *routeResult, elapsed time.Duration) {
 }
 
 // printStep3KB prints the knowledge base retrieval trace.
-func printStep3KB(results []kb.Result, model string, elapsed time.Duration) {
+func printStep3KB(results []kb.Result, model string, minScore float32, elapsed time.Duration) {
 	traceStep("3 ", "KB RETRIEVE")
 	traceField("task", "Cosine-similarity search user input against KB chunks")
 	traceField("call", fmt.Sprintf("model %s @ localhost:%d", model, embed.PortConst))
-	traceField("chunks", fmt.Sprintf("%d results", len(results)))
-	for _, r := range results {
-		traceField("top", fmt.Sprintf("score:%.4f  %s:%d–%d",
-			r.Score, r.Chunk.Source, r.Chunk.LineStart, r.Chunk.LineEnd))
+	traceField("threshold", fmt.Sprintf("%.2f", minScore))
+	if len(results) == 0 {
+		traceField("chunks", "0 results (all below threshold — KB injection skipped)")
+	} else {
+		traceField("chunks", fmt.Sprintf("%d results", len(results)))
+		for _, r := range results {
+			traceField("top", fmt.Sprintf("score:%.4f  %s:%d–%d",
+				r.Score, r.Chunk.Source, r.Chunk.LineStart, r.Chunk.LineEnd))
+		}
 	}
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
@@ -537,10 +564,14 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	}
 	var kbCh chan kbResult
 	kbEnabled := kb.Exists() && !opts.noKB && embed.SidecarAlive() && sess == nil
+	kbMinScore := config.DefaultKbMinScore
+	if earlyCfg, cfgErr := config.Load(nil); cfgErr == nil {
+		kbMinScore = config.KBMinScore(earlyCfg)
+	}
 	if kbEnabled {
 		kbCh = make(chan kbResult, 1)
 		go func() {
-			results, kbErr := kb.Search(input, kb.DefaultK)
+			results, kbErr := kb.Search(input, kb.DefaultK, kbMinScore)
 			kbCh <- kbResult{results, kbErr}
 		}()
 	}
@@ -607,16 +638,18 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		t3 := time.Now()
 		select {
 		case kr := <-kbCh:
-			if kr.err == nil && len(kr.results) > 0 {
-				kbContext = kb.Context(kr.results)
+			if kr.err == nil {
+				if len(kr.results) > 0 {
+					kbContext = kb.Context(kr.results)
+				}
 				if trace {
 					em := config.DefaultEmbedModel
 					if cfg2, cfgErr := config.Load(nil); cfgErr == nil {
 						em = config.EmbedModel(cfg2)
 					}
-					printStep3KB(kr.results, em, time.Since(t3))
+					printStep3KB(kr.results, em, kbMinScore, time.Since(t3))
 				}
-			} else if kr.err != nil {
+			} else {
 				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kr.err.Error()))
 			}
 		case <-time.After(kbTimeout):
@@ -1024,8 +1057,9 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				}
 			} // end embed short-circuit else
 		} else {
-			// Non-tool path.
-			if opts.noStream {
+			// Non-tool path. Trace mode forces non-streaming to prevent stdout/stderr
+			// interleaving from corrupting the debug output.
+			if opts.noStream || trace {
 				if trace {
 					traceField("mode", "non-streaming")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
@@ -1036,10 +1070,6 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				}
 				fmt.Println(response)
 			} else {
-				if trace {
-					traceField("mode", "streaming")
-					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
-				}
 				response, err = sidecar.Stream(route.Port, messages, ip)
 				if err != nil {
 					return sess, err

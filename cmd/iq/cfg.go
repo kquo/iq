@@ -166,7 +166,7 @@ func runConfigShow() error {
 	cfgField("cue_classify_min", fmt.Sprintf("%.2f", embed.ClassifyMinScore))
 	cfgField("keyword_boost", fmt.Sprintf("%.2f", embed.KeywordBoostConst))
 	cfgField("tool_classify_min", fmt.Sprintf("%.2f", tools.ClassifyMinScore))
-	cfgField("kb_min_score", fmt.Sprintf("%.2f", kb.MinScore))
+	cfgField("kb_min_score", fmt.Sprintf("%.2f", config.KBMinScore(cfg)))
 	cfgField("kb_top_k", fmt.Sprintf("%d", kb.DefaultK))
 
 	cfgSection("RUNTIME")

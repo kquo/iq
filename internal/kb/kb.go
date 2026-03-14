@@ -548,8 +548,8 @@ func KeywordBoost(text, label string, keywords []string) float32 {
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
-// Search embeds the query and returns the top-k most similar chunks.
-func Search(query string, topK int) ([]Result, error) {
+// Search embeds the query and returns the top-k most similar chunks above minScore.
+func Search(query string, topK int, minScore float32) ([]Result, error) {
 	idx, err := Load()
 	if err != nil {
 		return nil, err
@@ -583,7 +583,7 @@ func Search(query string, topK int) ([]Result, error) {
 	})
 	filtered := results[:0]
 	for _, r := range results {
-		if r.Score >= MinScore {
+		if r.Score >= minScore {
 			filtered = append(filtered, r)
 		}
 	}

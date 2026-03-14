@@ -147,9 +147,10 @@ func Stream(port int, messages []config.Message, ip config.ResolvedParams) (stri
 	}
 
 	// Collect all tokens. If the model uses <think> blocks (e.g. DeepSeek-R1),
-	// we suppress streaming output entirely and print the clean result at the end.
-	// For non-thinking models, tokens stream normally as they arrive.
+	// we suppress further streaming once <think> is detected and print the clean
+	// result at the end. For non-thinking models, tokens stream normally.
 	var full strings.Builder
+	var preThink strings.Builder // tokens streamed before <think> was detected
 	hasThink := false
 
 	// Use a large scanner buffer — DeepSeek-R1 think blocks can produce
@@ -175,19 +176,26 @@ func Stream(port int, messages []config.Message, ip config.ResolvedParams) (stri
 				continue
 			}
 			full.WriteString(token)
-			if strings.Contains(full.String(), "<think>") {
+			if !hasThink && strings.Contains(full.String(), "<think>") {
 				hasThink = true
 			}
 			// Only stream to stdout if we have not encountered a think block.
 			if !hasThink {
 				fmt.Print(token)
+				preThink.WriteString(token)
 			}
 		}
 	}
 	result := StripThinkBlocks(full.String())
 	if hasThink {
-		// Print the clean result after stripping think blocks.
-		fmt.Print(result)
+		// Only print content that wasn't already streamed. Pre-think tokens were
+		// already sent to stdout; skip them to avoid printing them twice.
+		pre := preThink.String()
+		suffix := result
+		if strings.HasPrefix(result, pre) {
+			suffix = strings.TrimLeft(result[len(pre):], "\n")
+		}
+		fmt.Print(suffix)
 	}
 	fmt.Println()
 	return strings.TrimSpace(result), scanner.Err()
