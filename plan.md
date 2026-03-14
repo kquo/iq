@@ -26,7 +26,7 @@ Sorted easiest → hardest within each group.
 
 ---
 
-## Group B — Structural Cleanup (1–2 days each)
+## Group B — Structural Cleanup
 
 **FEAT9960** — **`NewRegistry()` constructor for tools**
 Replace global `Registry` var and `init()` with a constructor. Improves testability and isolation. Touches `internal/tools` + call sites in `cmd/iq`.
@@ -64,7 +64,7 @@ Currently the sidecar supports three params (`temperature`, `repetition_penalty`
 
 ---
 
-## Group C — Cross-Cutting Quality (3–5 days each)
+## Group C — Cross-Cutting Quality
 
 **FEAT9910** — **Error handling audit**
 Standardize: wrapped errors (`%w`) for domain functions, sentinel types for control flow, eliminate `nil, nil` returns. Spread across many files but each fix is small. Best done as a sweep with a checklist.
@@ -91,7 +91,7 @@ Table-driven tests for: `ParseCalls`/`ParseCallsStrict`, `resolveRoute` tier fal
 
 ---
 
-## Group D — Architecture Hardening (1–2 weeks each)
+## Group D — Architecture Hardening
 
 **FEAT9850** — **Context-based concurrency**
 Wire `context.Context` through the call chain. Replace ad-hoc goroutines (KB prefetch, HF enrichment, sidecar crash detection) with `errgroup`. Add cancellation propagation. Touches the prompt pipeline, sidecar lifecycle, and embed calls.
