@@ -583,8 +583,59 @@ func FormatResult(r Result) string {
 	return fmt.Sprintf("<tool_result name=%q>\n%s\n</tool_result>", r.Call.Name, r.Output)
 }
 
+// extractCalcExpression tries to extract a valid math expression from natural
+// language input (e.g. "calculate 1234 times 5678" → "1234 * 5678").
+// Returns "" if the input cannot be reduced to a clean math expression.
+func extractCalcExpression(input string) string {
+	s := strings.ToLower(strings.TrimSpace(input))
+
+	// Strip leading noise words.
+	for _, prefix := range []string{
+		"what's ", "what is ", "whats ", "how much is ",
+		"calculate ", "compute ", "evaluate ", "solve ", "find ",
+	} {
+		if strings.HasPrefix(s, prefix) {
+			s = strings.TrimSpace(s[len(prefix):])
+			break
+		}
+	}
+	s = strings.TrimRight(s, "?. ")
+
+	// Replace word operators with symbols.
+	for _, r := range []struct{ word, sym string }{
+		{"divided by", "/"},
+		{"multiplied by", "*"},
+		{"times", "*"},
+		{"plus", "+"},
+		{"minus", "-"},
+		{"modulo", "%"},
+		{"mod", "%"},
+	} {
+		s = strings.ReplaceAll(s, r.word, r.sym)
+	}
+
+	// Handle "X% of Y" → "(X/100)*Y".
+	s = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)`).ReplaceAllString(s, "($1/100)*$2")
+
+	s = strings.TrimSpace(regexp.MustCompile(`\s+`).ReplaceAllString(s, " "))
+
+	// Accept only if the result contains only math-safe characters.
+	if !regexp.MustCompile(`^[\d\s+\-*/%().]+$`).MatchString(s) {
+		return ""
+	}
+	return s
+}
+
 // GuardArgs builds a default arg map for a guard direct-call.
+// For the calc tool, it attempts to extract a valid math expression from
+// natural language before falling back to the raw input.
 func GuardArgs(toolName, input string) map[string]any {
+	if toolName == "calc" {
+		if expr := extractCalcExpression(input); expr != "" {
+			return map[string]any{"expression": expr}
+		}
+		return nil // caller falls back to direct inference
+	}
 	t := FindTool(toolName)
 	if t == nil {
 		return nil

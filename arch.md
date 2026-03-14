@@ -263,11 +263,14 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 5 — INFERENCE LOOP.** Sends to the target sidecar via `POST /v1/chat/completions`. Non-tool path streams tokens to stdout by default.
 
-When tools are enabled, inference runs in a non-streaming loop driven entirely by IQ's Go code:
+When tools are enabled, inference takes one of two paths based on how tools were detected:
+
+**Embed short-circuit path** (`tt.Reason == "embed"`): When Step 1b identifies a tool signal via embedding, IQ skips the routing grammar pass entirely and executes the identified tool directly. `GuardArgs` builds the argument map from the user input (e.g., for `calc`, `extractCalcExpression` converts natural language to a valid math expression). If the tool succeeds, output is printed directly. If it fails (or `GuardArgs` returns nil for unextractable args), IQ falls back to direct inference with the cue's plain system prompt (tool instructions stripped to prevent re-invocation). This path covers all embed-detected tool signals: `time_date`, `file_access`, `file_search`, `calculation`, and `web_search`.
+
+**Routing grammar path** (`tt.Reason == "file path"` or `"forced"`): Used when file-path heuristics or `--tools` flag triggered tool mode rather than embed signal. Runs in a non-streaming loop:
 1. **Pass 1 — routing grammar.** The request includes a `routing_grammar` field listing available tool names. The custom `infer_server.py` sidecar uses a `RoutingGrammarProcessor` (logits processor) to constrain the model's first tokens to one of `<tool:NAME>` or `<no_tool>`, then generates freely. This forces a structural routing decision before the model can fabricate an answer.
 2. **Route parse.** IQ parses the routing prefix with `parseRoutingPrefix()`. If `<tool:NAME>`, arguments are extracted by `parseRoutingArgs()` which handles valid JSON, broken JSON (unquoted keys, `=` separators), and CLI flag formats (`--key=value`). IQ executes the tool; if it succeeds, output is printed directly to the user (no pass 2). If it fails, the error is injected and the model is called again (pass 2) to explain.
-3. **Tool guard.** If the model chose `<no_tool>` but Step 1b detected a tool signal via embedding, IQ directly executes the expected tool (bypassing the model) and prints the output. Only calls pass 2 if the tool returned an error. This handles cases where small models pick `<no_tool>` despite clear tool intent.
-4. **Passes 2+ — standard tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), `<tool:NAME>` routing prefix format on follow-up passes, unclosed tags, and markdown-fenced JSON. Successful tool output is printed directly; errors trigger another inference pass. Loop ends when no tool calls remain, or after 5 iterations.
+3. **Passes 2+ — standard tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), `<tool:NAME>` routing prefix format on follow-up passes, unclosed tags, and markdown-fenced JSON. Successful tool output is printed directly; errors trigger another inference pass. Loop ends when no tool calls remain, or after 5 iterations.
 
 **Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Non-streaming mode strips think blocks from the full response.
 
@@ -481,12 +484,15 @@ STEP 4b CACHE CHECK  (if !session && !tools && !--no-cache)
     ▼
 STEP 5  INFERENCE LOOP  (skipped on cache hit)
   ├── no tools: SSE stream → stdout (token by token)
-  └── tools: non-streaming loop
-       pass 1: routing grammar → model emits <tool:NAME> or <no_tool>
-       if <tool:NAME>: execute tool → print output directly (pass 2 only on error)
-       if <no_tool> + embed signal: guard direct-calls tool → print output directly
-       passes 2+: parse <tool_call>/<tool:NAME> blocks → execute → print or re-infer
-       loop until no tool calls remain (up to 5 iterations)
+  └── tools: two dispatch paths
+       embed short-circuit (reason=embed): execute tool directly, skip grammar pass
+         ├── tool succeeds: print output directly
+         └── tool fails / no args: fall back to direct inference (plain system prompt)
+       routing grammar path (reason=file path|forced):
+         pass 1: routing grammar → model emits <tool:NAME> or <no_tool>
+         if <tool:NAME>: execute tool → print output directly (pass 2 only on error)
+         passes 2+: parse <tool_call>/<tool:NAME> blocks → execute → print or re-infer
+         loop until no tool calls remain (up to 5 iterations)
     │
     ▼
 STEP 5b CACHE WRITE  (on cache miss, stores response)
@@ -509,7 +515,7 @@ STEP 1  CLASSIFY
   elapsed       40ms
 
 STEP 1b TOOL DETECT
-  task          Cosine-similarity match input vector against 4 tool signal descriptions
+  task          Cosine-similarity match input vector against 5 tool signal descriptions
   best_signal   time_date (score: 0.72)
   result        enabled (embed)
   elapsed       1ms
@@ -543,22 +549,20 @@ STEP 4b CACHE CHECK
 
 STEP 5  INFERENCE LOOP
   task          Send assembled messages to model sidecar for generation
-  PASS 1        routing grammar
-  call          POST localhost:27001/v1/chat/completions
-  raw_resp      "<tool:get_time>"
-  route         <tool:get_time>
+  mode          embed short-circuit: time_date (skipping routing grammar)
   tool_call     get_time(null)
   tool_result   2026-03-08 14:57:17 EDT (Sunday)
-  latency 1     320ms
-  elapsed       320ms
+  elapsed       2ms
 
-  # If grammar chose <no_tool> but Step 1b detected a signal:
+  # Routing grammar path (reason=file path or forced):
   # PASS 1        routing grammar
-  # route         <no_tool>
-  # latency 1     500ms
-  # GUARD         <no_tool> but signal=time_date — direct-calling get_time
-  # tool_call     get_time(null)
-  # tool_result   2026-03-08 14:57:17 EDT (Sunday)
+  # call          POST localhost:27001/v1/chat/completions
+  # raw_resp      "<tool:read_file>"
+  # route         <tool:read_file>
+  # tool_call     read_file({"path":"go.mod"})
+  # tool_result   module github.com/...
+  # latency 1     320ms
+  # elapsed       320ms
 
   # If tool fails, pass 2 is called to explain the error:
   # PASS 2        explain tool result
@@ -600,7 +604,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/embed/embed_server.py` | Python embedding sidecar (MLX-based, embedded in binary) |
 | `internal/cache/cache.go` | Response cache with FNV64a hashing, TTL expiry, check/write |
 | `internal/tools/tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
-| `internal/tools/tools_test.go` | Tests for calcEval, ParseCalls, ValidatePath, HasFilePath, routing, registry |
+| `internal/tools/tools_test.go` | Tests for calcEval, extractCalcExpression, ParseCalls, ValidatePath, HasFilePath, routing, registry |
 | `internal/lm/lm.go` | HF API types/client, manifest CRUD, cache helpers, model param/quant parsing, formatting |
 | `internal/kb/kb.go` | KB index types, chunking strategies, hybrid search, ingest, persistence |
 
@@ -680,3 +684,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.7.8   | Async KB prefetch with 5s timeout; `iq perf sweep` automates model comparison; README onboarding guide |
 | 0.7.9   | Per-tier tuning guide in arch.md; `short|long` alias format in help; trim trailing blank lines from all help output; README "Find Your Best Models" section |
 | 0.8.0   | `iq perf bench` auto-starts/stops sidecar for infer/tool types; red download hint for missing models in bench and sweep (`lm.IsModelNotDownloaded`) |
+| 0.8.1   | Embed short-circuit generalized to all tool signals (FEAT9990): skip routing grammar pass when embed is confident; `extractCalcExpression` converts natural language to math for calc tool; fallback strips tool system prompt to prevent re-invocation markup leak |

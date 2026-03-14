@@ -68,6 +68,35 @@ func TestCalcDivisionByZero(t *testing.T) {
 	}
 }
 
+// ── extractCalcExpression tests ──────────────────────────────────────────────
+
+func TestExtractCalcExpression(t *testing.T) {
+	tests := []struct {
+		input  string
+		expect string // "" means extraction should fail
+	}{
+		{"calculate 1234 times 5678", "1234 * 5678"},
+		{"what is 15% of 340?", "(15/100)*340"},
+		{"100 divided by 4", "100 / 4"},
+		{"2 plus 2", "2 + 2"},
+		{"10 minus 3", "10 - 3"},
+		{"12 multiplied by 7", "12 * 7"},
+		{"compute 3 * 7", "3 * 7"},
+		{"evaluate (10 + 5) / 3", "(10 + 5) / 3"},
+		{"what's 9 mod 4", "9 % 4"},
+		{"1234 * 5678", "1234 * 5678"},                // already valid
+		{"calculate 1234 times 5678?", "1234 * 5678"}, // trailing punctuation
+		{"explain how multiplication works", ""},      // natural language, no expression
+		{"tell me about prime numbers", ""},
+	}
+	for _, tc := range tests {
+		got := extractCalcExpression(tc.input)
+		if got != tc.expect {
+			t.Errorf("extractCalcExpression(%q) = %q, want %q", tc.input, got, tc.expect)
+		}
+	}
+}
+
 // ── ParseCalls tests ─────────────────────────────────────────────────────────
 
 func TestParseToolCallsSingle(t *testing.T) {

@@ -26,17 +26,6 @@ Sorted easiest → hardest within each group.
 
 ---
 
-## Immediate — Do First
-
-**FEAT9990** — **Skip routing grammar pass when embed is confident**
-The current pipeline always runs a fast-model grammar pass (producing `<tool:NAME>` or `<no_tool>`) before invoking the slow model for the actual response. Most queries therefore pay for 2 inference passes sequentially — the routing pass plus the response — which is the primary latency driver on local hardware.
-
-The embed sidecar already determines with high confidence whether tools are needed (Step 1b tool detect). When no tool signals fire, skip the routing grammar pass entirely and go straight to inference. The grammar pass should only run when tool signals are present. This generalizes the existing `web_search` short-circuit (which already skips the grammar pass) to all non-tool queries.
-
-Scope: a conditional in the Step 5 dispatch logic in `cmd/iq/`. No config changes, no new packages. Partial implementation of FEAT9790 that can ship immediately without any architectural work.
-
----
-
 ## Group A — Cosmetic & Mechanical (hours)
 
 **FEAT9980** — **Idiomatic Go naming**

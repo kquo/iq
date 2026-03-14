@@ -727,60 +727,121 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			// Tool-enabled path always uses non-streaming so we can intercept
 			// tool_call blocks before they reach the user's terminal.
 
-			// ── Web search short-circuit ──
-			// When the embed signal is web_search, skip the routing grammar
-			// pass entirely — the model never calls web_search on its own,
-			// so Pass 1 would be wasted latency.
-			if tt != nil && tt.BestSignal == "web_search" && tt.Reason == "embed" {
+			// ── Embed short-circuit ──
+			// When the embed signal confidently identifies a tool, skip the routing
+			// grammar pass entirely and execute the tool directly. The grammar pass
+			// is reserved for cases where tool identity can't be determined from the
+			// embed signal alone (file path detection, forced tool mode).
+			if tt != nil && tt.Reason == "embed" {
 				var tPass time.Time
 				if trace {
-					traceField("mode", "web_search short-circuit (skipping routing grammar)")
+					traceField("mode", fmt.Sprintf("embed short-circuit: %s (skipping routing grammar)", tt.BestSignal))
 					tPass = time.Now()
 				}
-				call := tools.Call{Name: "web_search", Args: tools.GuardArgs("web_search", input)}
-				if trace {
-					printToolCallTrace(call)
+				if tt.BestSignal == "web_search" {
+					call := tools.Call{Name: "web_search", Args: tools.GuardArgs("web_search", input)}
+					if trace {
+						printToolCallTrace(call)
+					} else {
+						printToolStatus(call)
+					}
+					r := tools.Execute(call)
+					if trace {
+						printToolResultTrace(r)
+					}
+					if r.Error == "" && r.Output != "" {
+						// Replace the cue system prompt with a neutral web-search
+						// synthesis prompt so the model doesn't hedge or role-play.
+						synthMessages := []config.Message{
+							{Role: "system", Content: webSearchSynthPrompt()},
+							{Role: "user", Content: input},
+							{Role: "assistant", Content: "Let me search for that."},
+							{Role: "user", Content: "Search results:\n\n" + tools.FormatResult(r)},
+						}
+						if trace {
+							tracePass(1, "synthesize web search")
+							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
+							tPass = time.Now()
+						}
+						response, err = sidecar.Call(route.Port, synthMessages, ip.MaxTokens, ip)
+						if err != nil {
+							return sess, err
+						}
+						if trace {
+							traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+							traceField("latency", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
+						}
+					} else {
+						// Search failed — fall through to normal inference.
+						if trace {
+							traceField("search_error", r.Error)
+						}
+						response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
+						if err != nil {
+							return sess, err
+						}
+					}
+					fmt.Println(response)
 				} else {
-					printToolStatus(call)
+					// Non-web_search embed signal: execute the identified tool directly.
+					expected := tools.SignalToolNames(tt.BestSignal)
+					if len(expected) > 0 {
+						signalTool := expected[0]
+						call := tools.Call{Name: signalTool, Args: tools.GuardArgs(signalTool, input)}
+						if trace {
+							printToolCallTrace(call)
+						} else {
+							printToolStatus(call)
+						}
+						r := tools.Execute(call)
+						if trace {
+							printToolResultTrace(r)
+						}
+						// Self-contained tools print output directly.
+						// On tool failure, fall back to direct inference — the model
+						// answers from training data rather than synthesizing an error.
+						if r.Error == "" && r.Output != "" {
+							fmt.Println(r.Output)
+							response = r.Output
+						} else {
+							// Strip tool instructions from the system prompt so the model
+							// answers directly rather than trying to call a tool again.
+							fallbackMsgs := make([]config.Message, len(messages))
+							copy(fallbackMsgs, messages)
+							if len(fallbackMsgs) > 0 && fallbackMsgs[0].Role == "system" {
+								if route.SystemPrompt != "" {
+									fallbackMsgs[0].Content = route.SystemPrompt
+								} else {
+									fallbackMsgs = fallbackMsgs[1:]
+								}
+							}
+							if trace {
+								traceField("tool_fallback", fmt.Sprintf("%s failed — direct inference", signalTool))
+								traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
+								tPass = time.Now()
+							}
+							response, err = sidecar.Call(route.Port, fallbackMsgs, ip.MaxTokens, ip)
+							if err != nil {
+								return sess, err
+							}
+							if trace {
+								traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+								traceField("latency", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
+							}
+							fmt.Println(response)
+						}
+					} else {
+						// No tool mapped to this signal — fall back to direct inference.
+						if trace {
+							traceField("fallback", fmt.Sprintf("no tool for signal %s — direct inference", tt.BestSignal))
+						}
+						response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
+						if err != nil {
+							return sess, err
+						}
+						fmt.Println(response)
+					}
 				}
-				r := tools.Execute(call)
-				if trace {
-					printToolResultTrace(r)
-				}
-				if r.Error == "" && r.Output != "" {
-					// Replace the cue system prompt with a neutral web-search
-					// synthesis prompt so the model doesn't hedge or role-play.
-					synthMessages := []config.Message{
-						{Role: "system", Content: webSearchSynthPrompt()},
-						{Role: "user", Content: input},
-						{Role: "assistant", Content: "Let me search for that."},
-						{Role: "user", Content: "Search results:\n\n" + tools.FormatResult(r)},
-					}
-					if trace {
-						tracePass(1, "synthesize web search")
-						traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
-						tPass = time.Now()
-					}
-					response, err = sidecar.Call(route.Port, synthMessages, ip.MaxTokens, ip)
-					if err != nil {
-						return sess, err
-					}
-					if trace {
-						traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
-						traceField("latency", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
-					}
-				} else {
-					// Search failed — fall through to normal inference.
-					if trace {
-						traceField("search_error", r.Error)
-					}
-					response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
-					if err != nil {
-						return sess, err
-					}
-				}
-				// short-circuit done — print response
-				fmt.Println(response)
 			} else {
 
 				// ── Pass 1: routing-grammar-constrained inference ──
@@ -854,74 +915,13 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						}
 					}
 				} else {
-					// <no_tool> or no prefix — use tool guard as fallback.
+					// <no_tool> or no prefix.
 					if trace {
 						traceField("route", "<no_tool>")
 						traceField("latency 1", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
 					}
 					response = routeRest // strip the <no_tool> prefix
-
-					// Tool guard: if Step 1b detected a tool signal via embedding
-					// but the grammar chose <no_tool>, directly execute the first
-					// expected tool. Small models can't be reprompted into compliance,
-					// so we trust the embed signal and call the tool ourselves.
-					if tt != nil && tt.Reason == "embed" {
-						expected := tools.SignalToolNames(tt.BestSignal)
-						if len(expected) > 0 {
-							guardTool := expected[0]
-							if trace {
-								fmt.Fprintf(os.Stderr, "  %s  %s\n",
-									utl.Gra(fmt.Sprintf("%-12s", "GUARD")),
-									utl.Gre(fmt.Sprintf("<no_tool> but signal=%s — direct-calling %s", tt.BestSignal, guardTool)))
-							}
-							// Build default args: populate the first required param
-							// with the user input so tools like web_search get a query.
-							guardArgs := tools.GuardArgs(guardTool, input)
-							call := tools.Call{Name: guardTool, Args: guardArgs}
-							if trace {
-								printToolCallTrace(call)
-							} else {
-								printToolStatus(call)
-							}
-							r := tools.Execute(call)
-							if trace {
-								printToolResultTrace(r)
-							}
-							// Tools like get_time produce a self-contained answer;
-							// web_search returns raw snippets that need synthesis.
-							needsSynth := call.Name == "web_search"
-							if !needsSynth && r.Error == "" && r.Output != "" {
-								fmt.Println(r.Output)
-								response = r.Output
-								toolDone = true
-							} else {
-								messages = append(messages, config.Message{Role: "assistant", Content: "Let me check that for you."})
-								synthPrompt := "Tool result below. Explain the result or error briefly.\n\n"
-								if needsSynth && r.Error == "" {
-									synthPrompt = webSearchSynthPrompt()
-								}
-								messages = append(messages, config.Message{
-									Role:    "user",
-									Content: synthPrompt + tools.FormatResult(r),
-								})
-								if trace {
-									tracePass(2, "synthesize guard tool result")
-									traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
-									tPass = time.Now()
-								}
-								response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
-								if err != nil {
-									return sess, err
-								}
-								if trace {
-									traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
-									traceField("latency 2", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
-								}
-							}
-						}
-					}
 				}
-
 				// ── Passes 2+: standard tool loop for multi-tool chains ──
 				// Skip if tool output was already printed directly.
 				const maxToolIter = 5
@@ -1022,7 +1022,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						response = remaining
 					}
 				}
-			} // end web_search else
+			} // end embed short-circuit else
 		} else {
 			// Non-tool path.
 			if opts.noStream {
