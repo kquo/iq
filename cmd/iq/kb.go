@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/embed"
 	"iq/internal/kb"
@@ -20,15 +20,15 @@ import (
 func printKBHelp() {
 	n := programName
 	fmt.Printf("Manage the IQ knowledge base for RAG-augmented prompts.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi2("USAGE"))
 	fmt.Printf("  %s kb <command> [flags]\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
 	fmt.Printf("  %-12s %s\n", "ingest, in", "Ingest a file or directory tree into the knowledge base")
 	fmt.Printf("  %-12s %s\n", "list", "Show indexed sources")
 	fmt.Printf("  %-12s %s\n", "search", "Run a raw similarity search (no inference)")
 	fmt.Printf("  %-12s %s\n", "rm", "Remove a source from the knowledge base")
 	fmt.Printf("  %-12s %s\n\n", "clear", "Wipe the entire knowledge base")
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s kb ingest ~/projects/myapp\n", n)
 	fmt.Printf("  $ %s kb ingest ./README.md\n", n)
 	fmt.Printf("  $ %s kb list\n", n)
@@ -86,7 +86,7 @@ func newKbListCmd() *cobra.Command {
 				return err
 			}
 			if len(idx.Sources) == 0 {
-				fmt.Printf("%s\n", utl.Gra("knowledge base is empty — run: iq kb ingest <path>"))
+				fmt.Printf("%s\n", color.Gra("knowledge base is empty — run: iq kb ingest <path>"))
 				return nil
 			}
 			path, _ := kb.Path()
@@ -103,7 +103,7 @@ func newKbListCmd() *cobra.Command {
 					ingested = t.Format("2006-01-02 15:04")
 				}
 				fmt.Printf("%-50s  %6d  %6d  %s\n",
-					s.Path, s.FileCount, s.ChunkCount, utl.Gra(ingested))
+					s.Path, s.FileCount, s.ChunkCount, color.Gra(ingested))
 			}
 			fmt.Printf("\n%-50s  %6s  %6d\n", "TOTAL", "", total)
 			return nil
@@ -154,19 +154,19 @@ func newKbSearchCmd() *cobra.Command {
 				results = results[:topK]
 			}
 			if len(results) == 0 {
-				fmt.Printf("%s\n", utl.Gra("no results"))
+				fmt.Printf("%s\n", color.Gra("no results"))
 				return nil
 			}
 			kbMinScore := config.DefaultKbMinScore
 			if srchCfg, cfgErr := config.Load(nil); cfgErr == nil {
 				kbMinScore = config.KBMinScore(srchCfg)
 			}
-			fmt.Printf("%s threshold:%.2f\n\n", utl.Gra("kb search —"), kbMinScore)
+			fmt.Printf("%s threshold:%.2f\n\n", color.Gra("kb search —"), kbMinScore)
 			for _, r := range results {
 				willInject := r.Score >= kbMinScore
 				scoreStr := fmt.Sprintf("score:%.4f", r.Score)
 				if !willInject {
-					scoreStr = utl.Gra(scoreStr + "  (below threshold — will not inject)")
+					scoreStr = color.Gra(scoreStr + "  (below threshold — will not inject)")
 				}
 				labelStr := ""
 				if r.Chunk.Label != "" {
@@ -175,16 +175,16 @@ func newKbSearchCmd() *cobra.Command {
 				header := fmt.Sprintf("%s%s  %s  lines %d–%d",
 					r.Chunk.Source, labelStr, scoreStr, r.Chunk.LineStart, r.Chunk.LineEnd)
 				if willInject {
-					fmt.Printf("%s\n", utl.Whi(header))
+					fmt.Printf("%s\n", color.Whi(header))
 				} else {
-					fmt.Printf("%s\n", utl.Gra(header))
+					fmt.Printf("%s\n", color.Gra(header))
 				}
 				lines := strings.SplitN(r.Chunk.Text, "\n", 4)
 				preview := lines
 				if len(lines) > 3 {
 					preview = append(lines[:3], "...")
 				}
-				fmt.Printf("%s\n\n", utl.Gra(strings.Join(preview, "\n")))
+				fmt.Printf("%s\n\n", color.Gra(strings.Join(preview, "\n")))
 			}
 			return nil
 		},
@@ -212,13 +212,13 @@ func newKbRmCmd() *cobra.Command {
 			idx = kb.RemoveSource(idx, abs)
 			removed := before - len(idx.Chunks)
 			if removed == 0 {
-				fmt.Printf("%s\n", utl.Gra(fmt.Sprintf("%s not found in knowledge base", abs)))
+				fmt.Printf("%s\n", color.Gra(fmt.Sprintf("%s not found in knowledge base", abs)))
 				return nil
 			}
 			if err := kb.Save(idx); err != nil {
 				return err
 			}
-			fmt.Printf("removed %s  (%d chunks)\n", utl.Whi(abs), removed)
+			fmt.Printf("removed %s  (%d chunks)\n", color.Whi(abs), removed)
 			return nil
 		},
 	}
@@ -237,7 +237,7 @@ func newKbClearCmd() *cobra.Command {
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				return err
 			}
-			fmt.Printf("%s\n", utl.Gre("knowledge base cleared"))
+			fmt.Printf("%s\n", color.Grn("knowledge base cleared"))
 			return nil
 		},
 	}

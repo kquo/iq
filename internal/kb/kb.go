@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/queone/utl"
+	"iq/internal/color"
 
 	"iq/internal/config"
 	"iq/internal/embed"
@@ -691,7 +691,7 @@ func Ingest(root string) error {
 	for _, f := range files {
 		chunks, err := ChunkFile(f)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(fmt.Sprintf("  skip %s: %v", f, err)))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra(fmt.Sprintf("  skip %s: %v", f, err)))
 			continue
 		}
 		allChunks = append(allChunks, chunks...)
@@ -738,6 +738,6 @@ func Ingest(root string) error {
 		return fmt.Errorf("failed to save kb.json: %w", err)
 	}
 	fmt.Printf("  %s  ingested %s  (%d chunks embedded)\n",
-		utl.Gre("ok"), utl.Whi(abs), embedded)
+		color.Grn("ok"), color.Whi(abs), embedded)
 	return nil
 }

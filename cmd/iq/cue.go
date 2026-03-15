@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+	"iq/internal/color"
 	"iq/internal/cue"
 	"iq/internal/embed"
 )
@@ -37,9 +37,9 @@ func openInEditor(path string) error {
 func printCueHelp() {
 	n := programName
 	fmt.Printf("Work with IQ cues.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi2("USAGE"))
 	fmt.Printf("  %s cue <command> [flags]\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
 	fmt.Printf("  %-10s %s\n", "ls|list", "List all cues")
 	fmt.Printf("  %-10s %s\n", "show", "Show full details for a cue")
 	fmt.Printf("  %-10s %s\n", "add", "Add a new cue")
@@ -49,9 +49,9 @@ func printCueHelp() {
 	fmt.Printf("  %-10s %s\n", "unassign", "Clear the model assignment for a cue")
 	fmt.Printf("  %-10s %s\n", "reset", "Reset all or one cue to factory defaults")
 	fmt.Printf("  %-10s %s\n\n", "sync", "Add new built-in cues without overwriting existing ones")
-	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
+	fmt.Printf("%s\n", color.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s cue list\n", n)
 	fmt.Printf("  $ %s cue list --category reasoning\n", n)
 	fmt.Printf("  $ %s cue show math\n", n)
@@ -127,7 +127,7 @@ func newCueListCmd() *cobra.Command {
 			}
 
 			for _, cat := range cats {
-				fmt.Printf("%s\n", utl.Whi2(cat))
+				fmt.Printf("%s\n", color.Whi2(cat))
 				for _, c := range cues {
 					if c.Category != cat {
 						continue
@@ -395,7 +395,7 @@ func newCueAssignCmd() *cobra.Command {
 			// Warn if another cue already has this model.
 			for _, c := range cues {
 				if c.Model == modelID && c.Name != cueName {
-					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(
+					fmt.Fprintf(os.Stderr, "%s\n", color.Gra(
 						fmt.Sprintf("warning: model %q is already assigned to cue %q", modelID, c.Name)))
 				}
 			}
@@ -518,7 +518,7 @@ func newCueResetCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Printf("%s\n", utl.Gra("WARNING: This will reset ALL cues to factory defaults."))
+			fmt.Printf("%s\n", color.Gra("WARNING: This will reset ALL cues to factory defaults."))
 			if len(assigned) > 0 {
 				fmt.Printf("\nThe following model assignments will be cleared:\n")
 				for _, r := range assigned {

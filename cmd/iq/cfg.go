@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/queone/utl"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 	"iq/internal/cache"
+	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
@@ -61,12 +61,12 @@ func newConfigValidateCmd() *cobra.Command {
 func printConfigHelp() {
 	n := programName
 	fmt.Printf("Inspect and validate IQ configuration.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi2("USAGE"))
 	fmt.Printf("  %s config [command]\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
 	fmt.Printf("  %-16s %s\n", "show", "Show effective configuration (default)")
 	fmt.Printf("  %-16s %s\n\n", "validate", "Validate configuration files")
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s config\n", n)
 	fmt.Printf("  $ %s config show\n", n)
 	fmt.Printf("  $ %s config validate\n", n)
@@ -81,7 +81,7 @@ func runConfigShow() error {
 	}
 
 	// ── config.yaml ──
-	fmt.Printf("%s\n", utl.Whi2("CONFIG"))
+	fmt.Printf("%s\n", color.Whi2("CONFIG"))
 	cfgField("path", cfgPathStr())
 
 	// Print in config.yaml order: global params, tiers (with resolved params), then extras.
@@ -200,7 +200,7 @@ func cfgPathStr() string {
 }
 
 func cfgSection(name string) {
-	fmt.Printf("\n%s\n", utl.Whi2(name))
+	fmt.Printf("\n%s\n", color.Whi2(name))
 }
 
 func cfgField(label, value string) {
@@ -368,18 +368,18 @@ func runConfigValidate() error {
 
 	// ── Print results ──
 	for _, e := range errors {
-		fmt.Fprintf(os.Stderr, "  %s  %s\n", utl.Red("ERROR"), e)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n", color.Red("ERROR"), e)
 	}
 	for _, w := range warnings {
-		fmt.Fprintf(os.Stderr, "  %s  %s\n", utl.Yel("WARN "), w)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n", color.Yel("WARN "), w)
 	}
 	if len(errors) == 0 && len(warnings) == 0 {
-		fmt.Printf("  %s  configuration is valid\n", utl.Gre("OK"))
+		fmt.Printf("  %s  configuration is valid\n", color.Grn("OK"))
 	} else if len(errors) == 0 {
-		fmt.Printf("\n  %s  %d warning(s), no errors\n", utl.Gre("OK"), len(warnings))
+		fmt.Printf("\n  %s  %d warning(s), no errors\n", color.Grn("OK"), len(warnings))
 	} else {
 		fmt.Fprintf(os.Stderr, "\n  %s  %d error(s), %d warning(s)\n",
-			utl.Red("FAIL"), len(errors), len(warnings))
+			color.Red("FAIL"), len(errors), len(warnings))
 		return fmt.Errorf("config validation failed")
 	}
 	return nil

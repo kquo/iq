@@ -6,13 +6,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/color"
 )
 
 const (
 	programName    = "iq"
-	programVersion = "0.8.9"
+	programVersion = "0.8.10"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -27,7 +27,7 @@ var errSilent error = silentErr{}
 func argsUsage(v cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := v(cmd, args); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n\n", utl.Yel(err.Error()))
+			fmt.Fprintf(os.Stderr, "%s\n\n", color.Yel(err.Error()))
 			cmd.Help()
 			return errSilent
 		}
@@ -39,10 +39,10 @@ func printRootHelp() {
 	n := programName
 	fmt.Printf("%s v%s\n", n, programVersion)
 	fmt.Printf("Work with IQ from the command line.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi2("USAGE"))
 	fmt.Printf("  %s <command> [subcommand] [flags]\n", n)
 	fmt.Printf("  %s [flags] <message>\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("SERVICE"))
+	fmt.Printf("%s\n", color.Whi2("SERVICE"))
 	fmt.Printf("  %-24s %s\n", "start [tier|model]", "Start sidecars")
 	fmt.Printf("  %-24s %s\n", "stop [tier|model]", "Stop sidecars")
 	fmt.Printf("  %-24s %s\n", "st|status", "Show running sidecar status")
@@ -50,7 +50,7 @@ func printRootHelp() {
 	fmt.Printf("  %-24s %s\n", "tier", "Manage model tier pool assignments")
 	fmt.Printf("  %-24s %s\n", "embed", "Manage embed sidecar model")
 	fmt.Printf("  %-24s %s\n\n", "cfg|config", "Inspect and validate IQ configuration")
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
 	fmt.Printf("  %-24s %s\n", "lm", "Work with IQ language models")
 	fmt.Printf("  %-24s %s\n", "ask", "Interactive REPL and prompt aliases")
 	fmt.Printf("  %-24s %s\n", "cue", "Work with IQ cues")
@@ -58,7 +58,7 @@ func printRootHelp() {
 	fmt.Printf("  %-24s %s\n", "perf", "Benchmark IQ model performance")
 	fmt.Printf("  %-24s %s\n", "pry", "Send a raw message directly to a model sidecar")
 	fmt.Printf("  %-24s %s\n\n", "version", "Show the current IQ version")
-	fmt.Printf("%s\n", utl.Whi2("FLAGS"))
+	fmt.Printf("%s\n", color.Whi2("FLAGS"))
 	fmt.Printf("  %-24s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-24s %s\n", "-c, --category <n>", "Classify within a category only")
 	fmt.Printf("  %-24s %s\n", "    --tier <n>", "Override tier directly, bypass cue system")
@@ -73,7 +73,7 @@ func printRootHelp() {
 	fmt.Printf("  %-24s %s\n", "    --no-stream", "Collect full response before printing")
 	fmt.Printf("  %-24s %s\n", "-h, -?, --help", "Show this help output or the help for a specified subcommand.")
 	fmt.Printf("  %-24s %s\n\n", "-v, --version", "An alias for the \"version\" subcommand.")
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s -d \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s ask\n", n)

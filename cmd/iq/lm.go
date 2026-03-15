@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
@@ -23,19 +23,19 @@ import (
 func printLmHelp() {
 	n := programName
 	fmt.Printf("Work with IQ language models.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi2("USAGE"))
 	fmt.Printf("  %s lm <command> [flags]\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
 	fmt.Printf("  %-10s %s\n", "search [query|count]", "Search MLX model registry; numeric arg sets result count")
 	fmt.Printf("  %-10s %s\n", "get", "Download a model from the registry")
 	fmt.Printf("  %-10s %s\n", "ls|list", "List locally available models")
 	fmt.Printf("  %-10s %s\n", "show", "Show details for a model")
 	fmt.Printf("  %-10s %s\n\n", "rm", "Remove a model")
-	fmt.Printf("%s\n", utl.Whi2("INHERITED FLAGS"))
+	fmt.Printf("%s\n", color.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
-	fmt.Printf("%s\n", utl.Whi2("ARGUMENTS"))
+	fmt.Printf("%s\n", color.Whi2("ARGUMENTS"))
 	fmt.Printf("  A model name can be supplied as an argument.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s lm search\n", n)
 	fmt.Printf("  $ %s lm search gemma\n", n)
 	fmt.Printf("  $ %s lm get mlx-community/gemma-3-1b-it-4bit\n", n)
@@ -141,7 +141,7 @@ func newLmGetCmd() *cobra.Command {
 			// Check task type before downloading.
 			if m, err := lm.HFFetchModel(model); err == nil && m.PipelineTag != "" && m.PipelineTag != "text-generation" {
 				fmt.Fprintf(os.Stderr, "%s\n",
-					utl.Yel(fmt.Sprintf("Warning: model task is %q — IQ only supports text-generation", m.PipelineTag)))
+					color.Yel(fmt.Sprintf("Warning: model task is %q — IQ only supports text-generation", m.PipelineTag)))
 			}
 
 			// Run via shell so it inherits the user's full PATH
@@ -169,7 +169,7 @@ func newLmGetCmd() *cobra.Command {
 			}
 
 			if err := lm.AddToManifest(model); err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: failed to update manifest: "+err.Error()))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: failed to update manifest: "+err.Error()))
 			}
 
 			// Cache the pipeline_tag in the manifest.
@@ -192,8 +192,8 @@ func newLmGetCmd() *cobra.Command {
 			}
 
 			tier := lm.SuggestTier(model)
-			fmt.Printf("\nSuggested tier: %s\n", utl.Gre(tier))
-			fmt.Printf("%s\n", utl.Gra(
+			fmt.Printf("\nSuggested tier: %s\n", color.Grn(tier))
+			fmt.Printf("%s\n", color.Gra(
 				fmt.Sprintf("  iq tier add %s %s", tier, model)))
 
 			return nil
@@ -236,16 +236,16 @@ func newLmListCmd() *cobra.Command {
 				}
 				var tierDisplay string
 				if e.ID == emM {
-					tierDisplay = utl.Gre(fmt.Sprintf("%-6s", "embed"))
+					tierDisplay = color.Grn(fmt.Sprintf("%-6s", "embed"))
 				} else {
 					tier := config.TierForModel(e.ID)
 					tierRaw := "<unset>"
 					if tier != "" {
 						tierRaw = tier
 					}
-					tierDisplay = utl.Gra(fmt.Sprintf("%-6s", tierRaw))
+					tierDisplay = color.Gra(fmt.Sprintf("%-6s", tierRaw))
 					if tier != "" {
-						tierDisplay = utl.Gre(fmt.Sprintf("%-6s", tierRaw))
+						tierDisplay = color.Grn(fmt.Sprintf("%-6s", tierRaw))
 					}
 				}
 				fmt.Printf("%-55s  %s  %8s  %-10s  %8s  %10s  %s\n",
@@ -325,7 +325,7 @@ func newLmShowCmd() *cobra.Command {
 				results := resultsFor(bs, entry.ID, "")
 				if len(results) == 0 {
 					fmt.Printf("%-12s %s\n", "PERFORMANCE",
-						utl.Gra("<not benchmarked>"))
+						color.Gra("<not benchmarked>"))
 				} else {
 					first := true
 					for _, r := range results {
@@ -351,11 +351,11 @@ func newLmShowCmd() *cobra.Command {
 			tier := config.TierForModel(entry.ID)
 			if tier == "" {
 				suggested := lm.SuggestTier(entry.ID)
-				fmt.Printf("%-12s %s\n", "TIER", utl.Gra("<unset>"))
+				fmt.Printf("%-12s %s\n", "TIER", color.Gra("<unset>"))
 				fmt.Printf("%-12s %s\n", "",
-					utl.Gra(fmt.Sprintf("iq tier add %s %s", suggested, entry.ID)))
+					color.Gra(fmt.Sprintf("iq tier add %s %s", suggested, entry.ID)))
 			} else {
-				fmt.Printf("%-12s %s\n", "TIER", utl.Gre(tier))
+				fmt.Printf("%-12s %s\n", "TIER", color.Grn(tier))
 			}
 
 			files, ferr := lm.SnapshotFiles(cacheDir)
@@ -389,12 +389,12 @@ func newLmRmCmd() *cobra.Command {
 			if cfg != nil && model == config.EmbedModel(cfg) {
 				s, _ := sidecar.ReadState(embed.SlugConst)
 				if s != nil && sidecar.PidAlive(s.PID) {
-					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping embed sidecar"))
+					fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: stopping embed sidecar"))
 					if err := sidecar.Stop(embed.SlugConst); err != nil {
 						return fmt.Errorf("failed to stop embed sidecar: %w", err)
 					}
 				}
-				fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: clearing embed_model assignment"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: clearing embed_model assignment"))
 				cfg.EmbedModel = ""
 				if err := config.Save(cfg); err != nil {
 					return fmt.Errorf("failed to update config: %w", err)
@@ -405,12 +405,12 @@ func newLmRmCmd() *cobra.Command {
 			if t := config.TierForModel(model); t != "" {
 				state, _ := sidecar.ReadState(model)
 				if state != nil && sidecar.PidAlive(state.PID) {
-					fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: stopping "+model+" sidecar"))
+					fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: stopping "+model+" sidecar"))
 					if err := sidecar.Stop(model); err != nil {
 						return fmt.Errorf("failed to stop sidecar: %w", err)
 					}
 				}
-				fmt.Fprintf(os.Stderr, "%s\n", utl.Yel("warning: removing "+model+" from "+t+" tier"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: removing "+model+" from "+t+" tier"))
 				// Reload config in case it was modified above.
 				cfg, _ = config.Load(nil)
 				if cfg != nil {
@@ -428,7 +428,7 @@ func newLmRmCmd() *cobra.Command {
 
 			if !force {
 				disk := lm.DiskUsage(cacheDir)
-				fmt.Printf("%s [y/N] ", utl.Yel(fmt.Sprintf("Remove %s (%s)?", model, lm.FormatMB(disk))))
+				fmt.Printf("%s [y/N] ", color.Yel(fmt.Sprintf("Remove %s (%s)?", model, lm.FormatMB(disk))))
 				var resp string
 				fmt.Scanln(&resp)
 				if strings.ToLower(strings.TrimSpace(resp)) != "y" {
@@ -442,7 +442,7 @@ func newLmRmCmd() *cobra.Command {
 				return fmt.Errorf("failed to update manifest: %w", err)
 			}
 			if !found {
-				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: model not found in manifest"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: model not found in manifest"))
 			}
 
 			// Use entry's recorded cache path if available, fall back to derived path.
@@ -452,7 +452,7 @@ func newLmRmCmd() *cobra.Command {
 			}
 
 			if _, err := os.Stat(dir); os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("warning: cache directory not found: "+dir))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: cache directory not found: "+dir))
 				return nil
 			}
 

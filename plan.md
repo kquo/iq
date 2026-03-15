@@ -30,9 +30,6 @@ Sorted easiest → hardest within each group.
 
 ## Group C — Cross-Cutting Quality
 
-**FEAT9900** — **`queone/utl` review & improvement**
-Audit the package, document its API, decide what to keep/replace/upstream. The goal is contributor-friendliness, not wholesale replacement.
-
 **FEAT9890** — **Test coverage expansion**
 Table-driven tests for: `ParseCalls`/`ParseCallsStrict`, `resolveRoute` tier fallback, sidecar lifecycle (start/ready/stop with httptest), config migration paths, embed classification. Biggest bang-for-buck reliability investment. Best paired with FEAT9910 since clean error handling makes testing easier.
 

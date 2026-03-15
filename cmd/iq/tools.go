@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/queone/utl"
+	"iq/internal/color"
 	"iq/internal/tools"
 )
 
@@ -26,5 +26,5 @@ func printToolResultTrace(r tools.Result) {
 
 // printToolStatus prints a short tool-use indicator to stderr.
 func printToolStatus(call tools.Call) {
-	fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(fmt.Sprintf("[tool: %s]", call.Name)))
+	fmt.Fprintf(os.Stderr, "%s\n", color.Gra(fmt.Sprintf("[tool: %s]", call.Name)))
 }

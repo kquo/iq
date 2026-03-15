@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/queone/utl"
+	"iq/internal/color"
 
 	"iq/internal/config"
 )
@@ -428,15 +428,15 @@ func ParseParamsM(id string) string {
 // FormatTask returns a colored task label for single-line display.
 func FormatTask(tag string) string {
 	if tag == "" {
-		return utl.Gra("-")
+		return color.Gra("-")
 	}
 	if tag == "text-generation" {
-		return utl.Gre(tag)
+		return color.Grn(tag)
 	}
 	if tag == "feature-extraction" {
-		return utl.Gre("embedding")
+		return color.Grn("embedding")
 	}
-	return utl.Red(tag)
+	return color.Red(tag)
 }
 
 // FormatTaskCol returns a fixed-width (24-char), colored task string for table columns.
@@ -454,12 +454,12 @@ func FormatTaskCol(tag string) string {
 	}
 	padded := fmt.Sprintf("%-24s", display)
 	if raw == "text-generation" || raw == "feature-extraction" {
-		return utl.Gre(padded)
+		return color.Grn(padded)
 	}
 	if raw != "-" {
-		return utl.Red(padded)
+		return color.Red(padded)
 	}
-	return utl.Gra(padded)
+	return color.Gra(padded)
 }
 
 // InferTaskFromConfig reads a local model's config.json and infers the

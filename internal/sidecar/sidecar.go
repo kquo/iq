@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/queone/utl"
+	"iq/internal/color"
 
 	"iq/internal/config"
 )
@@ -284,11 +284,11 @@ func PrintLastLogLines(logFile string, n int) {
 			lines = lines[1:]
 		}
 	}
-	fmt.Fprintf(os.Stderr, "\n%s\n", utl.Gra("--- last log lines ---"))
+	fmt.Fprintf(os.Stderr, "\n%s\n", color.Gra("--- last log lines ---"))
 	for _, l := range lines {
 		fmt.Fprintf(os.Stderr, "  %s\n", l)
 	}
-	fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("--- full log: "+logFile+" ---"))
+	fmt.Fprintf(os.Stderr, "%s\n", color.Gra("--- full log: "+logFile+" ---"))
 	fmt.Fprintln(os.Stderr)
 }
 
@@ -358,7 +358,7 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 		}
 	} else {
 		fi, _ := os.Stat(scriptPath)
-		fmt.Fprintf(os.Stderr, "  %s\n", utl.Yel(fmt.Sprintf("using %s (%s)", scriptPath, fi.ModTime().Format("2006-01-02 15:04"))))
+		fmt.Fprintf(os.Stderr, "  %s\n", color.Yel(fmt.Sprintf("using %s (%s)", scriptPath, fi.ModTime().Format("2006-01-02 15:04"))))
 	}
 	cmd := exec.Command(pythonPath, scriptPath, "--model", modelPath, "--port", strconv.Itoa(port))
 	cmd.Env = os.Environ()
@@ -398,13 +398,13 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				fmt.Printf("%s\n", utl.Gre("ready"))
+				fmt.Printf("%s\n", color.Grn("ready"))
 				return state, nil
 			}
 		}
 		select {
 		case <-exited:
-			fmt.Printf("%s\n", utl.Gra("failed"))
+			fmt.Printf("%s\n", color.Gra("failed"))
 			PrintLastLogLines(lfPath, 10)
 			return nil, fmt.Errorf("sidecar process exited unexpectedly")
 		default:
@@ -413,7 +413,7 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 		time.Sleep(PollInterval)
 	}
 
-	fmt.Printf("%s\n", utl.Gra("timeout"))
+	fmt.Printf("%s\n", color.Gra("timeout"))
 	PrintLastLogLines(lfPath, 10)
 	return nil, fmt.Errorf("sidecar did not become ready within %s", ReadyTimeout)
 }
@@ -425,11 +425,11 @@ func Stop(modelID string) error {
 		return err
 	}
 	if state == nil {
-		fmt.Printf("  %s  %s\n", modelID, utl.Gra("not running"))
+		fmt.Printf("  %s  %s\n", modelID, color.Gra("not running"))
 		return nil
 	}
 	if !PidAlive(state.PID) {
-		fmt.Printf("  pid %-7d  %s  %s\n", state.PID, modelID, utl.Gra("already stopped (stale state removed)"))
+		fmt.Printf("  pid %-7d  %s  %s\n", state.PID, modelID, color.Gra("already stopped (stale state removed)"))
 		RemoveState(modelID)
 		return nil
 	}
@@ -450,7 +450,7 @@ func Stop(modelID string) error {
 		proc.Signal(syscall.SIGKILL)
 	}
 	RemoveState(modelID)
-	fmt.Printf("  pid %-7d  %s  %s\n", state.PID, modelID, utl.Gra("stopped"))
+	fmt.Printf("  pid %-7d  %s  %s\n", state.PID, modelID, color.Gra("stopped"))
 	return nil
 }
 
@@ -483,7 +483,7 @@ func KillOrphanSidecars() {
 			if PidAlive(pid) {
 				proc.Signal(syscall.SIGKILL)
 			}
-			fmt.Printf("  pid %-7d  %s\n", pid, utl.Gra("orphan killed"))
+			fmt.Printf("  pid %-7d  %s\n", pid, color.Gra("orphan killed"))
 		}
 	}
 }

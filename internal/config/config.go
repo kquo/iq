@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/queone/utl"
 	"gopkg.in/yaml.v3"
+	"iq/internal/color"
 )
 
 // ── Shared types ────────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 				cfg = migrateFlatTiers(data, diskUsage)
 				if err := Save(cfg); err == nil {
 					fmt.Fprintf(os.Stderr, "%s\n",
-						utl.Gra("config.yaml migrated: tiers updated to structured format"))
+						color.Gra("config.yaml migrated: tiers updated to structured format"))
 				}
 				return cfg, nil
 			}
@@ -291,7 +291,7 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 		cfg.KbModel = ""
 		if err := Save(cfg); err == nil {
 			fmt.Fprintf(os.Stderr, "%s\n",
-				utl.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
+				color.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
 		}
 	}
 

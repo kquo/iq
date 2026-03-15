@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/queone/utl"
 	"github.com/spf13/cobra"
+	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/embed"
 	"iq/internal/kb"
@@ -176,11 +176,11 @@ func printStatus() error {
 
 	for _, r := range rows {
 		// Pad the raw string to fixed width BEFORE colorizing — ANSI escape codes
-		// added by utl.Gre/Gra inflate len() and break %-Ns alignment.
+		// added by color.Grn/Gra inflate len() and break %-Ns alignment.
 		runRaw := fmt.Sprintf("%-7s", "no")
-		runDisplay := utl.Gra(runRaw)
+		runDisplay := color.Gra(runRaw)
 		if r.running {
-			runDisplay = utl.Gre(fmt.Sprintf("%-7s", "yes"))
+			runDisplay = color.Grn(fmt.Sprintf("%-7s", "yes"))
 		}
 		if !r.running {
 			fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %s  %8s\n",
@@ -213,7 +213,7 @@ func printStatus() error {
 func printSvcHelp() {
 	n := programName
 	fmt.Printf("Legacy alias — svc commands have moved to the root.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("NEW USAGE"))
+	fmt.Printf("%s\n", color.Whi2("NEW USAGE"))
 	fmt.Printf("  %s start [tier|model]\n", n)
 	fmt.Printf("  %s stop [tier|model]\n", n)
 	fmt.Printf("  %s status\n", n)
@@ -328,7 +328,7 @@ func newStartCmd() *cobra.Command {
 				state, _ := sidecar.ReadState(modelID)
 				if state != nil && sidecar.PidAlive(state.PID) {
 					fmt.Printf("  pid %-7d  %s  %s\n",
-						state.PID, sidecar.Endpoint(state.Port), utl.Gra("already running"))
+						state.PID, sidecar.Endpoint(state.Port), color.Gra("already running"))
 					continue
 				}
 				if err := startSidecar(tier, modelID); err != nil {
@@ -379,16 +379,16 @@ func newStopCmd() *cobra.Command {
 func printTierHelp() {
 	n := programName
 	fmt.Printf("Manage model tier pool assignments.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi2("USAGE"))
 	fmt.Printf("  %s tier <command> [flags]\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
 	fmt.Printf("  %-10s %s\n", "show", "Show current tier assignments")
 	fmt.Printf("  %-10s %s\n", "add", "Add a model to a tier pool")
 	fmt.Printf("  %-10s %s\n\n", "rm", "Remove a model from a tier pool")
-	fmt.Printf("%s\n", utl.Whi2("TIERS"))
+	fmt.Printf("%s\n", color.Whi2("TIERS"))
 	fmt.Printf("  %-8s %s\n", "fast", "Sub-2GB models — used for classification and quick tasks")
 	fmt.Printf("  %-8s %s\n\n", "slow", "2GB+ models — used for quality inference")
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s tier show\n", n)
 	fmt.Printf("  $ %s tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
 	fmt.Printf("  $ %s tier add slow mlx-community/Phi-4-mini-reasoning-4bit\n", n)
@@ -425,10 +425,10 @@ func newTierShowCmd() *cobra.Command {
 			for _, t := range config.TierOrder {
 				models := cfg.TierModels(t)
 				if len(models) == 0 {
-					fmt.Printf("%-6s  %s\n", t, utl.Gra("<empty>"))
+					fmt.Printf("%-6s  %s\n", t, color.Gra("<empty>"))
 				} else {
 					for _, m := range models {
-						fmt.Printf("%-6s  %s\n", t, utl.Gre(m))
+						fmt.Printf("%-6s  %s\n", t, color.Grn(m))
 					}
 				}
 			}
@@ -462,7 +462,7 @@ func newTierAddCmd() *cobra.Command {
 			}
 			for i, m := range cfg.TierModels(other) {
 				if m == modelID {
-					fmt.Fprintf(os.Stderr, "%s\n", utl.Gra(
+					fmt.Fprintf(os.Stderr, "%s\n", color.Gra(
 						fmt.Sprintf("warning: %s moved from %s to %s", modelID, other, tier)))
 					cfg.Tiers[other].Models = append(cfg.Tiers[other].Models[:i], cfg.Tiers[other].Models[i+1:]...)
 					break
@@ -472,7 +472,7 @@ func newTierAddCmd() *cobra.Command {
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%-6s  %s\n", tier, utl.Gre(modelID))
+			fmt.Printf("%-6s  %s\n", tier, color.Grn(modelID))
 			return nil
 		},
 	}
@@ -515,19 +515,19 @@ func newTierRmCmd() *cobra.Command {
 func printEmbedHelp() {
 	n := programName
 	fmt.Printf("Manage the MLX embed model for cue classification and KB retrieval.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi2("USAGE"))
 	fmt.Printf("  %s embed <command>\n\n", n)
-	fmt.Printf("%s\n", utl.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
 	fmt.Printf("  %-24s %s\n", "show", "Show the configured embed model")
 	fmt.Printf("  %-24s %s\n", "set <model>", "Set embed model and restart sidecar")
 	fmt.Printf("  %-24s %s\n\n", "rm", "Revert embed model to default and restart sidecar")
-	fmt.Printf("%s\n", utl.Whi2("NOTES"))
+	fmt.Printf("%s\n", color.Whi2("NOTES"))
 	fmt.Printf("  Models are HF model IDs (mlx-community/*). The model must be\n")
 	fmt.Printf("  downloaded first with 'iq lm get <model>'.\n")
 	fmt.Printf("  Changing embed model invalidates kb.json — re-ingest required.\n\n")
-	fmt.Printf("%s\n", utl.Whi2("DEFAULT"))
-	fmt.Printf("  %s\n\n", utl.Gra(config.DefaultEmbedModel))
-	fmt.Printf("%s\n", utl.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi2("DEFAULT"))
+	fmt.Printf("  %s\n\n", color.Gra(config.DefaultEmbedModel))
+	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
 	fmt.Printf("  $ %s embed show\n", n)
 	fmt.Printf("  $ %s embed set mlx-community/bge-small-en-v1.5-bf16\n", n)
 }
@@ -561,9 +561,9 @@ func newEmbedShowCmd() *cobra.Command {
 			}
 			suffix := ""
 			if cfg.EmbedModel == "" {
-				suffix = utl.Gra("  (default)")
+				suffix = color.Gra("  (default)")
 			}
-			fmt.Printf("embed_model  %s%s\n", utl.Gre(config.EmbedModel(cfg)), suffix)
+			fmt.Printf("embed_model  %s%s\n", color.Grn(config.EmbedModel(cfg)), suffix)
 			return nil
 		},
 	}
@@ -586,11 +586,11 @@ func newEmbedSetCmd() *cobra.Command {
 				return err
 			}
 			embed.InvalidateCueEmbeddings()
-			fmt.Printf("embed_model  %s\n", utl.Gre(modelName))
+			fmt.Printf("embed_model  %s\n", color.Grn(modelName))
 			kbP, _ := kb.Path()
 			if _, err := os.Stat(kbP); err == nil {
-				fmt.Printf("%s\n", utl.Yel("warning: embed_model changed — existing kb.json is stale"))
-				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
+				fmt.Printf("%s\n", color.Yel("warning: embed_model changed — existing kb.json is stale"))
+				fmt.Printf("%s\n", color.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the new model.
 			sidecar.Stop(embed.SlugConst)
@@ -615,11 +615,11 @@ func newEmbedRmCmd() *cobra.Command {
 				return err
 			}
 			embed.InvalidateCueEmbeddings()
-			fmt.Printf("embed_model  %s\n", utl.Gra("(default) "+config.DefaultEmbedModel))
+			fmt.Printf("embed_model  %s\n", color.Gra("(default) "+config.DefaultEmbedModel))
 			kbP, _ := kb.Path()
 			if _, err := os.Stat(kbP); err == nil {
-				fmt.Printf("%s\n", utl.Yel("warning: embed_model changed — existing kb.json is stale"))
-				fmt.Printf("%s\n", utl.Gra("  run: iq kb clear && iq kb ingest <path>"))
+				fmt.Printf("%s\n", color.Yel("warning: embed_model changed — existing kb.json is stale"))
+				fmt.Printf("%s\n", color.Gra("  run: iq kb clear && iq kb ingest <path>"))
 			}
 			// Stop old sidecar and start fresh with the default model.
 			sidecar.Stop(embed.SlugConst)
@@ -689,9 +689,9 @@ func newDocCmd() *cobra.Command {
 			// ── python3 ──
 			pyPath, pyVer := checkCommand("python3", "--version")
 			pyOK := pyPath != ""
-			detail := utl.Gra("not found")
+			detail := color.Gra("not found")
 			if pyOK {
-				detail = fmt.Sprintf("%s  %s", pyPath, utl.Gra(pyVer))
+				detail = fmt.Sprintf("%s  %s", pyPath, color.Gra(pyVer))
 			}
 			checks = append(checks, runDocCheck("python3", detail, pyOK, false))
 
@@ -700,9 +700,9 @@ func newDocCmd() *cobra.Command {
 			serverOK := serverPath != ""
 			var serverDetail string
 			if serverOK {
-				serverDetail = utl.Gra(serverPath)
+				serverDetail = color.Gra(serverPath)
 			} else {
-				serverDetail = utl.Gra("not found — install with: pipx install mlx-lm")
+				serverDetail = color.Gra("not found — install with: pipx install mlx-lm")
 			}
 			checks = append(checks, runDocCheck("mlx_lm.server", serverDetail, serverOK, false))
 
@@ -716,23 +716,23 @@ func newDocCmd() *cobra.Command {
 				wg.Go(func() {
 					helpOut, _ := exec.Command(serverPath, "--help").CombinedOutput()
 					ok := strings.Contains(string(helpOut), "--model")
-					d := utl.Gra("--model flag supported")
+					d := color.Gra("--model flag supported")
 					if !ok {
-						d = utl.Gra("--model flag not found — upgrade mlx_lm")
+						d = color.Gra("--model flag not found — upgrade mlx_lm")
 					}
 					flagCheck = runDocCheck("  --model flag", d, ok, false)
 				})
 			}
 			wg.Go(func() {
 				if pyVenvErr != nil {
-					embPkgCheck = runDocCheck("mlx-embedding-models pkg", utl.Gra("cannot check — "+pyVenvErr.Error()), false, false)
+					embPkgCheck = runDocCheck("mlx-embedding-models pkg", color.Gra("cannot check — "+pyVenvErr.Error()), false, false)
 					return
 				}
 				out, err := exec.Command(venvPy, "-c", "import mlx_embedding_models").CombinedOutput()
 				ok := err == nil
-				d := utl.Gra("ok")
+				d := color.Gra("ok")
 				if !ok {
-					d = utl.Gra("not found — run: pipx inject mlx-lm mlx-embedding-models\n" + strings.TrimSpace(string(out)))
+					d = color.Gra("not found — run: pipx inject mlx-lm mlx-embedding-models\n" + strings.TrimSpace(string(out)))
 				}
 				embPkgCheck = runDocCheck("mlx-embedding-models pkg", d, ok, false)
 			})
@@ -752,9 +752,9 @@ func newDocCmd() *cobra.Command {
 				var d string
 				if ok {
 					parent := filepath.Dir(cacheDir)
-					d = utl.Gra(parent+"/") + utl.Whi(filepath.Base(cacheDir))
+					d = color.Gra(parent+"/") + color.Whi(filepath.Base(cacheDir))
 				} else {
-					d = utl.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", emID))
+					d = color.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", emID))
 				}
 				checks = append(checks, runDocCheck("  embed_model", d, ok, false))
 			}
@@ -771,15 +771,15 @@ func newDocCmd() *cobra.Command {
 					modelOK := statErr == nil
 					if modelOK {
 						parent := filepath.Dir(cacheDir)
-						detail = utl.Gra(parent+"/") + utl.Whi(filepath.Base(cacheDir))
+						detail = color.Gra(parent+"/") + color.Whi(filepath.Base(cacheDir))
 					} else {
-						detail = utl.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", model))
+						detail = color.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", model))
 					}
 					checks = append(checks, runDocCheck(t, detail, modelOK, false))
 				}
 			}
 			if len(cfg.TierModels("fast")) == 0 && len(cfg.TierModels("slow")) == 0 {
-				checks = append(checks, runDocCheck("tier models", utl.Gra("no models assigned"), true, true))
+				checks = append(checks, runDocCheck("tier models", color.Gra("no models assigned"), true, true))
 			}
 
 			// ── print results ──
@@ -796,13 +796,13 @@ func newDocCmd() *cobra.Command {
 				switch {
 				case c.ok:
 					statusRaw = "ok"
-					status = utl.Gre(fmt.Sprintf("%-6s", statusRaw))
+					status = color.Grn(fmt.Sprintf("%-6s", statusRaw))
 				case c.warn:
 					statusRaw = "warn"
-					status = utl.Gra(fmt.Sprintf("%-6s", statusRaw))
+					status = color.Gra(fmt.Sprintf("%-6s", statusRaw))
 				default:
 					statusRaw = "FAIL"
-					status = utl.Gra(fmt.Sprintf("%-6s", statusRaw))
+					status = color.Gra(fmt.Sprintf("%-6s", statusRaw))
 					allOK = false
 				}
 				fmt.Printf("%-*s  %s  %s\n", colW, c.label, status, c.detail)
@@ -811,7 +811,7 @@ func newDocCmd() *cobra.Command {
 			if !allOK {
 				return fmt.Errorf("one or more checks failed — resolve the above before running 'iq start'")
 			}
-			fmt.Printf("%s\n", utl.Gre("All checks passed."))
+			fmt.Printf("%s\n", color.Grn("All checks passed."))
 			return nil
 		},
 	}
