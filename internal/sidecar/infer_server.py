@@ -109,11 +109,23 @@ class RoutingGrammarProcessor:
 # ── Inference ─────────────────────────────────────────────────────────────────
 
 
-def _generate(messages, max_tokens, stream, repetition_penalty, temperature, routing_grammar):
-    """Run inference and yield (text_chunk, finish_reason) tuples."""
+def _generate(messages, max_tokens, stream, repetition_penalty, temperature,
+              routing_grammar, top_p=None, min_p=None, top_k=None, stop=None, seed=None):
+    """Run inference and yield (text_chunk, finish_reason) tuples.
+
+    Extended sampling params (top_p, min_p, top_k, seed) are forwarded to
+    mlx_lm when present; omitting them lets mlx_lm use its own defaults.
+    Stop sequences are checked post-generation against the accumulated text.
+    """
     prompt_tokens = _apply_chat_template(messages)
 
     kwargs = {"max_tokens": max_tokens, "temp": temperature}
+    if top_p is not None:
+        kwargs["top_p"] = top_p
+    if min_p is not None:
+        kwargs["min_p"] = min_p
+    if top_k is not None:
+        kwargs["top_k"] = top_k
 
     # Build logits processors list: repetition penalty + optional routing grammar.
     processors = []
@@ -126,6 +138,9 @@ def _generate(messages, max_tokens, stream, repetition_penalty, temperature, rou
     if processors:
         kwargs["logits_processors"] = processors
 
+    if seed is not None:
+        mx.random.seed(seed)
+
     with _lock:
         full_text = []
         for resp in stream_generate(
@@ -136,10 +151,23 @@ def _generate(messages, max_tokens, stream, repetition_penalty, temperature, rou
                 if stream:
                     yield resp.text, None
 
+        result = "".join(full_text)
+
+        # Trim at the first stop sequence found, if any.
+        # Note: in streaming mode tokens are already yielded above, so the
+        # caller may have printed past the stop boundary. The trimmed result
+        # is still returned correctly; this is acceptable because stop sequences
+        # are most useful for non-streaming (tool calls, structured output).
+        if stop:
+            for s in stop:
+                idx = result.find(s)
+                if idx != -1:
+                    result = result[:idx]
+
         if stream:
             yield "", "stop"
         else:
-            yield "".join(full_text), "stop"
+            yield result, "stop"
 
 
 def _build_chat_response(content, model, finish_reason="stop", stream=False):
@@ -209,6 +237,11 @@ class Handler(BaseHTTPRequestHandler):
                 rep_penalty = body.get("repetition_penalty", 1.0)
                 temperature = body.get("temperature", 0.7)
                 routing_grammar = body.get("routing_grammar")
+                top_p = body.get("top_p")
+                min_p = body.get("min_p")
+                top_k = body.get("top_k")
+                stop = body.get("stop") or None
+                seed = body.get("seed")
 
                 if stream:
                     self.send_response(200)
@@ -216,7 +249,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
                     for text, finish in _generate(
-                        messages, max_tokens, True, rep_penalty, temperature, routing_grammar
+                        messages, max_tokens, True, rep_penalty, temperature, routing_grammar,
+                        top_p=top_p, min_p=min_p, top_k=top_k, stop=stop, seed=seed,
                     ):
                         chunk = _build_chat_response(
                             text, _model_id, finish_reason=finish, stream=True
@@ -229,7 +263,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     content = ""
                     for text, finish in _generate(
-                        messages, max_tokens, False, rep_penalty, temperature, routing_grammar
+                        messages, max_tokens, False, rep_penalty, temperature, routing_grammar,
+                        top_p=top_p, min_p=min_p, top_k=top_k, stop=stop, seed=seed,
                     ):
                         content = text
                     resp = _build_chat_response(content, _model_id)

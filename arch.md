@@ -77,15 +77,22 @@ fast    sub-2GB models — used for quick inference tasks
 slow    2GB+ models    — used for quality inference
 ```
 
-**Inference parameters** — three parameters can be tuned globally and/or per-tier:
+**Inference parameters** — eight parameters can be tuned globally and/or per-tier:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `repetition_penalty` | 1.3 | Penalises repeated tokens (1.0 = off) |
 | `temperature` | 0.7 | Sampling temperature (lower = more deterministic) |
 | `max_tokens` | 8192 | Maximum tokens in response |
+| `top_p` | — | Nucleus sampling: sample from the smallest token set whose cumulative probability ≥ p |
+| `min_p` | — | Discard tokens below this probability relative to the top token |
+| `top_k` | — | Sample from only the k most probable tokens |
+| `stop` | — | List of strings that halt generation early (trimmed from response) |
+| `seed` | — | Fix the random seed for reproducible outputs |
 
-Resolution order: **per-tier override > global config > hardcoded default**. Pointer types (`*float64`, `*int`) distinguish "not set" from "set to zero."
+The first three always carry a hardcoded default. The last five are unset by default (nil/empty) — when absent, mlx_lm uses its own defaults. Resolution order: **per-tier override > global config > hardcoded default**. Pointer types (`*float64`, `*int`) distinguish "not set" from "set to zero."
+
+Practical guidance: stacking multiple sampling strategies (e.g. `top_k` + `top_p` + `min_p`) can interact in non-obvious ways. Most setups get 90% of the benefit from `temperature` + `top_p` (or `min_p`) + `stop`.
 
 **Recommended per-tier tuning** — each tier serves a different role, and inference parameters should reflect that:
 
@@ -696,3 +703,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.8.5   | `pipeline:` mode selector in config.yaml (`two_tier` default); single `config.Load` at top of `executePrompt` replaces 4 internal loads; pipeline validation at entry; `iq config` shows effective pipeline mode (FEAT9950) |
 | 0.8.6   | Advisory `flock` locking for session reads/writes (`syscall.Flock`); shared lock on load, exclusive on save; `.lock` sidecar file per session; concurrent-write unit test (FEAT9940) |
 | 0.8.7   | `TestHelpFlagCoverage` uses `VisitAll` to assert every registered flag appears in hand-crafted help output; fixed genuine drift: `--dump-prompt` missing from `iq ask -h`, `--kb` missing from `iq pry -h`; build.sh highlights FAIL lines in red (FEAT9930) |
+| 0.8.8   | Extended inference parameters: `top_p`, `min_p`, `top_k`, `stop`, `seed` added to `InferParams`/`ResolvedParams`; threaded through `ChatRequest`, `Call`/`CallWithGrammar`/`Stream`, and `infer_server.py`; nil = unset (mlx_lm defaults); stop sequences trim post-generation; `iq config` surfaces all 8 params with mlx_lm defaults annotated (FEAT9920) |

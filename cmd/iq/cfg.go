@@ -89,6 +89,11 @@ func runConfigShow() error {
 	cfgField("repetition_penalty", fmt.Sprintf("%.1f", gp.RepetitionPenalty))
 	cfgField("temperature", fmt.Sprintf("%.1f", gp.Temperature))
 	cfgField("max_tokens", fmt.Sprintf("%d", gp.MaxTokens))
+	cfgField("top_p", fmtOptF(gp.TopP, false, "1.0  (mlx_lm default)", "%.2f"))
+	cfgField("min_p", fmtOptF(gp.MinP, false, "0.0  (mlx_lm default)", "%.2f"))
+	cfgField("top_k", fmtOptI(gp.TopK, false, "0  (mlx_lm default)"))
+	cfgField("stop", fmtStop(gp.Stop, false))
+	cfgField("seed", fmtOptI(gp.Seed, false, "—  (random)"))
 	fmt.Println()
 
 	// Tiers — mirrors config.yaml structure, showing resolved effective values per tier.
@@ -109,6 +114,11 @@ func runConfigShow() error {
 		cfgField("    repetition_penalty", fmtParam(tp.RepetitionPenalty, tc != nil && tc.RepetitionPenalty != nil, "%.1f"))
 		cfgField("    temperature", fmtParam(tp.Temperature, tc != nil && tc.Temperature != nil, "%.1f"))
 		cfgField("    max_tokens", fmtParamInt(tp.MaxTokens, tc != nil && tc.MaxTokens != nil))
+		cfgField("    top_p", fmtOptF(tp.TopP, tc != nil && tc.TopP != nil, "1.0  (mlx_lm default)", "%.2f"))
+		cfgField("    min_p", fmtOptF(tp.MinP, tc != nil && tc.MinP != nil, "0.0  (mlx_lm default)", "%.2f"))
+		cfgField("    top_k", fmtOptI(tp.TopK, tc != nil && tc.TopK != nil, "0  (mlx_lm default)"))
+		cfgField("    stop", fmtStop(tp.Stop, tc != nil && len(tc.Stop) > 0))
+		cfgField("    seed", fmtOptI(tp.Seed, tc != nil && tc.Seed != nil, "—  (random)"))
 	}
 	fmt.Println()
 
@@ -209,6 +219,43 @@ func fmtParam(effective float64, isOverride bool, verb string) string {
 // fmtParamInt formats an int param, annotating whether it's a tier override.
 func fmtParamInt(effective int, isOverride bool) string {
 	val := fmt.Sprintf("%d", effective)
+	if isOverride {
+		return val + "  (tier override)"
+	}
+	return val
+}
+
+// fmtOptF formats an optional *float64. nilLabel is shown when the pointer is
+// nil (e.g. "1.0  (mlx_lm default)"). isOverride annotates tier-level overrides.
+func fmtOptF(p *float64, isOverride bool, nilLabel, verb string) string {
+	if p == nil {
+		return nilLabel
+	}
+	val := fmt.Sprintf(verb, *p)
+	if isOverride {
+		return val + "  (tier override)"
+	}
+	return val
+}
+
+// fmtOptI formats an optional *int. nilLabel is shown when the pointer is nil.
+func fmtOptI(p *int, isOverride bool, nilLabel string) string {
+	if p == nil {
+		return nilLabel
+	}
+	val := fmt.Sprintf("%d", *p)
+	if isOverride {
+		return val + "  (tier override)"
+	}
+	return val
+}
+
+// fmtStop formats a stop sequence list. Empty slice renders as "—".
+func fmtStop(stop []string, isOverride bool) string {
+	if len(stop) == 0 {
+		return "—"
+	}
+	val := strings.Join(stop, ", ")
 	if isOverride {
 		return val + "  (tier override)"
 	}

@@ -33,13 +33,26 @@ type InferParams struct {
 	RepetitionPenalty *float64 `yaml:"repetition_penalty,omitempty"`
 	Temperature       *float64 `yaml:"temperature,omitempty"`
 	MaxTokens         *int     `yaml:"max_tokens,omitempty"`
+	TopP              *float64 `yaml:"top_p,omitempty"`
+	MinP              *float64 `yaml:"min_p,omitempty"`
+	TopK              *int     `yaml:"top_k,omitempty"`
+	Stop              []string `yaml:"stop,omitempty"`
+	Seed              *int     `yaml:"seed,omitempty"`
 }
 
 // ResolvedParams holds the effective inference parameters after resolution.
+// The three legacy fields always carry a value (hardcoded default applies).
+// The five extended fields are nil/empty when not configured — the sidecar
+// omits them from the request and lets mlx_lm use its own defaults.
 type ResolvedParams struct {
 	RepetitionPenalty float64
 	Temperature       float64
 	MaxTokens         int
+	TopP              *float64
+	MinP              *float64
+	TopK              *int
+	Stop              []string
+	Seed              *int
 }
 
 // ResolveInferParams returns effective params: per-tier override > global > hardcoded default.
@@ -59,6 +72,22 @@ func ResolveInferParams(cfg *Config, tier string) ResolvedParams {
 	if cfg.MaxTokens != nil {
 		p.MaxTokens = *cfg.MaxTokens
 	}
+	// Global overrides for extended params.
+	if cfg.TopP != nil {
+		p.TopP = cfg.TopP
+	}
+	if cfg.MinP != nil {
+		p.MinP = cfg.MinP
+	}
+	if cfg.TopK != nil {
+		p.TopK = cfg.TopK
+	}
+	if len(cfg.Stop) > 0 {
+		p.Stop = cfg.Stop
+	}
+	if cfg.Seed != nil {
+		p.Seed = cfg.Seed
+	}
 	// Per-tier overrides.
 	if tc, ok := cfg.Tiers[tier]; ok && tc != nil {
 		if tc.RepetitionPenalty != nil {
@@ -69,6 +98,21 @@ func ResolveInferParams(cfg *Config, tier string) ResolvedParams {
 		}
 		if tc.MaxTokens != nil {
 			p.MaxTokens = *tc.MaxTokens
+		}
+		if tc.TopP != nil {
+			p.TopP = tc.TopP
+		}
+		if tc.MinP != nil {
+			p.MinP = tc.MinP
+		}
+		if tc.TopK != nil {
+			p.TopK = tc.TopK
+		}
+		if len(tc.Stop) > 0 {
+			p.Stop = tc.Stop
+		}
+		if tc.Seed != nil {
+			p.Seed = tc.Seed
 		}
 	}
 	return p

@@ -28,28 +28,6 @@ Sorted easiest → hardest within each group.
 
 ## Group B — Structural Cleanup
 
-**FEAT9920** — **Extended inference parameters**
-Currently the sidecar supports three params (`temperature`, `repetition_penalty`, `max_tokens`). Extend `InferParams`/`ResolvedParams` in config, pass through `sidecar.Call`, and handle in `infer_server.py`'s logits processor.
-
-*High-value additions (covers 90% of practical tuning):*
-- `top_p` / nucleus sampling — sample from the smallest token set whose cumulative probability exceeds p
-- `min_p` — discard tokens below a minimum probability relative to the top token (newer, increasingly popular)
-- `stop` — strings that halt generation early
-- `seed` — reproducible outputs for benchmarking
-
-*Secondary (useful in specific scenarios):*
-- `top_k` — only sample from the k most probable tokens
-- `frequency_penalty` — penalizes based on how many times a token has appeared (distinct from repetition_penalty in some APIs)
-- `presence_penalty` — flat penalty if a token has appeared at all
-- `logit_bias` — manually boost/suppress specific token IDs
-
-*Exotic (defer unless needed):*
-- `top_a`, `typical_p` / locally typical sampling, `mirostat` (targets a specific perplexity), tail-free sampling (TFS), eta sampling
-
-**Important tradeoff:** stacking multiple sampling strategies (e.g., `top_k` + `top_p` + `min_p` + `temperature`) can interact in non-obvious ways and sometimes cancel each other out or produce worse results than tuning one or two well. Most practitioners get 90% of the way with just `temperature` + `top_p` (or `min_p`) + `stop` sequences. The implementation should make it easy to configure these but the docs should steer users toward simplicity.
-
----
-
 ## Group C — Cross-Cutting Quality
 
 **FEAT9910** — **Error handling audit**

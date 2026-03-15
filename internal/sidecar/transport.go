@@ -21,6 +21,11 @@ type ChatRequest struct {
 	MaxTokens         int              `json:"max_tokens,omitempty"`
 	RepetitionPenalty float64          `json:"repetition_penalty,omitempty"`
 	Temperature       float64          `json:"temperature,omitempty"`
+	TopP              *float64         `json:"top_p,omitempty"`
+	MinP              *float64         `json:"min_p,omitempty"`
+	TopK              *int             `json:"top_k,omitempty"`
+	Stop              []string         `json:"stop,omitempty"`
+	Seed              *int             `json:"seed,omitempty"`
 	RoutingGrammar    *RouteGrammar    `json:"routing_grammar,omitempty"`
 }
 
@@ -104,6 +109,11 @@ func Call(port int, messages []config.Message, maxTokens int, ip config.Resolved
 		MaxTokens:         maxTokens,
 		RepetitionPenalty: ip.RepetitionPenalty,
 		Temperature:       ip.Temperature,
+		TopP:              ip.TopP,
+		MinP:              ip.MinP,
+		TopK:              ip.TopK,
+		Stop:              ip.Stop,
+		Seed:              ip.Seed,
 	}
 	return RawCall(port, req)
 }
@@ -116,6 +126,11 @@ func CallWithGrammar(port int, messages []config.Message, maxTokens int, grammar
 		MaxTokens:         maxTokens,
 		RepetitionPenalty: ip.RepetitionPenalty,
 		Temperature:       ip.Temperature,
+		TopP:              ip.TopP,
+		MinP:              ip.MinP,
+		TopK:              ip.TopK,
+		Stop:              ip.Stop,
+		Seed:              ip.Seed,
 		RoutingGrammar:    grammar,
 	}
 	return RawCall(port, req)
@@ -130,6 +145,11 @@ func Stream(port int, messages []config.Message, ip config.ResolvedParams) (stri
 		MaxTokens:         ip.MaxTokens,
 		RepetitionPenalty: ip.RepetitionPenalty,
 		Temperature:       ip.Temperature,
+		TopP:              ip.TopP,
+		MinP:              ip.MinP,
+		TopK:              ip.TopK,
+		Stop:              ip.Stop,
+		Seed:              ip.Seed,
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
