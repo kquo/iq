@@ -277,7 +277,7 @@ When tools are enabled, inference takes one of two paths based on how tools were
 
 **Step 5b — CACHE WRITE.** On a cache miss, stores the inference response in `response_cache.json` keyed by the same FNV64a hash from Step 4b. Expired entries (>1 hour) are pruned on write. Skipped when cache is disabled or session mode is active.
 
-**Step 6 — PERSIST.** Appends the turn to `~/.config/iq/sessions/<id>.yaml`. After the first exchange, a background goroutine asks the smallest fast-tier model to generate a short name (≤ 5 words) and description (≤ 15 words) for the session.
+**Step 6 — PERSIST.** Appends the turn to `~/.config/iq/sessions/<id>.yaml`. Reads and writes are protected by `syscall.Flock` advisory locks (`<id>.yaml.lock`) — shared for reads, exclusive for writes — preventing YAML corruption from concurrent REPL instances. After the first exchange, a background goroutine asks the smallest fast-tier model to generate a short name (≤ 5 words) and description (≤ 15 words) for the session.
 
 **Flags:**
 ```
@@ -414,7 +414,8 @@ A `Client` struct in `internal/search` carries configuration (Brave API key) and
 │   ├── <model-slug>.json        # generative sidecar state (PID, port, tier, model)
 │   └── <model-slug>.log
 └── sessions/
-    └── <id>.yaml                # conversation history per session
+    ├── <id>.yaml                # conversation history per session
+    └── <id>.yaml.lock           # advisory flock file (created on first access)
 
 ~/.cache/huggingface/hub/
 └── models--org--repo/
@@ -693,3 +694,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.8.3   | Idiomatic Go naming: `program_name`/`program_version` → `programName`/`programVersion` (FEAT9980); `errSilent` sentinel replaced with named `silentErr` type so `errors.Is` works correctly (FEAT9970) |
 | 0.8.4   | `NewRegistry()` constructor replaces `init()` for tools package; `Registry` global initialized via constructor; unit test for tool count, names, and instance isolation (FEAT9960) |
 | 0.8.5   | `pipeline:` mode selector in config.yaml (`two_tier` default); single `config.Load` at top of `executePrompt` replaces 4 internal loads; pipeline validation at entry; `iq config` shows effective pipeline mode (FEAT9950) |
+| 0.8.6   | Advisory `flock` locking for session reads/writes (`syscall.Flock`); shared lock on load, exclusive on save; `.lock` sidecar file per session; concurrent-write unit test (FEAT9940) |

@@ -27,6 +27,7 @@ Before offering to run a release commit, always complete these steps in order:
 - Follow idiomatic Go practices
 - Comment public functions
 - Preserve existing tests
+- Add unit tests for every new FEAT — place them in a `_test.go` file in the same package. If no test file exists yet, create one.
 
 ## Notes for Claude
 - Treat `build.sh` as a single canonical workflow for correctness, formatting, testing, and building

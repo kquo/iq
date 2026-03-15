@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/queone/utl"
@@ -61,11 +62,41 @@ func sessionPath(id string) (string, error) {
 	return filepath.Join(d, id+".yaml"), nil
 }
 
+// acquireLock opens (or creates) a lock file and applies an advisory flock.
+// Pass exclusive=true for writes, false for reads. The caller must call
+// releaseLock when done.
+func acquireLock(path string, exclusive bool) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	how := syscall.LOCK_SH
+	if exclusive {
+		how = syscall.LOCK_EX
+	}
+	if err := syscall.Flock(int(f.Fd()), how); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// releaseLock releases the advisory flock and closes the lock file.
+func releaseLock(f *os.File) {
+	syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	f.Close()
+}
+
 func loadSession(id string) (*session, error) {
 	path, err := sessionPath(id)
 	if err != nil {
 		return nil, err
 	}
+	lf, err := acquireLock(path+".lock", false)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseLock(lf)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -86,6 +117,11 @@ func saveSession(s *session) error {
 	if err != nil {
 		return err
 	}
+	lf, err := acquireLock(path+".lock", true)
+	if err != nil {
+		return err
+	}
+	defer releaseLock(lf)
 	data, err := yaml.Marshal(s)
 	if err != nil {
 		return err

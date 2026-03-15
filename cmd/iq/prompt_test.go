@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"iq/internal/config"
@@ -206,5 +207,53 @@ func TestDumpPrompt(t *testing.T) {
 	last := messages[len(messages)-1]
 	if last.Role != "user" || last.Content != "hello world" {
 		t.Errorf("last message = %+v, want {Role:user Content:hello world}", last)
+	}
+}
+
+// TestSessionLocking verifies that concurrent saves to the same session file
+// do not corrupt the YAML — each writer holds the exclusive lock before writing.
+func TestSessionLocking(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Seed an initial session on disk.
+	base := &session{
+		ID:   "test-lock-session",
+		Name: "initial",
+		Cue:  "general",
+		Tier: "fast",
+	}
+	if err := saveSession(base); err != nil {
+		t.Fatalf("initial saveSession: %v", err)
+	}
+
+	// Concurrently save 20 updates, each appending a user message.
+	const workers = 20
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := range workers {
+		go func(n int) {
+			defer wg.Done()
+			s := &session{
+				ID:       base.ID,
+				Name:     fmt.Sprintf("worker-%d", n),
+				Cue:      base.Cue,
+				Tier:     base.Tier,
+				Messages: []config.Message{{Role: "user", Content: fmt.Sprintf("msg-%d", n)}},
+			}
+			if err := saveSession(s); err != nil {
+				t.Errorf("worker %d saveSession: %v", n, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// The file must be valid YAML — corruption would cause unmarshal to fail.
+	got, err := loadSession(base.ID)
+	if err != nil {
+		t.Fatalf("loadSession after concurrent writes: %v", err)
+	}
+	if got == nil {
+		t.Fatal("loadSession returned nil after concurrent writes")
 	}
 }
