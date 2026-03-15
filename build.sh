@@ -3,6 +3,19 @@
 set -euo pipefail  # Fail immediately on any error
 Gre='\e[1;32m' Red='\e[1;31m' Mag='\e[1;35m' Yel='\e[1;33m' Blu='\e[1;34m' Rst='\e[0m'
 
+# Pre-scan for -v / --verbose before positional arg parsing so it never
+# lands in BUILD_TARGETS and the release syntax ./build.sh TAG MSG is unchanged.
+VERBOSE=false
+FILTERED_ARGS=()
+for arg in "$@"; do
+    if [[ "$arg" == "-v" || "$arg" == "--verbose" ]]; then
+        VERBOSE=true
+    else
+        FILTERED_ARGS+=("$arg")
+    fi
+done
+set -- "${FILTERED_ARGS[@]}"
+
 # Parse arguments
 #   [v1.2.3] [message]  optional: release tag + commit message for the one-liner
 #   remaining positional args → build targets (unchanged behaviour)
@@ -74,10 +87,37 @@ else
     printf "%s\n" "$VET_OUTPUT" | indent
 fi
 
-# Run tests
+# Run tests — check Go 1.20+ for accurate multi-package coverage profiles
+GO_VER=$(go version | awk '{print $3}')
+GO_MINOR=$(echo "$GO_VER" | sed 's/go1\.\([0-9]*\).*/\1/')
+if [[ -z "$GO_MINOR" || "$GO_MINOR" -lt 20 ]]; then
+    printf "    ${Yel}Warning: %s detected; -coverprofile multi-package merge requires Go 1.20+. Coverage total may be inaccurate.${Rst}\n" "$GO_VER"
+fi
+COVER_FILE=$(mktemp /tmp/iq_cover_XXXXXX.out)
+trap "rm -f \"$COVER_FILE\"" EXIT
 printf "\n==> Run tests for all packages in the repository\n"
-printf "    ${Gre}go test -v $PKG_SCOPE${Rst}\n"
-go test -v $PKG_SCOPE 2>&1 | indent
+if $VERBOSE; then
+    printf "    ${Gre}go test -v -coverprofile=$COVER_FILE $PKG_SCOPE${Rst}\n"
+    go test -v -coverprofile="$COVER_FILE" $PKG_SCOPE 2>&1 | indent
+else
+    printf "    ${Gre}go test -coverprofile=$COVER_FILE $PKG_SCOPE${Rst}\n"
+    go test -coverprofile="$COVER_FILE" $PKG_SCOPE 2>&1 | indent
+fi
+
+# Coverage summary
+TOTAL_LINE=$(go tool cover -func="$COVER_FILE" 2>/dev/null | grep "^total:" || true)
+if [ -n "$TOTAL_LINE" ]; then
+    PCT=$(echo "$TOTAL_LINE" | awk '{print $NF}' | tr -d '%')
+    INT_PART=${PCT%.*}
+    if [ "$INT_PART" -ge 98 ]; then
+        COV_COLOR=$Gre
+    elif [ "$INT_PART" -ge 75 ]; then
+        COV_COLOR=$Yel
+    else
+        COV_COLOR=$Red
+    fi
+    printf "    ${COV_COLOR}total coverage: ${PCT}%%${Rst}\n"
+fi
 
 # Install staticcheck
 printf "\n==> Install static analysis tool for Go\n"
