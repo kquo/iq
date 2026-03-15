@@ -442,6 +442,68 @@ func TestToolRegistryNames(t *testing.T) {
 	}
 }
 
+// ── ParseCallsStrict tests ────────────────────────────────────────────────────
+
+func TestParseCallsStrict(t *testing.T) {
+	reg := NewRegistry()
+	tests := []struct {
+		name       string
+		text       string
+		wantValid  int
+		wantErrors int
+	}{
+		{
+			"valid get_time",
+			`<tool_call>{"name":"get_time","args":{}}</tool_call>`,
+			1, 0,
+		},
+		{
+			"valid read_file",
+			`<tool_call>{"name":"read_file","args":{"path":"x.go"}}</tool_call>`,
+			1, 0,
+		},
+		{
+			"unknown tool",
+			`<tool_call>{"name":"nonexistent","args":{}}</tool_call>`,
+			0, 1,
+		},
+		{
+			"missing required arg",
+			`<tool_call>{"name":"read_file","args":{}}</tool_call>`,
+			0, 1,
+		},
+		{
+			"unknown param",
+			`<tool_call>{"name":"get_time","args":{"bogus":"x"}}</tool_call>`,
+			0, 1,
+		},
+		{
+			"mixed valid and invalid",
+			`<tool_call>{"name":"get_time","args":{}}</tool_call><tool_call>{"name":"nonexistent","args":{}}</tool_call>`,
+			1, 1,
+		},
+		{
+			"no calls",
+			"just some text",
+			0, 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			calls, remaining, errs := ParseCallsStrict(tc.text, reg)
+			if len(calls) != tc.wantValid {
+				t.Errorf("valid calls: got %d, want %d", len(calls), tc.wantValid)
+			}
+			if len(errs) != tc.wantErrors {
+				t.Errorf("errors: got %d, want %d (errs: %v)", len(errs), tc.wantErrors, errs)
+			}
+			if strings.Contains(remaining, "<tool_call>") {
+				t.Errorf("remaining contains <tool_call>: %q", remaining)
+			}
+		})
+	}
+}
+
 // TestSignalRegistryCoverage ensures every tool in Registry is referenced by at
 // least one Signal, and every tool referenced by a Signal exists in Registry.
 func TestSignalRegistryCoverage(t *testing.T) {

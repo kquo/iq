@@ -21,13 +21,15 @@ Before offering to run a release commit, always complete these steps in order:
 2. Also add version row to `arch.md` with a one-line summary of the changes
 3. Bump `programVersion` in `cmd/iq/main.go` to the new version string
 4. Remove completed features from `plan.md`
-5. Report to user they must now run ./build.sh <tag> "<message>" — message should be a brief phrase (under 80 chars), not a changelog
+5. Delete the FEAT's acceptance-criteria file from memory (if one was created) and remove its entry from `MEMORY.md`
+6. Report to user they must now run ./build.sh <tag> "<message>" — message should be a brief phrase (under 80 chars), not a changelog
 
 ## Coding Rules / Style
 - Follow idiomatic Go practices
 - Comment public functions
 - Preserve existing tests
 - Add unit tests for every new FEAT — place them in a `_test.go` file in the same package. If no test file exists yet, create one.
+- Every code change must include unit test coverage for the new or modified logic. No feature or fix is complete without a corresponding test.
 
 ## Notes for Claude
 - Treat `build.sh` as a single canonical workflow for correctness, formatting, testing, and building

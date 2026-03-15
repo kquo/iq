@@ -30,9 +30,6 @@ Sorted easiest → hardest within each group.
 
 ## Group C — Cross-Cutting Quality
 
-**FEAT9890** — **Test coverage expansion**
-Table-driven tests for: `ParseCalls`/`ParseCallsStrict`, `resolveRoute` tier fallback, sidecar lifecycle (start/ready/stop with httptest), config migration paths, embed classification. Biggest bang-for-buck reliability investment. Best paired with FEAT9910 since clean error handling makes testing easier.
-
 **FEAT9880** — **KB source removal prefix collision**
 `RemoveSource` uses `strings.HasPrefix`, so removing `/data/app` silently deletes `/data/app2` as well. Fix: switch to exact-path or directory-boundary matching (`source == path || strings.HasPrefix(source, path+"/")`). Silent data loss — high priority despite the small fix. See `internal/kb/kb.go:616`.
 

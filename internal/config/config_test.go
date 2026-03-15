@@ -5,6 +5,156 @@ import (
 	"testing"
 )
 
+// ── Migration tests ───────────────────────────────────────────────────────────
+
+func TestMigrateFlatTiers(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		wantFast []string
+		wantSlow []string
+	}{
+		{
+			"flat list fast and slow",
+			"tiers:\n  fast:\n    - model-a\n  slow:\n    - model-b\n",
+			[]string{"model-a"}, []string{"model-b"},
+		},
+		{
+			"flat list fast only",
+			"tiers:\n  fast:\n    - model-a\n",
+			[]string{"model-a"}, []string{},
+		},
+		{
+			"flat list slow only",
+			"tiers:\n  slow:\n    - model-b\n",
+			[]string{}, []string{"model-b"},
+		},
+		{
+			"flat list multiple models",
+			"tiers:\n  fast:\n    - model-a\n    - model-c\n  slow:\n    - model-b\n",
+			[]string{"model-a", "model-c"}, []string{"model-b"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := migrateFlatTiers([]byte(tc.yaml), nil)
+			if cfg == nil {
+				t.Fatal("migrateFlatTiers returned nil")
+			}
+			fastModels := cfg.Tiers["fast"].Models
+			slowModels := cfg.Tiers["slow"].Models
+			if !stringSliceEqual(fastModels, tc.wantFast) {
+				t.Errorf("fast models = %v, want %v", fastModels, tc.wantFast)
+			}
+			if !stringSliceEqual(slowModels, tc.wantSlow) {
+				t.Errorf("slow models = %v, want %v", slowModels, tc.wantSlow)
+			}
+			// Canonical tiers must always exist.
+			for _, tier := range TierOrder {
+				if cfg.Tiers[tier] == nil {
+					t.Errorf("canonical tier %q is nil after migration", tier)
+				}
+			}
+		})
+	}
+}
+
+func TestMigrateOldFourTier(t *testing.T) {
+	tests := []struct {
+		name     string
+		old      map[string]string
+		diskSize map[string]int64 // model → bytes (0 = unknown)
+		wantFast []string
+		wantSlow []string
+	}{
+		{
+			"quality maps to slow by disk (≥2GB)",
+			map[string]string{"quality": "large-model"},
+			map[string]int64{"large-model": 3 * 1024 * 1024 * 1024},
+			[]string{}, []string{"large-model"},
+		},
+		{
+			"tiny maps to fast by disk (<2GB)",
+			map[string]string{"tiny": "small-model"},
+			map[string]int64{"small-model": 500 * 1024 * 1024},
+			[]string{"small-model"}, []string{},
+		},
+		{
+			"no disk info falls back to tier mapping",
+			map[string]string{"tiny": "small-model", "quality": "large-model"},
+			nil,
+			[]string{"small-model"}, []string{"large-model"},
+		},
+		{
+			"duplicate models deduplicated",
+			map[string]string{"tiny": "same-model", "fast": "same-model"},
+			nil,
+			[]string{"same-model"}, []string{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			diskFn := func(id string) int64 {
+				if tc.diskSize == nil {
+					return 0
+				}
+				return tc.diskSize[id]
+			}
+			cfg := migrateOldFourTier(tc.old, diskFn)
+			if cfg == nil {
+				t.Fatal("migrateOldFourTier returned nil")
+			}
+			fastModels := cfg.Tiers["fast"].Models
+			slowModels := cfg.Tiers["slow"].Models
+			if !stringSliceEqual(fastModels, tc.wantFast) {
+				t.Errorf("fast models = %v, want %v", fastModels, tc.wantFast)
+			}
+			if !stringSliceEqual(slowModels, tc.wantSlow) {
+				t.Errorf("slow models = %v, want %v", slowModels, tc.wantSlow)
+			}
+		})
+	}
+}
+
+func TestLegacyEmbedModelMigration(t *testing.T) {
+	home := t.TempDir()
+	cfgDir := home + "/.config/iq"
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// New structured-format tiers (map values) so Load doesn't trigger flat migration.
+	// cue_model set, embed_model absent.
+	yaml := "tiers:\n  fast:\n    models: []\n  slow:\n    models: []\ncue_model: embed-via-cue\n"
+	if err := os.WriteFile(cfgDir+"/config.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.EmbedModel != "embed-via-cue" {
+		t.Errorf("EmbedModel = %q, want %q", cfg.EmbedModel, "embed-via-cue")
+	}
+	if cfg.CueModel != "" {
+		t.Errorf("CueModel should be cleared after migration, got %q", cfg.CueModel)
+	}
+}
+
+// stringSliceEqual compares two string slices treating nil and empty as equal.
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestResolveInferParams(t *testing.T) {
 	t.Run("defaults only", func(t *testing.T) {
 		cfg := &Config{Tiers: emptyTiers()}

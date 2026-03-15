@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"iq/internal/config"
+	"iq/internal/cue"
 	"iq/internal/sidecar"
 )
 
@@ -246,6 +247,85 @@ func TestHelpFlagCoverage(t *testing.T) {
 					t.Errorf("flag --%s is registered but missing from %s help output", f.Name, tc.name)
 				}
 			})
+		})
+	}
+}
+
+// writeRunState is a test helper that writes a sidecar state file for a given
+// tier into the run directory under the given home path.
+func writeRunState(t *testing.T, home, tier, modelID string, port int) {
+	t.Helper()
+	runDir := filepath.Join(home, ".config", "iq", "run")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	state := &sidecar.State{
+		Tier:    tier,
+		Model:   modelID,
+		PID:     os.Getpid(),
+		Port:    port,
+		Started: "2025-01-01T00:00:00Z",
+	}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	slug := strings.ReplaceAll(modelID, "/", "--")
+	os.WriteFile(filepath.Join(runDir, slug+".json"), data, 0644)
+}
+
+// TestResolveRouteTierFallback exercises resolveRoute's tier selection and
+// fallback logic without requiring a running sidecar or embed server.
+func TestResolveRouteTierFallback(t *testing.T) {
+	makeCues := func(name, tier string) []cue.Cue {
+		return []cue.Cue{{Name: name, Category: "test", SuggestedTier: tier}}
+	}
+
+	tests := []struct {
+		name          string
+		cueName       string
+		suggestedTier string
+		setupFast     bool
+		setupSlow     bool
+		wantTier      string
+		wantSource    string
+		wantErr       bool
+	}{
+		{"suggested fast honored", "mycue", "fast", true, false, "fast", "suggested_tier", false},
+		{"suggested slow honored", "mycue", "slow", false, true, "slow", "suggested_tier", false},
+		{"blank tier falls back to fast", "mycue", "", true, false, "fast", "fallback", false},
+		{"fast unavailable falls back to slow", "mycue", "fast", false, true, "slow", "fallback", false},
+		{"both unavailable returns error", "mycue", "fast", false, false, "", "", true},
+		{"unknown cue returns error", "no-such-cue", "fast", true, false, "", "", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+
+			if tc.setupFast {
+				writeRunState(t, home, "fast", "org/fast-model", 27001)
+			}
+			if tc.setupSlow {
+				writeRunState(t, home, "slow", "org/slow-model", 27002)
+			}
+
+			cues := makeCues("mycue", tc.suggestedTier)
+			route, err := resolveRoute(tc.cueName, cues)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got route = %+v", route)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if route.Tier != tc.wantTier {
+				t.Errorf("tier = %q, want %q", route.Tier, tc.wantTier)
+			}
+			if route.TierSource != tc.wantSource {
+				t.Errorf("tierSource = %q, want %q", route.TierSource, tc.wantSource)
+			}
 		})
 	}
 }
