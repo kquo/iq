@@ -508,6 +508,14 @@ type promptOpts struct {
 }
 
 func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
+	cfg, err := config.Load(nil)
+	if err != nil {
+		return sess, fmt.Errorf("loading config: %w", err)
+	}
+	if p := cfg.EffectivePipeline(); p != config.PipelineTwoTier {
+		return sess, fmt.Errorf("unknown pipeline mode %q", p)
+	}
+
 	trace := opts.dryRun || opts.debug || opts.dumpPrompt != ""
 	cues, err := cue.Load()
 	if err != nil {
@@ -535,11 +543,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("embed sidecar not running — falling back to initial cue (run: iq start)"))
 			cueName = "initial"
 		} else {
-			cfg2, cfgErr := config.Load(nil)
-			em := config.DefaultEmbedModel
-			if cfgErr == nil {
-				em = config.EmbedModel(cfg2)
-			}
+			em := config.EmbedModel(cfg)
 			cueName, et, err = embed.Classify(input, candidates, em)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("classification error: "+err.Error()+", falling back to initial"))
@@ -564,10 +568,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	}
 	var kbCh chan kbResult
 	kbEnabled := kb.Exists() && !opts.noKB && embed.SidecarAlive() && sess == nil
-	kbMinScore := config.DefaultKbMinScore
-	if earlyCfg, cfgErr := config.Load(nil); cfgErr == nil {
-		kbMinScore = config.KBMinScore(earlyCfg)
-	}
+	kbMinScore := config.KBMinScore(cfg)
 	if kbEnabled {
 		kbCh = make(chan kbResult, 1)
 		go func() {
@@ -625,11 +626,10 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	}
 
 	// Resolve inference parameters: per-tier > global > hardcoded default.
-	inferCfg, _ := config.Load(nil)
-	ip := config.ResolveInferParams(inferCfg, route.Tier)
+	ip := config.ResolveInferParams(cfg, route.Tier)
 
 	// Wire search client with Brave fallback key if configured.
-	tools.SetSearchClient(search.NewClient(inferCfg.BraveAPIKey))
+	tools.SetSearchClient(search.NewClient(cfg.BraveAPIKey))
 
 	// ── Step 3: KB COLLECT ──
 	// Collect the async KB prefetch result with a timeout.
@@ -643,11 +643,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					kbContext = kb.Context(kr.results)
 				}
 				if trace {
-					em := config.DefaultEmbedModel
-					if cfg2, cfgErr := config.Load(nil); cfgErr == nil {
-						em = config.EmbedModel(cfg2)
-					}
-					printStep3KB(kr.results, em, kbMinScore, time.Since(t3))
+					printStep3KB(kr.results, config.EmbedModel(cfg), kbMinScore, time.Since(t3))
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "%s\n", utl.Gra("kb search error: "+kr.err.Error()))

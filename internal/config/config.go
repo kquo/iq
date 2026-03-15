@@ -85,6 +85,10 @@ type TierConfig struct {
 // ── Config file ──────────────────────────────────────────────────────────────
 
 // Config stores pools of models per tier, global inference defaults, and the shared embed model.
+// PipelineTwoTier is the default pipeline mode: fast/slow tier routing with
+// embed-based cue classification and tool detection.
+const PipelineTwoTier = "two_tier"
+
 type Config struct {
 	Tiers       map[string]*TierConfig `yaml:"tiers"`
 	InferParams `yaml:",inline"`
@@ -92,9 +96,19 @@ type Config struct {
 	KbMinScore  float64  `yaml:"kb_min_score,omitempty"`
 	ToolPaths   []string `yaml:"tool_paths,omitempty"`
 	BraveAPIKey string   `yaml:"brave_api_key,omitempty"` // Brave Search fallback API key
+	Pipeline    string   `yaml:"pipeline,omitempty"`
 	// Legacy fields — migrated to EmbedModel on load.
 	CueModel string `yaml:"cue_model,omitempty"`
 	KbModel  string `yaml:"kb_model,omitempty"`
+}
+
+// EffectivePipeline returns the configured pipeline mode, defaulting to
+// PipelineTwoTier when the field is absent or empty.
+func (c *Config) EffectivePipeline() string {
+	if c == nil || c.Pipeline == "" {
+		return PipelineTwoTier
+	}
+	return c.Pipeline
 }
 
 // DefaultKbMinScore is the minimum cosine similarity required to inject a KB chunk.

@@ -28,11 +28,6 @@ Sorted easiest → hardest within each group.
 
 ## Group B — Structural Cleanup
 
-**FEAT9950** — **`pipeline:` mode selector in config**
-Add a `pipeline:` field to config.yaml that selects which execution strategy `executePrompt` uses. The current 2-tier design becomes `pipeline: two_tier` (the default; backward-compatible when field is absent). This is the freeze/isolation mechanism that lets alternate pipeline designs be added without touching the existing path. The selector dispatches to different implementations of the inference pipeline; the embed sidecar, KB, tool detection, and session handling remain shared infrastructure regardless of mode.
-
-Scope: new field in `internal/config`, a dispatch switch at the `cmd/iq/` prompt pipeline entry point. No behavior change when field is absent or set to `two_tier`. Required by FEAT9810.
-
 **FEAT9940** — **Session file locking**
 Add `flock`-style advisory locking to session YAML reads/writes. Prevents corruption from concurrent REPL instances. Small, self-contained.
 

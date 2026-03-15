@@ -115,6 +115,7 @@ tiers:
     # Slow tier inherits global defaults (0.7 temp, 1.3 rep, 8192 tokens)
 
 embed_model: mlx-community/bge-small-en-v1.5-bf16
+pipeline: two_tier  # optional; two_tier is the default
 ```
 
 Use `iq perf sweep` to validate these choices on your hardware — sweep the same models under both tier configs to see whether the parameter differences move the needle on latency and quality.
@@ -125,7 +126,7 @@ Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
 Auto-migration: on first load, old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
 
-**Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings, tier pools with per-tier overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, tier model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
+**Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings (including `pipeline` mode), tier pools with per-tier overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, tier model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
 
 ### Cue Definitions
 
@@ -399,7 +400,7 @@ A `Client` struct in `internal/search` carries configuration (Brave API key) and
 
 ```
 ~/.config/iq/
-├── config.yaml                  # tier pool assignments + embed model + tool_paths + brave_api_key
+├── config.yaml                  # tier pool assignments + embed model + tool_paths + brave_api_key + pipeline
 ├── models.json                  # manifest of downloaded models (id, pulled_at, hf_cache_path, task)
 ├── cues.yaml                    # cue definitions (seeded from embedded defaults)
 ├── cue_embeddings.json          # cue description embeddings (auto-built, versioned)
@@ -691,3 +692,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.8.2   | `kb_min_score` configurable in config.yaml; STEP 3 trace shows threshold and zero-result message; `traceBlock` truncates KB chunk content to 4-line preview; trace mode forces non-streaming to fix debug output corruption; fix double-print of pre-think tokens in streaming think models |
 | 0.8.3   | Idiomatic Go naming: `program_name`/`program_version` → `programName`/`programVersion` (FEAT9980); `errSilent` sentinel replaced with named `silentErr` type so `errors.Is` works correctly (FEAT9970) |
 | 0.8.4   | `NewRegistry()` constructor replaces `init()` for tools package; `Registry` global initialized via constructor; unit test for tool count, names, and instance isolation (FEAT9960) |
+| 0.8.5   | `pipeline:` mode selector in config.yaml (`two_tier` default); single `config.Load` at top of `executePrompt` replaces 4 internal loads; pipeline validation at entry; `iq config` shows effective pipeline mode (FEAT9950) |

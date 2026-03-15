@@ -113,6 +113,7 @@ func runConfigShow() error {
 	fmt.Println()
 
 	cfgField("embed_model", config.EmbedModel(cfg))
+	cfgField("pipeline", cfg.EffectivePipeline())
 
 	if cfg.BraveAPIKey != "" {
 		masked := cfg.BraveAPIKey[:4] + strings.Repeat("*", len(cfg.BraveAPIKey)-4)
