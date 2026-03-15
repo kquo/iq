@@ -1291,6 +1291,7 @@ func printPromptHelp() {
 	fmt.Printf("  %-32s %s\n", "    --tier <n>", "Override tier directly, bypass cue system")
 	fmt.Printf("  %-32s %s\n", "-s, --session <id>", "Load/continue a session by ID")
 	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–4, skip inference")
+	fmt.Printf("  %-32s %s\n", "    --dump-prompt <f>", "Write assembled messages as JSON (- for stdout), skip inference")
 	fmt.Printf("  %-32s %s\n", "-d, --debug", "Trace all steps including inference")
 	fmt.Printf("  %-32s %s\n", "-K, --no-kb", "Disable knowledge base retrieval for this prompt")
 	fmt.Printf("  %-32s %s\n", "    --no-cache", "Disable response cache")

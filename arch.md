@@ -695,3 +695,4 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.8.4   | `NewRegistry()` constructor replaces `init()` for tools package; `Registry` global initialized via constructor; unit test for tool count, names, and instance isolation (FEAT9960) |
 | 0.8.5   | `pipeline:` mode selector in config.yaml (`two_tier` default); single `config.Load` at top of `executePrompt` replaces 4 internal loads; pipeline validation at entry; `iq config` shows effective pipeline mode (FEAT9950) |
 | 0.8.6   | Advisory `flock` locking for session reads/writes (`syscall.Flock`); shared lock on load, exclusive on save; `.lock` sidecar file per session; concurrent-write unit test (FEAT9940) |
+| 0.8.7   | `TestHelpFlagCoverage` uses `VisitAll` to assert every registered flag appears in hand-crafted help output; fixed genuine drift: `--dump-prompt` missing from `iq ask -h`, `--kb` missing from `iq pry -h`; build.sh highlights FAIL lines in red (FEAT9930) |

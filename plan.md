@@ -28,9 +28,6 @@ Sorted easiest → hardest within each group.
 
 ## Group B — Structural Cleanup
 
-**FEAT9930** — **Unify help with cobra**
-Replace manual `printRootHelp()` (and subcommand help functions) with cobra templates or `SetHelpTemplate`. Eliminates drift between registered commands and printed help. Moderate — touches every command file but each change is mechanical.
-
 **FEAT9920** — **Extended inference parameters**
 Currently the sidecar supports three params (`temperature`, `repetition_penalty`, `max_tokens`). Extend `InferParams`/`ResolvedParams` in config, pass through `sidecar.Call`, and handle in `infer_server.py`'s logits processor.
 

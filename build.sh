@@ -18,8 +18,8 @@ else
 fi
 Prg=$(head -1 go.mod | awk -F'/' '{print $NF}' | awk '{print $NF}')
 
-# indent pipes each line through sed to add 4-space prefix.
-indent() { sed 's/^/    /'; }
+# indent pipes each line through sed to add 4-space prefix and highlight FAILs in red.
+indent() { sed "s/^/    /" | sed "s/\(.*FAIL.*\)/$(printf '\e[1;31m')\1$(printf '\e[0m')/"; }
 
 # Detect OS
 case "$OSTYPE" in

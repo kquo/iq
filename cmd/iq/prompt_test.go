@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"iq/internal/config"
 	"iq/internal/sidecar"
 )
@@ -207,6 +210,43 @@ func TestDumpPrompt(t *testing.T) {
 	last := messages[len(messages)-1]
 	if last.Role != "user" || last.Content != "hello world" {
 		t.Errorf("last message = %+v, want {Role:user Content:hello world}", last)
+	}
+}
+
+// captureStdout redirects os.Stdout, calls fn, and returns what was printed.
+func captureStdout(fn func()) string {
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	fn()
+	w.Close()
+	os.Stdout = old
+	var buf strings.Builder
+	io.Copy(&buf, r)
+	return buf.String()
+}
+
+// TestHelpFlagCoverage verifies that every flag registered on a command
+// appears in the corresponding hand-crafted help output, preventing silent
+// drift when flags are added or renamed.
+func TestHelpFlagCoverage(t *testing.T) {
+	cases := []struct {
+		name   string
+		cmd    func() *cobra.Command
+		helpFn func()
+	}{
+		{"ask", newPromptCmd, printPromptHelp},
+		{"pry", newProbeCmd, printProbeHelp},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			helpOut := captureStdout(tc.helpFn)
+			tc.cmd().Flags().VisitAll(func(f *pflag.Flag) {
+				if !strings.Contains(helpOut, "--"+f.Name) {
+					t.Errorf("flag --%s is registered but missing from %s help output", f.Name, tc.name)
+				}
+			})
+		})
 	}
 }
 
