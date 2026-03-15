@@ -49,11 +49,11 @@ type Result struct {
 
 // ── Registry ─────────────────────────────────────────────────────────────────
 
-// Registry is the set of all available tools.
-var Registry []Tool
-
-func init() {
-	Registry = []Tool{
+// NewRegistry returns a fresh slice of all available tools.
+// Using a constructor instead of init() allows tests to create isolated
+// registries without depending on package-level global state.
+func NewRegistry() []Tool {
+	return []Tool{
 		toolGetTime(),
 		toolReadFile(),
 		toolListDir(),
@@ -64,6 +64,9 @@ func init() {
 		toolWebSearch(),
 	}
 }
+
+// Registry is the package-level set of all available tools.
+var Registry = NewRegistry()
 
 // FindTool returns the tool with the given name, or nil.
 func FindTool(name string) *Tool {

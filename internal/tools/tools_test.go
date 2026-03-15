@@ -8,6 +8,34 @@ import (
 	"testing"
 )
 
+// ── NewRegistry tests ─────────────────────────────────────────────────────────
+
+func TestNewRegistry(t *testing.T) {
+	expectedNames := []string{
+		"get_time", "read_file", "list_dir", "file_info",
+		"calc", "search_text", "count_lines", "web_search",
+	}
+	reg := NewRegistry()
+	if len(reg) != len(expectedNames) {
+		t.Fatalf("NewRegistry() returned %d tools, want %d", len(reg), len(expectedNames))
+	}
+	nameSet := make(map[string]bool, len(reg))
+	for _, tool := range reg {
+		nameSet[tool.Name] = true
+	}
+	for _, name := range expectedNames {
+		if !nameSet[name] {
+			t.Errorf("NewRegistry() missing tool %q", name)
+		}
+	}
+	// Verify isolation: mutations to one instance don't affect another.
+	reg2 := NewRegistry()
+	reg[0].Name = "mutated"
+	if reg2[0].Name == "mutated" {
+		t.Error("NewRegistry() instances share state; expected isolation")
+	}
+}
+
 // ── calcEval tests ───────────────────────────────────────────────────────────
 
 func TestCalcEval(t *testing.T) {
