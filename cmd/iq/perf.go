@@ -777,8 +777,9 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 	fmt.Fprintf(os.Stderr, "  corpus      %d tool prompts (bench_corpus.yaml)\n", len(corpus.ToolPrompts))
 
 	// Build the system prompt with tool instructions.
-	sysprompt := "You are a helpful assistant.\n" + tools.BuildRoutingPrompt()
-	grammar := &sidecar.RouteGrammar{ToolNames: tools.RegistryNames()}
+	reg := tools.NewRegistry()
+	sysprompt := "You are a helpful assistant.\n" + tools.BuildRoutingPrompt(reg)
+	grammar := &sidecar.RouteGrammar{ToolNames: tools.RegistryNames(reg)}
 
 	toolCfg, _ := config.Load(nil)
 	toolIP := config.ResolveInferParams(toolCfg, state.Tier)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 )
 
@@ -85,6 +86,23 @@ func TestResolveInferParams(t *testing.T) {
 			t.Errorf("Stop tier override: got %v", p.Stop)
 		}
 	})
+}
+
+func TestLoadInvalidYAML(t *testing.T) {
+	home := t.TempDir()
+	cfgDir := home + "/.config/iq"
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// A leading tab is illegal in YAML and guaranteed to fail go-yaml.
+	if err := os.WriteFile(cfgDir+"/config.yaml", []byte("\t: invalid"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	_, err := Load(nil)
+	if err == nil {
+		t.Fatal("Load with invalid YAML should return an error, got nil")
+	}
 }
 
 func TestEffectivePipeline(t *testing.T) {

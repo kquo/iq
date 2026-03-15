@@ -30,15 +30,6 @@ Sorted easiest → hardest within each group.
 
 ## Group C — Cross-Cutting Quality
 
-**FEAT9910** — **Error handling audit**
-Standardize: wrapped errors (`%w`) for domain functions, sentinel types for control flow, eliminate `nil, nil` returns. Spread across many files but each fix is small. Best done as a sweep with a checklist.
-
-*Known issues to fold in during this sweep:*
-- Config parse errors silently swallowed — `Load` returns empty defaults on YAML unmarshal failure with no error surfaced (`internal/config/config.go:208`)
-- DuckDuckGo search leaks response bodies — `defer resp.Body.Close()` inside a pagination loop keeps bodies open until the whole search finishes (`internal/search/search.go:325`)
-- Tool-call fallback parser ignores `web_search` args — malformed-JSON fallback only extracts `path|expression|pattern`; a broken `web_search` emission silently drops the query (`internal/tools/tools.go:745`)
-- Thread the `tools.Registry` instance through call sites (`cfg.go`, `perf.go`, `prompt.go`) instead of relying on the package-level global — FEAT9960 introduced `NewRegistry()` but left the global in place for backward compat; this sweep should finish the job
-
 **FEAT9900** — **`queone/utl` review & improvement**
 Audit the package, document its API, decide what to keep/replace/upstream. The goal is contributor-friendliness, not wholesale replacement.
 

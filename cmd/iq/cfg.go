@@ -188,7 +188,7 @@ func runConfigShow() error {
 	cfgField("tool_exec_timeout", tools.ExecuteTimeout.String())
 	cfgField("tool_max_output", fmt.Sprintf("%d bytes", tools.MaxOutputBytes))
 	cfgField("cache_ttl", cache.TTL.String())
-	cfgField("tools_registered", fmt.Sprintf("%d", len(tools.Registry)))
+	cfgField("tools_registered", fmt.Sprintf("%d", len(tools.NewRegistry())))
 	cfgField("tool_signals", fmt.Sprintf("%d", len(tools.Signals)))
 
 	return nil

@@ -277,7 +277,7 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 
 	// New structured format — unmarshal directly.
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return &Config{Tiers: emptyTiers()}, nil
+		return nil, fmt.Errorf("parsing config.yaml: %w", err)
 	}
 
 	// Migrate legacy cue_model / kb_model → embed_model.

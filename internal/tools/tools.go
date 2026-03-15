@@ -66,6 +66,8 @@ func NewRegistry() []Tool {
 }
 
 // Registry is the package-level set of all available tools.
+// Used by Execute, FindTool, GuardArgs, and ValidateCall.
+// Routing and parsing functions accept an explicit []Tool parameter instead.
 var Registry = NewRegistry()
 
 // FindTool returns the tool with the given name, or nil.
@@ -78,10 +80,10 @@ func FindTool(name string) *Tool {
 	return nil
 }
 
-// RegistryNames returns the names of all registered tools.
-func RegistryNames() []string {
-	names := make([]string, len(Registry))
-	for i, t := range Registry {
+// RegistryNames returns the names of all tools in reg.
+func RegistryNames(reg []Tool) []string {
+	names := make([]string, len(reg))
+	for i, t := range reg {
 		names[i] = t.Name
 	}
 	return names
@@ -489,7 +491,7 @@ func BuildSystemPrompt() string {
 }
 
 // BuildRoutingPrompt returns a system prompt for routing-grammar-aware inference.
-func BuildRoutingPrompt() string {
+func BuildRoutingPrompt(reg []Tool) string {
 	var b strings.Builder
 	b.WriteString("\n[tools]\n")
 	b.WriteString("You have access to read-only tools. When a question can be answered by calling a tool, you MUST call the tool — never guess or fabricate the answer.\n\n")
@@ -499,7 +501,7 @@ func BuildRoutingPrompt() string {
 	b.WriteString("Use <no_tool> ONLY for questions that no tool can answer (general knowledge, explanations, etc.).\n")
 	b.WriteString("Do not produce any text before the routing prefix.\n\n")
 	b.WriteString("Available tools:\n")
-	for _, t := range Registry {
+	for _, t := range reg {
 		fmt.Fprintf(&b, "\n- %s: %s\n", t.Name, t.Description)
 		if len(t.Params) > 0 {
 			b.WriteString("  Parameters:\n")
@@ -712,8 +714,8 @@ func checkParamType(v any, expected string) error {
 
 // ParseCallsStrict wraps ParseCalls and validates each call against the
 // tool registry schema. Valid calls are returned; invalid ones produce errors.
-func ParseCallsStrict(text string) ([]Call, string, []error) {
-	calls, remaining := ParseCalls(text)
+func ParseCallsStrict(text string, reg []Tool) ([]Call, string, []error) {
+	calls, remaining := ParseCalls(text, reg)
 	var errs []error
 	var valid []Call
 	for _, c := range calls {
@@ -730,7 +732,8 @@ func ParseCallsStrict(text string) ([]Call, string, []error) {
 
 // ParseCalls extracts tool_call blocks from model output.
 // Returns parsed calls and the remaining text with tool blocks removed.
-func ParseCalls(text string) ([]Call, string) {
+// reg is used only for the fallback tag-matching path.
+func ParseCalls(text string, reg []Tool) ([]Call, string) {
 	reClosed := regexp.MustCompile(`(?s)<tool_call>\s*(.*?)\s*</tool_call>`)
 	reUnclosed := regexp.MustCompile(`(?s)<tool_call>\s*(\{.*)$`)
 
@@ -752,7 +755,7 @@ func ParseCalls(text string) ([]Call, string) {
 
 	// Fallback: model used <toolname ...> instead of <tool_call>.
 	if len(regions) == 0 {
-		for _, t := range Registry {
+		for _, t := range reg {
 			pat := fmt.Sprintf(`(?s)<%s\b[^>]*>(.*?)</%s>`, regexp.QuoteMeta(t.Name), regexp.QuoteMeta(t.Name))
 			if m := regexp.MustCompile(pat).FindStringSubmatchIndex(text); m != nil {
 				calls := []Call{{Name: t.Name, Args: map[string]any{}}}
@@ -808,7 +811,7 @@ func parseCallJSON(jsonStr string) Call {
 	}
 	tc.Name = m[1]
 	tc.Args = map[string]any{}
-	argRe := regexp.MustCompile(`"(path|expression|pattern)"\s*:\s*"([^"]*)"`)
+	argRe := regexp.MustCompile(`"(path|expression|pattern|query)"\s*:\s*"([^"]*)"`)
 	for _, am := range argRe.FindAllStringSubmatch(jsonStr, -1) {
 		tc.Args[am[1]] = am[2]
 	}

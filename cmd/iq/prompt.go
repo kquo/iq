@@ -544,6 +544,7 @@ type promptOpts struct {
 }
 
 func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
+	reg := tools.NewRegistry()
 	cfg, err := config.Load(nil)
 	if err != nil {
 		return sess, fmt.Errorf("loading config: %w", err)
@@ -700,7 +701,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 		messages = append(messages, sess.Messages...)
 		// If tools active, inject tool prompt into existing system message.
 		if useTools && len(messages) > 0 && messages[0].Role == "system" {
-			messages[0].Content += tools.BuildRoutingPrompt()
+			messages[0].Content += tools.BuildRoutingPrompt(reg)
 		}
 		messages = append(messages, config.Message{Role: "user", Content: input})
 	} else if kbContext != "" {
@@ -713,7 +714,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			sysprompt = "You are a helpful assistant."
 		}
 		if useTools {
-			sysprompt += tools.BuildRoutingPrompt()
+			sysprompt += tools.BuildRoutingPrompt(reg)
 		}
 		userContent := kbContext + "\n\n" + input
 		messages = append(messages, config.Message{Role: "system", Content: sysprompt})
@@ -724,7 +725,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			if sysprompt == "" {
 				sysprompt = "You are a helpful assistant."
 			}
-			sysprompt += tools.BuildRoutingPrompt()
+			sysprompt += tools.BuildRoutingPrompt(reg)
 		}
 		if sysprompt != "" {
 			messages = append(messages, config.Message{Role: "system", Content: sysprompt})
@@ -912,7 +913,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 				// ── Pass 1: routing-grammar-constrained inference ──
 				// The grammar forces the model to emit <tool:NAME> or <no_tool>
 				// as its very first tokens, then generates freely.
-				grammar := &sidecar.RouteGrammar{ToolNames: tools.RegistryNames()}
+				grammar := &sidecar.RouteGrammar{ToolNames: tools.RegistryNames(reg)}
 				var tPass time.Time
 				if trace {
 					tracePass(1, "routing grammar")
@@ -994,7 +995,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					if toolDone {
 						break
 					}
-					calls, remaining := tools.ParseCalls(response)
+					calls, remaining := tools.ParseCalls(response, reg)
 
 					// Fallback: model may reuse <tool:NAME> routing prefix on
 					// follow-up passes instead of <tool_call> blocks.
@@ -1082,7 +1083,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 
 					// On the last iteration, strip any remaining tool calls and print.
 					if iter == maxToolIter-1 {
-						_, remaining = tools.ParseCalls(response)
+						_, remaining = tools.ParseCalls(response, reg)
 						fmt.Println(remaining)
 						response = remaining
 					}

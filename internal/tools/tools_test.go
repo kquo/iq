@@ -131,7 +131,7 @@ func TestParseToolCallsSingle(t *testing.T) {
 	text := `Let me check the time.
 <tool_call>{"name": "get_time", "args": {}}</tool_call>
 `
-	calls, remaining := ParseCalls(text)
+	calls, remaining := ParseCalls(text, NewRegistry())
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls, want 1", len(calls))
 	}
@@ -147,7 +147,7 @@ func TestParseToolCallsMultiple(t *testing.T) {
 	text := `I'll read that file and check the time.
 <tool_call>{"name": "read_file", "args": {"path": "test.txt"}}</tool_call>
 <tool_call>{"name": "get_time", "args": {}}</tool_call>`
-	calls, _ := ParseCalls(text)
+	calls, _ := ParseCalls(text, NewRegistry())
 	if len(calls) != 2 {
 		t.Fatalf("got %d calls, want 2", len(calls))
 	}
@@ -161,7 +161,7 @@ func TestParseToolCallsMultiple(t *testing.T) {
 
 func TestParseToolCallsMalformed(t *testing.T) {
 	text := `Some text <tool_call>not json</tool_call> more text`
-	calls, remaining := ParseCalls(text)
+	calls, remaining := ParseCalls(text, NewRegistry())
 	if len(calls) != 0 {
 		t.Errorf("got %d calls for malformed JSON, want 0", len(calls))
 	}
@@ -172,7 +172,7 @@ func TestParseToolCallsMalformed(t *testing.T) {
 
 func TestParseToolCallsWithFences(t *testing.T) {
 	text := "<tool_call>```json\n{\"name\": \"calc\", \"args\": {\"expression\": \"2+3\"}}\n```</tool_call>"
-	calls, _ := ParseCalls(text)
+	calls, _ := ParseCalls(text, NewRegistry())
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls, want 1", len(calls))
 	}
@@ -183,7 +183,7 @@ func TestParseToolCallsWithFences(t *testing.T) {
 
 func TestParseToolCallsUnclosed(t *testing.T) {
 	text := "Let me check.\n<tool_call>{\"name\": \"get_time\", \"args\": {}}"
-	calls, remaining := ParseCalls(text)
+	calls, remaining := ParseCalls(text, NewRegistry())
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls for unclosed tag, want 1", len(calls))
 	}
@@ -197,7 +197,7 @@ func TestParseToolCallsUnclosed(t *testing.T) {
 
 func TestParseToolCallsMalformedArgs(t *testing.T) {
 	text := `<tool_call>{"name": "get_time", "args": {"}}</tool_call>`
-	calls, _ := ParseCalls(text)
+	calls, _ := ParseCalls(text, NewRegistry())
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls for malformed args, want 1", len(calls))
 	}
@@ -208,7 +208,7 @@ func TestParseToolCallsMalformedArgs(t *testing.T) {
 
 func TestParseToolCallsMalformedWithPath(t *testing.T) {
 	text := `<tool_call>{"name": "read_file", "args": {"path": "go.mod"</tool_call>`
-	calls, _ := ParseCalls(text)
+	calls, _ := ParseCalls(text, NewRegistry())
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls, want 1", len(calls))
 	}
@@ -222,7 +222,7 @@ func TestParseToolCallsMalformedWithPath(t *testing.T) {
 
 func TestParseToolCallsNone(t *testing.T) {
 	text := "Just a normal response with no tool calls."
-	calls, remaining := ParseCalls(text)
+	calls, remaining := ParseCalls(text, NewRegistry())
 	if len(calls) != 0 {
 		t.Errorf("got %d calls, want 0", len(calls))
 	}
@@ -264,7 +264,7 @@ func TestValidatePathOutsideCWD(t *testing.T) {
 
 func TestParseToolCallsWrongTagName(t *testing.T) {
 	text := `<get_time {"name": "now"}></get_time>`
-	calls, remaining := ParseCalls(text)
+	calls, remaining := ParseCalls(text, NewRegistry())
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls for wrong tag name, want 1", len(calls))
 	}
@@ -273,6 +273,23 @@ func TestParseToolCallsWrongTagName(t *testing.T) {
 	}
 	if remaining != "" {
 		t.Errorf("remaining = %q, want empty", remaining)
+	}
+}
+
+func TestParseCallsWebSearchFallback(t *testing.T) {
+	// Malformed JSON where the outer structure is broken but the query field
+	// is recoverable — this exercises the fallback regex path in parseCallJSON.
+	text := `<tool_call>{"name": "web_search", "args": {"query": "latest Go release"</tool_call>`
+	calls, _ := ParseCalls(text, NewRegistry())
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	if calls[0].Name != "web_search" {
+		t.Errorf("call name = %q, want %q", calls[0].Name, "web_search")
+	}
+	q, _ := calls[0].Args["query"].(string)
+	if q != "latest Go release" {
+		t.Errorf("query arg = %q, want %q", q, "latest Go release")
 	}
 }
 
@@ -413,13 +430,14 @@ func TestParseRoutingArgs(t *testing.T) {
 }
 
 func TestToolRegistryNames(t *testing.T) {
-	names := RegistryNames()
-	if len(names) != len(Registry) {
+	reg := NewRegistry()
+	names := RegistryNames(reg)
+	if len(names) != len(reg) {
 		t.Fatalf("RegistryNames returned %d names, want %d", len(names), len(Registry))
 	}
 	for i, name := range names {
-		if name != Registry[i].Name {
-			t.Errorf("RegistryNames()[%d] = %q, want %q", i, name, Registry[i].Name)
+		if name != reg[i].Name {
+			t.Errorf("RegistryNames()[%d] = %q, want %q", i, name, reg[i].Name)
 		}
 	}
 }

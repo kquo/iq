@@ -350,9 +350,8 @@ func (c *Client) searchDDG(param *Param, opt *ClientOption, maxResults int) (*[]
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
-
 		pageResults, err := parse(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
