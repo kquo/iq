@@ -645,6 +645,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
+| 0.9.3   | Test coverage: cmd/iq (9→11%), kb (3→21%), lm (36→53%), sidecar +CallWithGrammar; pure-function tests across cmd/iq and internal/*; build.sh coverage display: domain (internal/*) as primary signal with total in parentheses |
 | 0.9.2   | FEAT9850: context.Context threaded through hot-path pipeline (executePrompt, sidecar transport, embed HTTP, kb.Search); sync.WaitGroup replaced with errgroup in HFEnrichModels/HFFetchTags; signal.NotifyContext(SIGINT) at iq ask and root command entry points |
 
 <details>

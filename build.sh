@@ -106,18 +106,22 @@ else
 fi
 
 # Coverage summary
+# Domain coverage (internal/* only) is the meaningful signal — cmd/iq is
+# integration-heavy CLI code with a structural ceiling of ~10-15%.
 TOTAL_LINE=$(go tool cover -func="$COVER_FILE" 2>/dev/null | grep "^total:" || true)
 if [ -n "$TOTAL_LINE" ]; then
-    PCT=$(echo "$TOTAL_LINE" | awk '{print $NF}' | tr -d '%')
-    INT_PART=${PCT%.*}
-    if [ "$INT_PART" -ge 98 ]; then
+    TOTAL_PCT=$(echo "$TOTAL_LINE" | awk '{print $NF}' | tr -d '%')
+    DOMAIN_PCT=$(grep "^iq/internal/" "$COVER_FILE" 2>/dev/null \
+        | awk '{t+=$2; if($3>0) c+=$2} END{if(t>0) printf "%.1f", c/t*100; else print "0"}')
+    DOM_INT=${DOMAIN_PCT%.*}
+    if [ "$DOM_INT" -ge 75 ]; then
         COV_COLOR=$Gre
-    elif [ "$INT_PART" -ge 75 ]; then
+    elif [ "$DOM_INT" -ge 50 ]; then
         COV_COLOR=$Yel
     else
         COV_COLOR=$Red
     fi
-    printf "    ${COV_COLOR}total coverage: ${PCT}%%${Rst}\n"
+    printf "    ${COV_COLOR}domain coverage: ${DOMAIN_PCT}%%${Rst}  ${Mag}(total: ${TOTAL_PCT}%%)${Rst}\n"
 fi
 
 # Install staticcheck

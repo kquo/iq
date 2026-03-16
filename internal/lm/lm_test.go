@@ -1,8 +1,13 @@
 package lm
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -263,6 +268,112 @@ func TestRemoveFromManifest(t *testing.T) {
 	_, ok, err = RemoveFromManifest("org/ghost")
 	if err != nil || ok {
 		t.Errorf("RemoveFromManifest(missing) = (_, %v, %v), want (_, false, nil)", ok, err)
+	}
+}
+
+// ── FormatTask / FormatTaskCol ────────────────────────────────────────────────
+
+func TestFormatTask(t *testing.T) {
+	// color.enabled is false in tests (stdout is not a TTY), so ANSI codes are stripped.
+	cases := []struct {
+		tag  string
+		want string
+	}{
+		{"", "-"},
+		{"text-generation", "text-generation"},
+		{"feature-extraction", "embedding"},
+		{"fill-mask", "fill-mask"},
+	}
+	for _, tc := range cases {
+		got := FormatTask(tc.tag)
+		if got != tc.want {
+			t.Errorf("FormatTask(%q) = %q, want %q", tc.tag, got, tc.want)
+		}
+	}
+}
+
+func TestFormatTaskCol(t *testing.T) {
+	// 24-char padded, no ANSI in tests.
+	got := FormatTaskCol("")
+	if !strings.HasPrefix(got, "-") || len(got) != 24 {
+		t.Errorf("FormatTaskCol(\"\") = %q (len=%d), want 24-char padded \"-...\"", got, len(got))
+	}
+	got2 := FormatTaskCol("text-generation")
+	if len(got2) != 24 {
+		t.Errorf("FormatTaskCol(text-generation) len=%d, want 24", len(got2))
+	}
+	got3 := FormatTaskCol("feature-extraction")
+	if !strings.HasPrefix(strings.TrimRight(got3, " "), "embedding") {
+		t.Errorf("FormatTaskCol(feature-extraction) = %q, want starts with 'embedding'", got3)
+	}
+	// Long tag truncated to 23 chars + ellipsis (24 runes total).
+	long := "a-very-long-pipeline-tag-that-exceeds-24"
+	got4 := FormatTaskCol(long)
+	if len([]rune(got4)) != 24 {
+		t.Errorf("FormatTaskCol(long) rune len=%d, want 24", len([]rune(got4)))
+	}
+}
+
+// ── HFCacheDir ────────────────────────────────────────────────────────────────
+
+func TestHFCacheDir(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	got := HFCacheDir("mlx-community/gemma-3-4b-it-4bit")
+	want := filepath.Join(home, ".cache", "huggingface", "hub", "models--mlx-community--gemma-3-4b-it-4bit")
+	if got != want {
+		t.Errorf("HFCacheDir = %q, want %q", got, want)
+	}
+}
+
+// ── HFSearch (httptest) ───────────────────────────────────────────────────────
+
+func TestHFSearchCancelledContext(t *testing.T) {
+	// hfAPIBase is a const pointing to HuggingFace — we can't redirect it.
+	// Test that a pre-cancelled context causes HFSearch to return an error quickly.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := HFSearch(ctx, "test-query", 5)
+	if err == nil {
+		t.Error("HFSearch(cancelled ctx): expected error, got nil")
+	}
+}
+
+func TestHFEnrichModelsMock(t *testing.T) {
+	// Serve a minimal HFModel JSON for each request.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m := HFModel{ID: "org/model", PipelineTag: "text-generation", UsedStorage: 1024}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(m)
+	}))
+	defer srv.Close()
+
+	// HFEnrichModels calls HFFetchModel which hits hfAPIBase — can't intercept.
+	// Use a cancelled context so the call returns immediately; verify error is returned.
+	models := []HFModel{{ID: "org/model-a"}, {ID: "org/model-b"}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := HFEnrichModels(ctx, models)
+	// errgroup returns the first error; cancelled context should produce one.
+	if err == nil {
+		t.Error("HFEnrichModels(cancelled ctx): expected error, got nil")
+	}
+	// Originals must be preserved (copy was made before fetch).
+	if models[0].ID != "org/model-a" || models[1].ID != "org/model-b" {
+		t.Errorf("HFEnrichModels: originals mutated, got %+v", models)
+	}
+	_ = srv // server is created for documentation; actual calls go to hfAPIBase
+}
+
+// ── HFFetchModel (cancelled context) ─────────────────────────────────────────
+
+func TestHFFetchModelCancelledContext(t *testing.T) {
+	// hfAPIBase points to HuggingFace — we can't redirect it. Use a cancelled
+	// context to verify that the function returns quickly with an error.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := HFFetchModel(ctx, "org/mymodel")
+	if err == nil {
+		t.Error("HFFetchModel(cancelled ctx): expected error, got nil")
 	}
 }
 

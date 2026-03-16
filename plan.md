@@ -23,7 +23,7 @@ These principles set the lens for evaluating all roadmap work. There are two tra
 
 ## Development Methodology
 
-Each FEAT follows an **AC-first workflow**: before any code is written, an acceptance-criteria document is drafted that defines exactly what the implementation must achieve. The AC covers: what the codebase scan found (motivating the change), what is explicitly in scope and out of scope (blast-radius management), and the acceptance tests that must pass. This keeps implementations focused, prevents scope creep, and gives future contributors a clear record of intent.
+Each FEAT follows an **AC-first workflow**: before any code is written, an **acceptance criteria** (AC) document is drafted that defines exactly what the implementation must achieve. The AC covers: what the codebase scan found (motivating the change), what is explicitly in scope and out of scope (blast-radius management), and the acceptance tests that must pass. This keeps implementations focused, prevents scope creep, and gives future contributors a clear record of intent.
 
 AC documents live in `docs/` and are checked into the repo alongside the code they describe. Example: [`docs/feat9850_ac.md`](docs/feat9850_ac.md) — context-based concurrency threading through the hot-path pipeline.
 
