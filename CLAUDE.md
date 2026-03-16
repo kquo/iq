@@ -13,6 +13,11 @@
 
 ## Versioning
 - Current version from latest Git tag, or from `programVersion` in `cmd/iq/main.go`
+- IQ follows **semver** (MAJOR.MINOR.PATCH):
+  - **PATCH** (0.x.y+1): bug fixes, test coverage, internal refactors, tooling — nothing a user would notice at the CLI level. Batch several PATCH fixes into a single release when possible; do not cut a release for every small fix.
+  - **MINOR** (0.x+1.0): new user-visible features, new config fields, new commands or subcommands, new pipeline modes, or any behavioral change. Reset PATCH to 0.
+  - **MAJOR**: not applicable until 1.0 (stable public API commitment).
+- When deciding: ask "would a user notice this in `iq --help`, `iq cfg show`, or `iq start`?" If yes → MINOR. If it's invisible to them → PATCH.
 
 ## Pre-Commit Checklist
 Before offering to run a release commit, always complete these steps in order:
