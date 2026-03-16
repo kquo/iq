@@ -645,7 +645,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.8.16  | `RawCall` timeout + status-code guard (FEAT9870): swap bare `http.Post` for `inferClient` (`http.Client{Timeout: 5m}`); explicit non-200 error with status code and body; `Stream` unchanged (timeout would cancel mid-stream); `TestRawCallNonOK` added |
 
 <details>
-<summary>Older versions (v0.2.7 – v0.8.15)</summary>
+<summary>Older versions</summary>
 
 | Version | Summary |
 |---------|---------|
