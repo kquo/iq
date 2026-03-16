@@ -64,6 +64,22 @@ func TestRawCallEmptyChoices(t *testing.T) {
 	}
 }
 
+func TestRawCallNonOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error"))
+	}))
+	defer srv.Close()
+
+	_, err := RawCall(httpTestPort(t, srv), ChatRequest{})
+	if err == nil {
+		t.Fatal("expected error for non-200 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error should mention status code 500, got: %v", err)
+	}
+}
+
 func TestRawCallMalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`not json`))

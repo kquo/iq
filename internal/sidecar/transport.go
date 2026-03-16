@@ -8,9 +8,18 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"iq/internal/config"
 )
+
+// inferTimeout is the deadline for a single non-streaming inference call.
+// Local models can be slow; 5 minutes covers even large slow-tier models.
+const inferTimeout = 5 * time.Minute
+
+// inferClient is used for non-streaming RawCall requests.
+// Stream uses http.DefaultClient because its Timeout would cancel mid-stream.
+var inferClient = &http.Client{Timeout: inferTimeout}
 
 // ── OpenAI-compatible types ───────────────────────────────────────────────────
 
@@ -73,11 +82,15 @@ func RawCall(port int, req ChatRequest) (string, error) {
 		return "", err
 	}
 	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	resp, err := inferClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq start': %w", port, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("sidecar at :%d returned %d: %s", port, resp.StatusCode, b)
+	}
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
