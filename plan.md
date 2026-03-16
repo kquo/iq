@@ -23,23 +23,12 @@ These principles set the lens for evaluating all roadmap work. There are two tra
 Below are sorted easiest → hardest within each group.
 
 
-## Group B — Structural Cleanup
+## Group A — Pipeline
 
-
-## Group C — Cross-Cutting Quality
-
-
-## Group D — Architecture Hardening
+Core inference routing, model selection, and orchestration. Changes here affect every request.
 
 **FEAT9850** — **Context-based concurrency**
 Wire `context.Context` through the call chain. Replace ad-hoc goroutines (KB prefetch, HF enrichment, sidecar crash detection) with `errgroup`. Add cancellation propagation. Touches the prompt pipeline, sidecar lifecycle, and embed calls.
-
-
-## Group E — Routing & Intelligence
-
-**FEAT9820** — **Cue-triggered web RAG** *(extends existing web_search tool)*
-Add a `current_events` cue that, when matched during classification, extracts a search query from the raw prompt, pre-fetches web results, and injects them into context at Step 3 alongside KB chunks — so the model sees fresh web data without needing a tool-call loop. Key work: query extraction before inference, a new fetcher path, and ranking/truncating web chunks vs KB chunks. Web search as a tool already exists (v0.6.3); this promotes it to a RAG source.
-
 
 **FEAT9800** — **Capability-tagged model pool**
 Replace the fixed `fast`/`slow` tier model with capability tags per model (e.g., `fast`, `reasoning`, `code`, `long-context`). Queries route to the best-tagged model, with round-robin within a tag group. This is a fundamental rethink of the routing layer — the cue system's `suggested_tier` field, `resolveRoute`, and `pickSidecar` all change.
@@ -57,16 +46,12 @@ Implementation: the dispatch mode (grammar-constrained vs. model-driven) should 
 The inference loop is managed by a meta-agent that evaluates response quality. Each model in the pipeline emits a confidence score (0.00–1.00). Above threshold (e.g., 0.50): emit response and stop. Below threshold: state what's missing (more context, specific tools, web data) and pass to the next model. This turns the single-pass inference into a multi-model pipeline with self-assessment. Requires: structured output parsing, confidence calibration, and a pipeline orchestrator.
 
 
-## Group F — External Integration
+## Group B — Knowledge & Context
 
-**FEAT9770** — **External API / OpenRouter support**
-Allow any tier to use a remote model via OpenRouter or a user-specified OpenAI-compatible API endpoint. Config would add an `api:` field to tier models (e.g., `api:openrouter/anthropic/claude-3.5-sonnet`). The sidecar layer would need an HTTP-passthrough mode that forwards to remote endpoints instead of local mlx_lm. Key decisions: skip OpenRouter and go direct-to-API? How to handle auth tokens? Latency expectations change completely for remote models.
+How IQ retrieves, assembles, and manages information injected into inference context.
 
-**FEAT9760** — **WebUI prompt interface**
-Serve a web interface at `http://localhost:PORT/` that mirrors the interactive CLI `iq ask`. Needs: an HTTP server (Go stdlib or chi), a simple chat UI (vanilla JS or htmx), SSE or WebSocket streaming, and session management. The backend would call the same `executePrompt` pipeline. Scope depends on UI ambition — a minimal terminal-style interface is days; a polished chat UI is weeks.
-
-
-## Group G — Memory & Knowledge Architecture
+**FEAT9820** — **Cue-triggered web RAG** *(extends existing web_search tool)*
+Add a `current_events` cue that, when matched during classification, extracts a search query from the raw prompt, pre-fetches web results, and injects them into context at Step 3 alongside KB chunks — so the model sees fresh web data without needing a tool-call loop. Key work: query extraction before inference, a new fetcher path, and ranking/truncating web chunks vs KB chunks. Web search as a tool already exists (v0.6.3); this promotes it to a RAG source.
 
 **FEAT9750** — **Layered memory system**
 Extend the existing response cache, session buffer, and KB into a unified memory architecture. Four layers — response cache, session buffer, vector memory (partially exists via KB), and persistent KB — currently operate as separate systems with no shared controller.
@@ -83,19 +68,44 @@ Key principles:
 - **Priority ranking** — user input is sacred, system prompt is critical. Below that: how do you rank KB chunks vs session history vs tool results? Recency? Relevance score? A fixed priority order?
 - **Compression** — summarize older session turns or large tool outputs to fit more signal into fewer tokens. Could use the fast-tier model itself to compress before handing off to the slow-tier model for inference.
 
+**FEAT9720** — **ANN scaling for embeddings**
+Replace brute-force cosine similarity with an ANN library (e.g., hnswlib, FAISS, Annoy) for KB search. Only matters when KB grows past ~10K chunks. Current 384-dim brute force is fine for small KBs.
 
-## Group H — Agent & Orchestration (largest scope)
+**FEAT9690** — **Domain tuning guide and tooling**
+A focused IQ instance outperforms a generic one, but the workflow for creating a domain-tuned agent is currently undocumented and manual. This feature is about closing that gap: benchmark cue classification accuracy for a target domain, identify where embed similarity scores cluster or spread, iterate on cue descriptions and `suggested_tier` values, curate a focused KB, and select models tuned for the domain. Deliverable: a repeatable benchmarking loop (cue accuracy %, avg score, worst misses) that can be run after any cue or model change, plus a short guide capturing the tuning methodology.
 
-**FEAT9740** — **MCP / agent orchestration**
-Sidecars evolve from inference endpoints into persistent agents with state, tool access, and inter-agent communication. This is the long-term vision for IQ as an agent platform rather than a prompt router. Requires: agent lifecycle management, message passing between agents, shared state/memory, and a control plane. Builds on FEAT9750 (memory), FEAT9780 (confidence routing), and FEAT9800 (capability tags).
 
-## Group Z — Future-Proofing (scope TBD, defer until needed)
+## Group C — Capabilities & Integration
+
+New tools, external integrations, and surfaces that expand what agents can do.
+
+**FEAT9710** — **Write tools**
+IQ currently has read-only tool access (file read, web search, calculation, time). Write tools — file write/edit, shell command execution, git operations — are the next capability tier. Each write tool requires: a spec (what exactly does it do?), a safety model (what's the blast radius?), confirmation prompts or dry-run modes, and sandboxing (see FEAT9730). Start with the narrowest useful write tool (e.g., append to a file, create a new file at a specified path) and expand from there. Do not add write tools without a sandboxing plan.
+
+**FEAT9770** — **External API / OpenRouter support**
+Allow any tier to use a remote model via OpenRouter or a user-specified OpenAI-compatible API endpoint. Config would add an `api:` field to tier models (e.g., `api:openrouter/anthropic/claude-3.5-sonnet`). The sidecar layer would need an HTTP-passthrough mode that forwards to remote endpoints instead of local mlx_lm. Key decisions: skip OpenRouter and go direct-to-API? How to handle auth tokens? Latency expectations change completely for remote models.
+
+**FEAT9760** — **WebUI prompt interface**
+Serve a web interface at `http://localhost:PORT/` that mirrors the interactive CLI `iq ask`. Needs: an HTTP server (Go stdlib or chi), a simple chat UI (vanilla JS or htmx), SSE or WebSocket streaming, and session management. The backend would call the same `executePrompt` pipeline. Scope depends on UI ambition — a minimal terminal-style interface is days; a polished chat UI is weeks.
 
 **FEAT9730** — **Tool execution sandboxing**
 Current read-only guards suffice today. If write tools land, add ephemeral working directories, output sanitization, and possibly `os.Chroot` isolation. Design when write tools are specced.
 
-**FEAT9720** — **ANN scaling for embeddings**
-Replace brute-force cosine similarity with an ANN library (e.g., hnswlib, FAISS, Annoy) for KB search. Only matters when KB grows past ~10K chunks. Current 384-dim brute force is fine for small KBs.
+
+## Group D — Platform & Observability
+
+Operational visibility, metrics, and the long-term agent platform vision.
+
+**FEAT9700** — **Structured observability**
+IQ's debug output is ad-hoc `--debug` trace lines — useful for development but not for diagnosing production issues or comparing runs. This feature adds structured event logging: each pipeline step (CLASSIFY, ROUTE, KB, ASSEMBLE, INFERENCE LOOP) emits a structured record (JSON or a compact columnar format) with timing, scores, model used, tokens, and cache hit/miss. Output to a local log file (`~/.config/iq/run/trace.log`) that can be tailed or parsed. A companion `iq trace` command shows recent runs. This makes benchmarking, regression detection, and latency profiling tractable.
+
+**FEAT9740** — **MCP / agent orchestration**
+Sidecars evolve from inference endpoints into persistent agents with state, tool access, and inter-agent communication. This is the long-term vision for IQ as an agent platform rather than a prompt router. Requires: agent lifecycle management, message passing between agents, shared state/memory, and a control plane. Builds on FEAT9750 (memory), FEAT9780 (confidence routing), and FEAT9800 (capability tags).
+
+
+## Group Z — Future-Proofing (scope TBD, defer until needed)
+
+Currently empty.
 
 
 ## Appendix — Apple Silicon Constraints
