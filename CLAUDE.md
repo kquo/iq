@@ -18,9 +18,13 @@
 Before offering to run a release commit, always complete these steps in order:
 1. Audit `arch.md` against the code — grep thresholds, constants, counts,
    formats, and field orders in source files and fix any drift.
-2. Add version row to `arch.md`: new entry goes above the `<details>` block (visible);
-   move the previously-visible entry inside the `<details>` block; update the summary
-   label's version range. Only ONE entry is ever visible — all others stay collapsed.
+2. Add version row to `arch.md` Version History. The section has exactly two parts:
+   - **One visible row** (latest only) — the new entry, above the `<details>` block
+   - **`<details>` block** — every previous version in descending order (newest-first),
+     ending at v0.2.7
+   Steps: (a) add new row above `<details>`; (b) move the previously-visible row to the
+   top of the table inside `<details>`; (c) update the `<summary>` label's version range.
+   The visible table must never accumulate more than one row.
 3. Bump `programVersion` in `cmd/iq/main.go` to the new version string
 4. Remove completed features from `plan.md`
 5. Delete the FEAT's acceptance-criteria file from memory (if one was created) and remove its entry from `MEMORY.md`
