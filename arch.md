@@ -642,13 +642,15 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
+| 0.8.17  | Stale sidecar state / port exhaustion (FEAT9860): `NextAvailablePort` uses `AllLiveStates` (skips dead PIDs); `StartInfer` and `StartSidecar` remove state + kill process on early crash and readiness timeout; 3 new port-allocation tests |
 | 0.8.16  | `RawCall` timeout + status-code guard (FEAT9870): swap bare `http.Post` for `inferClient` (`http.Client{Timeout: 5m}`); explicit non-200 error with status code and body; `Stream` unchanged (timeout would cancel mid-stream); `TestRawCallNonOK` added |
 
 <details>
-<summary>Older versions (v0.2.7 – v0.8.15)</summary>
+<summary>Older versions (v0.2.7 – v0.8.16)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.8.16  | `RawCall` timeout + status-code guard (FEAT9870): swap bare `http.Post` for `inferClient` (`http.Client{Timeout: 5m}`); explicit non-200 error with status code and body; `Stream` unchanged (timeout would cancel mid-stream); `TestRawCallNonOK` added |
 | 0.8.15  | Synthesis pass for `read_file` short-circuit: after file is read, model answers original question using content (same pattern as `web_search`); fixes "does arch.md have version history?", "print last 10 lines", etc.; other file tools remain self-contained (FEAT9872) |
 | 0.8.14  | `GuardArgs` for `read_file`/`file_info`: extract filename from natural language via `extractFilePath`/`looksLikeFilePath`; handles "tail arch.md", "print main.go", "does file X have…"; nil on no-match → falls back to inference; 9 new unit tests (FEAT9874) |
 | 0.8.13  | Fix embed short-circuit tool selection: `SelectTool(signal, input)` replaces hard-coded `expected[0]`; keyword dispatch routes `file_access` to `list_dir`/`file_info`/`read_file` and `file_search` to `count_lines`/`search_text`; `GuardArgs` for `list_dir` extracts path or defaults to "."; 15 new unit tests (FEAT9875) |

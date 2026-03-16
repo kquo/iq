@@ -30,9 +30,6 @@ Sorted easiest → hardest within each group.
 
 ## Group C — Cross-Cutting Quality
 
-**FEAT9860** — **Stale sidecar state / port exhaustion**
-`NextAvailablePort` scans all state files rather than live PIDs, and neither `StartInfer` nor `StartSidecar` removes state on early exit or readiness timeout. A crash during startup leaves a dead state entry that permanently "reserves" a port, eventually yielding "no available ports" even when nothing is running. Fix: validate PID liveness during port scanning and add cleanup paths in the early-exit and timeout branches. See `internal/sidecar/sidecar.go:177`, `sidecar.go:321`, `internal/embed/embed.go:89`.
-
 ---
 
 ## Group D — Architecture Hardening

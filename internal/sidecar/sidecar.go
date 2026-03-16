@@ -174,9 +174,11 @@ func AllLiveStates() ([]*State, error) {
 	return live, nil
 }
 
-// NextAvailablePort scans existing states and returns the next unused port.
+// NextAvailablePort scans live states and returns the next unused port.
+// Dead state files (crashed or stale PIDs) are excluded so their ports
+// are immediately available for reuse.
 func NextAvailablePort() (int, error) {
-	states, err := AllStates()
+	states, err := AllLiveStates()
 	if err != nil {
 		return 0, err
 	}
@@ -406,6 +408,7 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 		case <-exited:
 			fmt.Printf("%s\n", color.Gra("failed"))
 			PrintLastLogLines(lfPath, 10)
+			RemoveState(state.Model)
 			return nil, fmt.Errorf("sidecar process exited unexpectedly")
 		default:
 		}
@@ -415,6 +418,8 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 
 	fmt.Printf("%s\n", color.Gra("timeout"))
 	PrintLastLogLines(lfPath, 10)
+	cmd.Process.Kill() //nolint:errcheck // best-effort cleanup
+	RemoveState(state.Model)
 	return nil, fmt.Errorf("sidecar did not become ready within %s", ReadyTimeout)
 }
 

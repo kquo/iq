@@ -177,6 +177,7 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 		if !sidecar.PidAlive(cmd.Process.Pid) {
 			fmt.Printf("%s\n", color.Gra("failed"))
 			sidecar.PrintLastLogLines(logP, 10)
+			sidecar.RemoveState(slug)
 			return fmt.Errorf("embed sidecar process exited unexpectedly")
 		}
 		fmt.Print(".")
@@ -184,6 +185,8 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 	}
 	fmt.Printf("%s\n", color.Gra("timeout"))
 	sidecar.PrintLastLogLines(logP, 10)
+	cmd.Process.Kill() //nolint:errcheck // best-effort cleanup
+	sidecar.RemoveState(slug)
 	return fmt.Errorf("embed sidecar did not become ready within %s", ReadyTimeout)
 }
 

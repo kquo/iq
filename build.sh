@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # build 2.2.0
+
 set -euo pipefail  # Fail immediately on any error
 Gre='\e[1;32m' Red='\e[1;31m' Mag='\e[1;35m' Yel='\e[1;33m' Blu='\e[1;34m' Rst='\e[0m'
 
@@ -195,8 +196,7 @@ if [ -n "$TAG_ARG" ] && [ -n "$MSG_ARG" ]; then
     git push origin "$TAG_ARG"
     git push
 else
-    printf "\n==> To release as ${Gre}$NextTag${Rst}, adjust comment and run below one-liner:\n"
-    printf "\n    ./build.sh ${Gre}$NextTag${Rst} \"${Gre}<insert comment>${Rst}\"\n\n"
+    printf "\n==> To release, adjust comment and run:\n\n    ./build.sh ${Gre}$NextTag${Rst} \"${Gre}<insert comment>${Rst}\"\n\n"
 fi
 
 exit 0
