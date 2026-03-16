@@ -531,3 +531,68 @@ func TestSignalRegistryCoverage(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectTool(t *testing.T) {
+	tests := []struct {
+		signal string
+		input  string
+		want   string
+	}{
+		// Single-tool signals always return their only tool.
+		{"time_date", "what time is it", "get_time"},
+		{"calculation", "what is 2 + 2", "calc"},
+		{"web_search", "latest news today", "web_search"},
+		// file_access disambiguation.
+		{"file_access", "list every file in current directory", "list_dir"},
+		{"file_access", "list files in cwd", "list_dir"},
+		{"file_access", "ls the src directory", "list_dir"},
+		{"file_access", "show files in folder", "list_dir"},
+		{"file_access", "what is the file size of main.go", "file_info"},
+		{"file_access", "file info for go.mod", "file_info"},
+		{"file_access", "show me main.go", "read_file"},
+		{"file_access", "read the config file", "read_file"},
+		// file_search disambiguation.
+		{"file_search", "count lines in main.go", "count_lines"},
+		{"file_search", "how many lines in go.mod", "count_lines"},
+		{"file_search", "search for TODO in code", "search_text"},
+		{"file_search", "find pattern main in files", "search_text"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.signal+"/"+tc.input, func(t *testing.T) {
+			got := SelectTool(tc.signal, tc.input)
+			if got != tc.want {
+				t.Errorf("SelectTool(%q, %q) = %q, want %q", tc.signal, tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGuardArgsListDir(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantPath string
+	}{
+		{"list files in current directory", "."},
+		{"list files in cwd", "."},
+		{"what files are here", "."},
+		{"list files in /tmp", "/tmp"},
+		{"list files in ~/Documents", "~/Documents"},
+		{"list files in ./src", "./src"},
+		{"list every file", "."}, // no explicit path → default
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			args := GuardArgs("list_dir", tc.input)
+			if args == nil {
+				t.Fatal("GuardArgs returned nil")
+			}
+			got, ok := args["path"].(string)
+			if !ok {
+				t.Fatalf("args[\"path\"] is not a string: %v", args["path"])
+			}
+			if got != tc.wantPath {
+				t.Errorf("path = %q, want %q", got, tc.wantPath)
+			}
+		})
+	}
+}

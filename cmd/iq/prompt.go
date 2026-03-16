@@ -852,7 +852,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					// Non-web_search embed signal: execute the identified tool directly.
 					expected := tools.SignalToolNames(tt.BestSignal)
 					if len(expected) > 0 {
-						signalTool := expected[0]
+						signalTool := tools.SelectTool(tt.BestSignal, input)
 						call := tools.Call{Name: signalTool, Args: tools.GuardArgs(signalTool, input)}
 						if trace {
 							printToolCallTrace(call)

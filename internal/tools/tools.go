@@ -634,12 +634,16 @@ func extractCalcExpression(input string) string {
 // GuardArgs builds a default arg map for a guard direct-call.
 // For the calc tool, it attempts to extract a valid math expression from
 // natural language before falling back to the raw input.
+// For list_dir, it extracts an explicit path or defaults to ".".
 func GuardArgs(toolName, input string) map[string]any {
 	if toolName == "calc" {
 		if expr := extractCalcExpression(input); expr != "" {
 			return map[string]any{"expression": expr}
 		}
 		return nil // caller falls back to direct inference
+	}
+	if toolName == "list_dir" {
+		return map[string]any{"path": extractDirPath(input)}
 	}
 	t := FindTool(toolName)
 	if t == nil {
@@ -651,6 +655,22 @@ func GuardArgs(toolName, input string) map[string]any {
 		}
 	}
 	return nil
+}
+
+// extractDirPath finds an explicit directory path in the input string,
+// or returns "." as the current-directory default.
+func extractDirPath(input string) string {
+	low := strings.ToLower(input)
+	if containsAnyStr(low, "current", " cwd", " here", "this dir", "this folder") {
+		return "."
+	}
+	for w := range strings.FieldsSeq(input) {
+		if strings.HasPrefix(w, "/") || strings.HasPrefix(w, "~/") ||
+			strings.HasPrefix(w, "./") || strings.HasPrefix(w, "../") {
+			return w
+		}
+	}
+	return "."
 }
 
 // ── Schema validation ────────────────────────────────────────────────────────
@@ -1057,6 +1077,45 @@ func SignalToolNames(signal string) []string {
 		}
 	}
 	return nil
+}
+
+// SelectTool picks the most appropriate tool name for a signal given the raw
+// input. For single-tool signals it returns the only tool. For multi-tool
+// signals it uses keyword matching to disambiguate.
+func SelectTool(signalName, input string) string {
+	names := SignalToolNames(signalName)
+	if len(names) == 0 {
+		return ""
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	low := strings.ToLower(input)
+	switch signalName {
+	case "file_access":
+		if containsAnyStr(low, "list ", "ls ", "directory", " dir ", "folder", "files in", "what files", "show files", "all files", "enumerate") {
+			return "list_dir"
+		}
+		if containsAnyStr(low, "file size", "file info", "metadata", "permissions", "last modified", "date modified", "created", "file stat") {
+			return "file_info"
+		}
+		return "read_file"
+	case "file_search":
+		if containsAnyStr(low, "count lines", "how many lines", "number of lines", "line count") {
+			return "count_lines"
+		}
+		return "search_text"
+	}
+	return names[0]
+}
+
+func containsAnyStr(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Tool embedding cache ────────────────────────────────────────────────────
