@@ -83,6 +83,7 @@ func runConfigShow() error {
 	// ── config.yaml ──
 	fmt.Printf("%s\n", color.Whi2("CONFIG"))
 	cfgField("path", cfgPathStr())
+	cfgField("schema_version", fmt.Sprintf("v%d", cfg.Version))
 
 	// Print in config.yaml order: global params, tiers (with resolved params), then extras.
 	gp := config.ResolveInferParams(cfg, "")

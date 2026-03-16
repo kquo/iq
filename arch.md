@@ -104,6 +104,7 @@ Practical guidance: stacking multiple sampling strategies (e.g. `top_k` + `top_p
 
 ```yaml
 # Global defaults (populated on first creation; editable)
+version: 1
 repetition_penalty: 1.3
 temperature: 0.7
 max_tokens: 8192
@@ -131,7 +132,9 @@ Tier commands: `iq tier show`, `iq tier add <tier> <model>`, `iq tier rm <tier> 
 
 Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
-Auto-migration: on first load, old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`. Legacy `cue_model`/`kb_model` fields are auto-migrated to the unified `embed_model`.
+**Schema versioning** — `config.yaml` carries a `version:` field (integer). `ConfigVersion = 1` is the current schema. On load, the version is peeked first: version 0 (absent field) triggers the legacy migration chain; version > `ConfigVersion` returns a hard error ("upgrade iq"); current version is unmarshalled directly. After any migration the version is stamped to `ConfigVersion` and the file is saved. `Load()` always returns a `Config` with `Version == ConfigVersion` after a successful migration.
+
+Auto-migration chain (v0 → v1): old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`, legacy `cue_model`/`kb_model` fields are migrated to the unified `embed_model`.
 
 **Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings (including `pipeline` mode), tier pools with per-tier overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, tier model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
 
@@ -642,14 +645,14 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.8.17  | Stale sidecar state / port exhaustion (FEAT9860): `NextAvailablePort` uses `AllLiveStates` (skips dead PIDs); `StartInfer` and `StartSidecar` remove state + kill process on early crash and readiness timeout; 3 new port-allocation tests |
-| 0.8.16  | `RawCall` timeout + status-code guard (FEAT9870): swap bare `http.Post` for `inferClient` (`http.Client{Timeout: 5m}`); explicit non-200 error with status code and body; `Stream` unchanged (timeout would cancel mid-stream); `TestRawCallNonOK` added |
+| 0.8.18  | Config schema versioning (FEAT9840): `version:` field in config.yaml; `ConfigVersion = 1`; version-dispatched `Load` (v0 → migration chain, v>current → error); `migrateV0` extracts all legacy migration logic; `normalizeConfig` helper; 3 new schema version tests |
 
 <details>
-<summary>Older versions (v0.2.7 – v0.8.16)</summary>
+<summary>Older versions (v0.2.7 – v0.8.17)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.8.17  | Stale sidecar state / port exhaustion (FEAT9860): `NextAvailablePort` uses `AllLiveStates` (skips dead PIDs); `StartInfer` and `StartSidecar` remove state + kill process on early crash and readiness timeout; 3 new port-allocation tests |
 | 0.8.16  | `RawCall` timeout + status-code guard (FEAT9870): swap bare `http.Post` for `inferClient` (`http.Client{Timeout: 5m}`); explicit non-200 error with status code and body; `Stream` unchanged (timeout would cancel mid-stream); `TestRawCallNonOK` added |
 | 0.8.15  | Synthesis pass for `read_file` short-circuit: after file is read, model answers original question using content (same pattern as `web_search`); fixes "does arch.md have version history?", "print last 10 lines", etc.; other file tools remain self-contained (FEAT9872) |
 | 0.8.14  | `GuardArgs` for `read_file`/`file_info`: extract filename from natural language via `extractFilePath`/`looksLikeFilePath`; handles "tail arch.md", "print main.go", "does file X have…"; nil on no-match → falls back to inference; 9 new unit tests (FEAT9874) |

@@ -18,6 +18,12 @@ type Message struct {
 	Content string `json:"content" yaml:"content"`
 }
 
+// ── Schema versioning ────────────────────────────────────────────────────────
+
+// ConfigVersion is the schema version written by Save.
+// Version 0 (absent field) represents any pre-versioning format.
+const ConfigVersion = 1
+
 // ── Inference parameters ─────────────────────────────────────────────────────
 
 // Hardcoded defaults when nothing is configured.
@@ -134,6 +140,7 @@ type TierConfig struct {
 const PipelineTwoTier = "two_tier"
 
 type Config struct {
+	Version     int                    `yaml:"version,omitempty"`
 	Tiers       map[string]*TierConfig `yaml:"tiers"`
 	InferParams `yaml:",inline"`
 	EmbedModel  string   `yaml:"embed_model,omitempty"`
@@ -225,7 +232,8 @@ func defaultConfig() *Config {
 	temp := float64(DefaultTemperature)
 	mt := DefaultMaxTokens
 	return &Config{
-		Tiers: emptyTiers(),
+		Version: ConfigVersion,
+		Tiers:   emptyTiers(),
 		InferParams: InferParams{
 			RepetitionPenalty: &rp,
 			Temperature:       &temp,
@@ -235,47 +243,43 @@ func defaultConfig() *Config {
 	}
 }
 
-// Load reads and returns the config, performing legacy migrations as needed.
-// diskUsage is optional — only needed for migrating the old 4-tier format.
-// On read-only filesystems, returns in-memory defaults without error.
-func Load(diskUsage DiskUsageFunc) (*Config, error) {
-	path, err := Path()
-	if err != nil {
-		// Cannot resolve config dir (e.g. read-only FS) — return defaults.
-		return defaultConfig(), nil
+// normalizeConfig ensures all canonical tiers exist and have non-nil model slices.
+func normalizeConfig(cfg *Config) {
+	if cfg.Tiers == nil {
+		cfg.Tiers = emptyTiers()
 	}
-	cfg := &Config{Tiers: emptyTiers()}
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		cfg = defaultConfig()
-		_ = Save(cfg)
-		return cfg, nil
+	for _, t := range TierOrder {
+		if cfg.Tiers[t] == nil {
+			cfg.Tiers[t] = &TierConfig{Models: []string{}}
+		}
+		if cfg.Tiers[t].Models == nil {
+			cfg.Tiers[t].Models = []string{}
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
+}
 
+// migrateV0 converts any pre-versioning config format to the current Config.
+// It handles the flat-tier list format, the old 4-tier format, and legacy
+// cue_model/kb_model fields. It does not save; the caller stamps the version.
+func migrateV0(data []byte, diskUsage DiskUsageFunc) (*Config, error) {
 	// Probe: is this the old flat-list format (tiers: {fast: [model-a, ...]})?
 	var flatProbe struct {
 		Tiers map[string]any `yaml:"tiers"`
 	}
 	if yaml.Unmarshal(data, &flatProbe) == nil && len(flatProbe.Tiers) > 0 {
-		// Check if any tier value is a list (old format) vs a map (new format).
 		for _, v := range flatProbe.Tiers {
 			if _, isList := v.([]any); isList {
-				// Old flat-list format — migrate.
-				cfg = migrateFlatTiers(data, diskUsage)
-				if err := Save(cfg); err == nil {
-					fmt.Fprintf(os.Stderr, "%s\n",
-						color.Gra("config.yaml migrated: tiers updated to structured format"))
-				}
+				cfg := migrateFlatTiers(data, diskUsage)
+				fmt.Fprintf(os.Stderr, "%s\n",
+					color.Gra("config.yaml migrated: tiers updated to structured format"))
 				return cfg, nil
 			}
 			break // only need to check one
 		}
 	}
 
-	// New structured format — unmarshal directly.
+	// Structured format — unmarshal directly.
+	cfg := &Config{Tiers: emptyTiers()}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config.yaml: %w", err)
 	}
@@ -289,24 +293,62 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 		}
 		cfg.CueModel = ""
 		cfg.KbModel = ""
-		if err := Save(cfg); err == nil {
-			fmt.Fprintf(os.Stderr, "%s\n",
-				color.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
+		fmt.Fprintf(os.Stderr, "%s\n",
+			color.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
+	}
+
+	return cfg, nil
+}
+
+// Load reads and returns the config. It uses a version field to select the
+// load path: version 0 (absent) triggers the legacy migration chain; the
+// current version is loaded directly. On read-only filesystems, returns
+// in-memory defaults without error. diskUsage is optional and only needed
+// for migrating the old 4-tier format.
+func Load(diskUsage DiskUsageFunc) (*Config, error) {
+	path, err := Path()
+	if err != nil {
+		// Cannot resolve config dir (e.g. read-only FS) — return defaults.
+		return defaultConfig(), nil
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		cfg := defaultConfig()
+		_ = Save(cfg)
+		return cfg, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Peek at the schema version to select the load path.
+	var vp struct {
+		Version int `yaml:"version"`
+	}
+	_ = yaml.Unmarshal(data, &vp) // missing field → 0; parse errors caught below
+
+	if vp.Version > ConfigVersion {
+		return nil, fmt.Errorf("config.yaml uses schema v%d (this build supports up to v%d); upgrade iq",
+			vp.Version, ConfigVersion)
+	}
+
+	var cfg *Config
+	if vp.Version == 0 {
+		// Pre-versioning format — run the migration chain and stamp the version.
+		if cfg, err = migrateV0(data, diskUsage); err != nil {
+			return nil, err
+		}
+		cfg.Version = ConfigVersion
+		_ = Save(cfg) // best-effort; read-only FS is fine
+	} else {
+		// Current schema — unmarshal directly.
+		cfg = &Config{Tiers: emptyTiers()}
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, fmt.Errorf("parsing config.yaml: %w", err)
 		}
 	}
 
-	// Ensure all canonical tiers exist.
-	if cfg.Tiers == nil {
-		cfg.Tiers = emptyTiers()
-	}
-	for _, t := range TierOrder {
-		if cfg.Tiers[t] == nil {
-			cfg.Tiers[t] = &TierConfig{Models: []string{}}
-		}
-		if cfg.Tiers[t].Models == nil {
-			cfg.Tiers[t].Models = []string{}
-		}
-	}
+	normalizeConfig(cfg)
 	return cfg, nil
 }
 

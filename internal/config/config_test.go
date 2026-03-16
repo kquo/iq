@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -252,6 +253,77 @@ func TestLoadInvalidYAML(t *testing.T) {
 	_, err := Load(nil)
 	if err == nil {
 		t.Fatal("Load with invalid YAML should return an error, got nil")
+	}
+}
+
+func TestLoadSchemaV1NoMigration(t *testing.T) {
+	home := t.TempDir()
+	cfgDir := home + "/.config/iq"
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	y := "version: 1\ntiers:\n  fast:\n    models:\n      - model-a\n  slow:\n    models: []\n"
+	if err := os.WriteFile(cfgDir+"/config.yaml", []byte(y), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Version != ConfigVersion {
+		t.Errorf("Version = %d, want %d", cfg.Version, ConfigVersion)
+	}
+	if models := cfg.TierModels("fast"); len(models) != 1 || models[0] != "model-a" {
+		t.Errorf("fast models = %v, want [model-a]", models)
+	}
+}
+
+func TestLoadSchemaV0StampsVersion(t *testing.T) {
+	home := t.TempDir()
+	cfgDir := home + "/.config/iq"
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Structured format with no version field (v0).
+	y := "tiers:\n  fast:\n    models:\n      - model-a\n  slow:\n    models: []\n"
+	cfgPath := cfgDir + "/config.yaml"
+	if err := os.WriteFile(cfgPath, []byte(y), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Version != ConfigVersion {
+		t.Errorf("Version = %d, want %d", cfg.Version, ConfigVersion)
+	}
+	updated, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "version: 1") {
+		t.Errorf("saved config.yaml missing 'version: 1':\n%s", updated)
+	}
+}
+
+func TestLoadFutureSchemaVersionErrors(t *testing.T) {
+	home := t.TempDir()
+	cfgDir := home + "/.config/iq"
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgDir+"/config.yaml", []byte("version: 99\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	_, err := Load(nil)
+	if err == nil {
+		t.Fatal("Load with future schema version should return an error")
 	}
 }
 

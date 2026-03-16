@@ -20,30 +20,22 @@ Within that spirit, IQ is also a **framework for building domain-specific local 
 
 These principles set the lens for evaluating all roadmap work. There are two tracks: **foundational pipeline work** (routing, memory, orchestration) that benefits every agent equally, and **domain-tuning work** (model benchmarking, cue customization, KB curation, per-domain config) that defines what any specific agent actually is. Neither track is optional. Pipeline work without domain tuning produces a capable system that's good at nothing in particular; domain tuning without pipeline foundations produces a brittle, slow, hard-to-configure agent. The question to ask of any feature: does it make agents more capable, more accurate, or easier to tune for a specific domain?
 
----
+Below are sorted easiest → hardest within each group.
 
-Sorted easiest → hardest within each group.
-
----
 
 ## Group B — Structural Cleanup
 
+
 ## Group C — Cross-Cutting Quality
 
----
 
 ## Group D — Architecture Hardening
 
 **FEAT9850** — **Context-based concurrency**
 Wire `context.Context` through the call chain. Replace ad-hoc goroutines (KB prefetch, HF enrichment, sidecar crash detection) with `errgroup`. Add cancellation propagation. Touches the prompt pipeline, sidecar lifecycle, and embed calls.
 
-**FEAT9840** — **Configuration schema versioning**
-Add a `version:` field to config.yaml, embedded JSON schema for validation, and a versioned migration chain. Replaces the current ad-hoc auto-migration. Benefits from FEAT9910 (clean error handling) being done first.
-
----
 
 ## Group E — Routing & Intelligence
-
 
 **FEAT9820** — **Cue-triggered web RAG** *(extends existing web_search tool)*
 Add a `current_events` cue that, when matched during classification, extracts a search query from the raw prompt, pre-fetches web results, and injects them into context at Step 3 alongside KB chunks — so the model sees fresh web data without needing a tool-call loop. Key work: query extraction before inference, a new fetcher path, and ranking/truncating web chunks vs KB chunks. Web search as a tool already exists (v0.6.3); this promotes it to a RAG source.
@@ -70,7 +62,6 @@ Implementation: the dispatch mode (grammar-constrained vs. model-driven) should 
 **FEAT9780** — **Confidence-based inference agent**
 The inference loop is managed by a meta-agent that evaluates response quality. Each model in the pipeline emits a confidence score (0.00–1.00). Above threshold (e.g., 0.50): emit response and stop. Below threshold: state what's missing (more context, specific tools, web data) and pass to the next model. This turns the single-pass inference into a multi-model pipeline with self-assessment. Requires: structured output parsing, confidence calibration, and a pipeline orchestrator.
 
----
 
 ## Group F — External Integration
 
@@ -80,7 +71,6 @@ Allow any tier to use a remote model via OpenRouter or a user-specified OpenAI-c
 **FEAT9760** — **WebUI prompt interface**
 Serve a web interface at `http://localhost:PORT/` that mirrors the interactive CLI `iq ask`. Needs: an HTTP server (Go stdlib or chi), a simple chat UI (vanilla JS or htmx), SSE or WebSocket streaming, and session management. The backend would call the same `executePrompt` pipeline. Scope depends on UI ambition — a minimal terminal-style interface is days; a polished chat UI is weeks.
 
----
 
 ## Group G — Memory & Knowledge Architecture
 
@@ -99,14 +89,11 @@ Key principles:
 - **Priority ranking** — user input is sacred, system prompt is critical. Below that: how do you rank KB chunks vs session history vs tool results? Recency? Relevance score? A fixed priority order?
 - **Compression** — summarize older session turns or large tool outputs to fit more signal into fewer tokens. Could use the fast-tier model itself to compress before handing off to the slow-tier model for inference.
 
----
 
 ## Group H — Agent & Orchestration (largest scope)
 
 **FEAT9740** — **MCP / agent orchestration**
 Sidecars evolve from inference endpoints into persistent agents with state, tool access, and inter-agent communication. This is the long-term vision for IQ as an agent platform rather than a prompt router. Requires: agent lifecycle management, message passing between agents, shared state/memory, and a control plane. Builds on FEAT9750 (memory), FEAT9780 (confidence routing), and FEAT9800 (capability tags).
-
----
 
 ## Group Z — Future-Proofing (scope TBD, defer until needed)
 
@@ -116,7 +103,6 @@ Current read-only guards suffice today. If write tools land, add ephemeral worki
 **FEAT9720** — **ANN scaling for embeddings**
 Replace brute-force cosine similarity with an ANN library (e.g., hnswlib, FAISS, Annoy) for KB search. Only matters when KB grows past ~10K chunks. Current 384-dim brute force is fine for small KBs.
 
----
 
 ## Appendix — Apple Silicon Constraints
 
