@@ -863,12 +863,39 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						if trace {
 							printToolResultTrace(r)
 						}
-						// Self-contained tools print output directly.
-						// On tool failure, fall back to direct inference — the model
-						// answers from training data rather than synthesizing an error.
+						// read_file output is raw bytes — synthesize a model response so
+						// the model can answer questions about the content, not just dump it.
+						// Other tools (get_time, calc, list_dir, file_info, etc.) are
+						// self-contained: their output directly answers the question.
 						if r.Error == "" && r.Output != "" {
-							fmt.Println(r.Output)
-							response = r.Output
+							if signalTool == "read_file" {
+								var synthMsgs []config.Message
+								if route.SystemPrompt != "" {
+									synthMsgs = append(synthMsgs, config.Message{Role: "system", Content: route.SystemPrompt})
+								}
+								synthMsgs = append(synthMsgs,
+									config.Message{Role: "user", Content: input},
+									config.Message{Role: "assistant", Content: "I've read the file."},
+									config.Message{Role: "user", Content: tools.FormatResult(r) + "\n\nUsing the content above, answer my question or complete my request."},
+								)
+								if trace {
+									tracePass(1, "synthesize file content")
+									traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
+									tPass = time.Now()
+								}
+								response, err = sidecar.Call(route.Port, synthMsgs, ip.MaxTokens, ip)
+								if err != nil {
+									return sess, err
+								}
+								if trace {
+									traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+									traceField("latency", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
+								}
+								fmt.Println(response)
+							} else {
+								fmt.Println(r.Output)
+								response = r.Output
+							}
 						} else {
 							// Strip tool instructions from the system prompt so the model
 							// answers directly rather than trying to call a tool again.
