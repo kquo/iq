@@ -642,10 +642,11 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
+| 0.8.14  | `GuardArgs` for `read_file`/`file_info`: extract filename from natural language via `extractFilePath`/`looksLikeFilePath`; handles "tail arch.md", "print main.go", "does file X have…"; nil on no-match → falls back to inference; 9 new unit tests (FEAT9874) |
 | 0.8.13  | Fix embed short-circuit tool selection: `SelectTool(signal, input)` replaces hard-coded `expected[0]`; keyword dispatch routes `file_access` to `list_dir`/`file_info`/`read_file` and `file_search` to `count_lines`/`search_text`; `GuardArgs` for `list_dir` extracts path or defaults to "."; 15 new unit tests (FEAT9875) |
 
 <details>
-<summary>Older versions (v0.2.7 – v0.8.12)</summary>
+<summary>Older versions (v0.2.7 – v0.8.13)</summary>
 
 | Version | Summary |
 |---------|---------|
@@ -715,5 +716,6 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | 0.8.10  | Replace `queone/utl` color wrappers with zero-dependency `internal/color` package; TTY detection via `os.Stdout.Stat()`, respects `NO_COLOR`/`TERM=dumb`; rename `Gre`→`Grn`; binary shrinks ~110KB; removes 7 transitive dependencies (FEAT9900) |
 | 0.8.11  | Test coverage expansion: `ParseCallsStrict` table tests, `resolveRoute` tier fallback, sidecar transport (`RawCall`/`Call`/`StripThinkBlocks`) with httptest, config migration paths (`migrateFlatTiers`/`migrateOldFourTier`/legacy embed model), embed (`CosineSimilarity`/`TextsOnPort`/`keywordScore`); aggregate coverage 11.8%→15.1% (FEAT9890) |
 | 0.8.12  | Fix `RemoveSource` prefix collision: replace bare `strings.HasPrefix` with exact-path + directory-boundary match (`== absPath \|\| HasPrefix(absPath+"/")`) to prevent silent deletion of sibling paths; add `internal/kb/kb_test.go` with 4 table tests (FEAT9880) |
+| 0.8.13  | Fix embed short-circuit tool selection: `SelectTool(signal, input)` replaces hard-coded `expected[0]`; keyword dispatch routes `file_access` to `list_dir`/`file_info`/`read_file` and `file_search` to `count_lines`/`search_text`; `GuardArgs` for `list_dir` extracts path or defaults to "."; 15 new unit tests (FEAT9875) |
 
 </details>

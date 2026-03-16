@@ -634,7 +634,7 @@ func extractCalcExpression(input string) string {
 // GuardArgs builds a default arg map for a guard direct-call.
 // For the calc tool, it attempts to extract a valid math expression from
 // natural language before falling back to the raw input.
-// For list_dir, it extracts an explicit path or defaults to ".".
+// For file tools, it extracts an explicit path from the input text.
 func GuardArgs(toolName, input string) map[string]any {
 	if toolName == "calc" {
 		if expr := extractCalcExpression(input); expr != "" {
@@ -644,6 +644,12 @@ func GuardArgs(toolName, input string) map[string]any {
 	}
 	if toolName == "list_dir" {
 		return map[string]any{"path": extractDirPath(input)}
+	}
+	if toolName == "read_file" || toolName == "file_info" {
+		if path := extractFilePath(input); path != "" {
+			return map[string]any{"path": path}
+		}
+		return nil // no path found → caller falls back to direct inference
 	}
 	t := FindTool(toolName)
 	if t == nil {
@@ -655,6 +661,57 @@ func GuardArgs(toolName, input string) map[string]any {
 		}
 	}
 	return nil
+}
+
+// extractFilePath finds an explicit file path token in the input string.
+// It first looks for tokens with path prefixes (/  ~/  ./  ../), then falls
+// back to tokens that look like filenames (contain a dot with a short extension).
+// Returns "" if no file path is found.
+func extractFilePath(input string) string {
+	// First pass: explicit path prefixes.
+	for w := range strings.FieldsSeq(input) {
+		w = strings.TrimRight(w, "?,;!\"')")
+		if strings.HasPrefix(w, "/") || strings.HasPrefix(w, "~/") ||
+			strings.HasPrefix(w, "./") || strings.HasPrefix(w, "../") {
+			return w
+		}
+	}
+	// Second pass: file-like tokens (e.g. arch.md, main.go, go.mod).
+	for w := range strings.FieldsSeq(input) {
+		w = strings.TrimRight(w, "?,;!\"')")
+		if looksLikeFilePath(w) {
+			return w
+		}
+	}
+	return ""
+}
+
+// looksLikeFilePath returns true when s resembles a filename: contains a dot,
+// has a short alphanumeric extension (1–6 chars), and is not a bare number.
+func looksLikeFilePath(s string) bool {
+	dot := strings.LastIndex(s, ".")
+	if dot < 1 {
+		return false
+	}
+	ext := s[dot+1:]
+	if len(ext) == 0 || len(ext) > 6 {
+		return false
+	}
+	for _, c := range ext {
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
+			return false
+		}
+	}
+	base := s[:dot]
+	// Reject bare decimal numbers like "1.5" or "0.8".
+	allDigit := true
+	for _, c := range base {
+		if !unicode.IsDigit(c) {
+			allDigit = false
+			break
+		}
+	}
+	return !allDigit
 }
 
 // extractDirPath finds an explicit directory path in the input string,

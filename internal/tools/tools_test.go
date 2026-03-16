@@ -596,3 +596,41 @@ func TestGuardArgsListDir(t *testing.T) {
 		})
 	}
 }
+
+func TestGuardArgsReadFile(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantPath string // "" means nil args expected
+	}{
+		{"tail arch.md", "arch.md"},
+		{"print arch.md", "arch.md"},
+		{"show me main.go", "main.go"},
+		{"does file arch.md have a version history? Can you print it?", "arch.md"},
+		{"read go.mod", "go.mod"},
+		{"read the file at ./cmd/iq/main.go", "./cmd/iq/main.go"},
+		{"read /etc/hosts", "/etc/hosts"},
+		{"read ~/Documents/notes.txt", "~/Documents/notes.txt"},
+		{"what time is it", ""}, // no file path → nil args
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			args := GuardArgs("read_file", tc.input)
+			if tc.wantPath == "" {
+				if args != nil {
+					t.Errorf("expected nil args, got %v", args)
+				}
+				return
+			}
+			if args == nil {
+				t.Fatalf("expected args with path %q, got nil", tc.wantPath)
+			}
+			got, ok := args["path"].(string)
+			if !ok {
+				t.Fatalf("args[\"path\"] not a string: %v", args["path"])
+			}
+			if got != tc.wantPath {
+				t.Errorf("path = %q, want %q", got, tc.wantPath)
+			}
+		})
+	}
+}
