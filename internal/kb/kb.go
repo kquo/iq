@@ -1,6 +1,7 @@
 package kb
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -301,7 +302,7 @@ func chunkMarkdown(path string) ([]Chunk, error) {
 	headingStack := make([]string, 6)
 	var current *section
 
-	flush := func(end int) {
+	flush := func() {
 		if current != nil && len(current.lines) > 0 {
 			sections = append(sections, *current)
 		}
@@ -310,7 +311,7 @@ func chunkMarkdown(path string) ([]Chunk, error) {
 	for i, line := range lines {
 		m := headingRe.FindStringSubmatch(line)
 		if m != nil {
-			flush(i)
+			flush()
 			level := len(m[1]) - 1
 			text := strings.TrimSpace(m[2])
 			headingStack[level] = text
@@ -334,7 +335,7 @@ func chunkMarkdown(path string) ([]Chunk, error) {
 			current.lines = append(current.lines, line)
 		}
 	}
-	flush(len(lines))
+	flush()
 
 	var chunks []Chunk
 	for _, s := range sections {
@@ -549,7 +550,7 @@ func KeywordBoost(text, label string, keywords []string) float32 {
 // ── Search ───────────────────────────────────────────────────────────────────
 
 // Search embeds the query and returns the top-k most similar chunks above minScore.
-func Search(query string, topK int, minScore float32) ([]Result, error) {
+func Search(ctx context.Context, query string, topK int, minScore float32) ([]Result, error) {
 	idx, err := Load()
 	if err != nil {
 		return nil, err
@@ -558,7 +559,7 @@ func Search(query string, topK int, minScore float32) ([]Result, error) {
 		return nil, nil
 	}
 
-	vecs, err := embed.Texts([]string{query}, "query")
+	vecs, err := embed.Texts(ctx, []string{query}, "query")
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -713,7 +714,7 @@ func Ingest(root string) error {
 		for j, c := range batch {
 			texts[j] = EmbedText(abs, c.Source, c.Label, c.Text)
 		}
-		vecs, err := embed.Texts(texts, "document")
+		vecs, err := embed.Texts(context.Background(), texts, "document")
 		if err != nil {
 			fmt.Println()
 			return fmt.Errorf("embed batch %d: %w", i/EmbedBatch, err)

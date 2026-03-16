@@ -1,6 +1,7 @@
 package lm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -11,8 +12,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"iq/internal/color"
 
@@ -66,7 +68,7 @@ func (m HFModel) TotalSize() int64 {
 }
 
 // HFSearch queries the HuggingFace API for MLX models.
-func HFSearch(query string, limit int) ([]HFModel, error) {
+func HFSearch(ctx context.Context, query string, limit int) ([]HFModel, error) {
 	u, _ := url.Parse(hfAPIBase)
 	q := u.Query()
 	q.Set("search", query)
@@ -78,7 +80,11 @@ func HFSearch(query string, limit int) ([]HFModel, error) {
 	u.RawQuery = q.Encode()
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(u.String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -97,10 +103,14 @@ func HFSearch(query string, limit int) ([]HFModel, error) {
 
 // HFFetchModel retrieves full model details (including sibling sizes) from the
 // HF individual model endpoint: GET /api/models/{id}
-func HFFetchModel(id string) (HFModel, error) {
-	url := hfAPIBase + "/" + id
+func HFFetchModel(ctx context.Context, id string) (HFModel, error) {
+	rawURL := hfAPIBase + "/" + id
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return HFModel{}, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return HFModel{}, err
 	}
@@ -116,31 +126,33 @@ func HFFetchModel(id string) (HFModel, error) {
 }
 
 // HFEnrichModels fetches full details for each model in parallel and merges
-// sibling sizes back into the original slice.
-func HFEnrichModels(models []HFModel) {
-	var wg sync.WaitGroup
+// sibling sizes back into the original slice. The first fetch error cancels
+// remaining fetches; enrichment errors are non-fatal (original data is kept).
+func HFEnrichModels(ctx context.Context, models []HFModel) error {
 	enriched := make([]HFModel, len(models))
+	copy(enriched, models) // default: keep originals
+	g, gctx := errgroup.WithContext(ctx)
 	for i, m := range models {
-		enriched[i] = m // default: keep original
-		wg.Add(1)
-		go func(idx int, id string) {
-			defer wg.Done()
-			full, err := HFFetchModel(id)
-			if err == nil {
-				if full.PipelineTag != "" {
-					enriched[idx].PipelineTag = full.PipelineTag
-				}
-				if full.UsedStorage > 0 {
-					enriched[idx].UsedStorage = full.UsedStorage
-				}
-				if len(full.Siblings) > 0 {
-					enriched[idx].Siblings = full.Siblings
-				}
+		g.Go(func() error {
+			full, err := HFFetchModel(gctx, m.ID)
+			if err != nil {
+				return err
 			}
-		}(i, m.ID)
+			if full.PipelineTag != "" {
+				enriched[i].PipelineTag = full.PipelineTag
+			}
+			if full.UsedStorage > 0 {
+				enriched[i].UsedStorage = full.UsedStorage
+			}
+			if len(full.Siblings) > 0 {
+				enriched[i].Siblings = full.Siblings
+			}
+			return nil
+		})
 	}
-	wg.Wait()
+	err := g.Wait()
 	copy(models, enriched)
+	return err
 }
 
 // ── Manifest ─────────────────────────────────────────────────────────────────
@@ -526,8 +538,9 @@ func InferTaskFromConfig(modelID string) string {
 }
 
 // HFFetchTags fetches pipeline_tag for manifest entries that have no Task cached.
-// It updates the entries in place and returns true if any were updated.
-func HFFetchTags(entries []ManifestEntry) bool {
+// It updates the entries in place and returns true if any were updated. The first
+// fetch error cancels remaining fetches; tag-fetch errors are non-fatal.
+func HFFetchTags(ctx context.Context, entries []ManifestEntry) (bool, error) {
 	// Collect indices that need fetching.
 	var need []int
 	for i, e := range entries {
@@ -536,30 +549,30 @@ func HFFetchTags(entries []ManifestEntry) bool {
 		}
 	}
 	if len(need) == 0 {
-		return false
+		return false, nil
 	}
 
-	var wg sync.WaitGroup
 	type result struct {
 		idx int
 		tag string
 	}
 	ch := make(chan result, len(need))
+	g, gctx := errgroup.WithContext(ctx)
 	for _, idx := range need {
-		wg.Add(1)
-		go func(i int, id string) {
-			defer wg.Done()
+		g.Go(func() error {
+			id := entries[idx].ID
 			// Try HF API first, fall back to local config.json inference.
-			if m, err := HFFetchModel(id); err == nil && m.PipelineTag != "" {
-				ch <- result{i, m.PipelineTag}
-				return
+			if m, err := HFFetchModel(gctx, id); err == nil && m.PipelineTag != "" {
+				ch <- result{idx, m.PipelineTag}
+				return nil
 			}
 			if tag := InferTaskFromConfig(id); tag != "" {
-				ch <- result{i, tag}
+				ch <- result{idx, tag}
 			}
-		}(idx, entries[idx].ID)
+			return nil
+		})
 	}
-	wg.Wait()
+	err := g.Wait()
 	close(ch)
 
 	updated := false
@@ -567,7 +580,7 @@ func HFFetchTags(entries []ManifestEntry) bool {
 		entries[r.idx].Task = r.tag
 		updated = true
 	}
-	return updated
+	return updated, err
 }
 
 // ── Snapshot helpers ──────────────────────────────────────────────────────────

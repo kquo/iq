@@ -3,6 +3,7 @@ package sidecar
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -76,13 +77,18 @@ func StripThinkBlocks(s string) string {
 // ── HTTP transport ────────────────────────────────────────────────────────────
 
 // RawCall sends a ChatRequest to a sidecar and returns the response text.
-func RawCall(port int, req ChatRequest) (string, error) {
+func RawCall(ctx context.Context, port int, req ChatRequest) (string, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err
 	}
 	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
-	resp, err := inferClient.Post(url, "application/json", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := inferClient.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq start': %w", port, err)
 	}
@@ -115,7 +121,7 @@ func RawCall(port int, req ChatRequest) (string, error) {
 }
 
 // Call sends a non-streaming inference request to a sidecar.
-func Call(port int, messages []config.Message, maxTokens int, ip config.ResolvedParams) (string, error) {
+func Call(ctx context.Context, port int, messages []config.Message, maxTokens int, ip config.ResolvedParams) (string, error) {
 	req := ChatRequest{
 		Messages:          messages,
 		Stream:            false,
@@ -128,11 +134,11 @@ func Call(port int, messages []config.Message, maxTokens int, ip config.Resolved
 		Stop:              ip.Stop,
 		Seed:              ip.Seed,
 	}
-	return RawCall(port, req)
+	return RawCall(ctx, port, req)
 }
 
 // CallWithGrammar sends a non-streaming inference request with a routing grammar.
-func CallWithGrammar(port int, messages []config.Message, maxTokens int, grammar *RouteGrammar, ip config.ResolvedParams) (string, error) {
+func CallWithGrammar(ctx context.Context, port int, messages []config.Message, maxTokens int, grammar *RouteGrammar, ip config.ResolvedParams) (string, error) {
 	req := ChatRequest{
 		Messages:          messages,
 		Stream:            false,
@@ -146,12 +152,12 @@ func CallWithGrammar(port int, messages []config.Message, maxTokens int, grammar
 		Seed:              ip.Seed,
 		RoutingGrammar:    grammar,
 	}
-	return RawCall(port, req)
+	return RawCall(ctx, port, req)
 }
 
 // Stream sends a streaming inference request and prints tokens as they arrive.
 // Think blocks are suppressed during streaming; the clean result is printed at the end.
-func Stream(port int, messages []config.Message, ip config.ResolvedParams) (string, error) {
+func Stream(ctx context.Context, port int, messages []config.Message, ip config.ResolvedParams) (string, error) {
 	req := ChatRequest{
 		Messages:          messages,
 		Stream:            true,
@@ -169,7 +175,12 @@ func Stream(port int, messages []config.Message, ip config.ResolvedParams) (stri
 		return "", err
 	}
 	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("sidecar at :%d unreachable — run 'iq start': %w", port, err)
 	}

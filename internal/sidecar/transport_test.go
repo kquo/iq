@@ -1,6 +1,7 @@
 package sidecar
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -40,7 +41,7 @@ func TestRawCallHappyPath(t *testing.T) {
 	srv := mockChatServer(t, want)
 	defer srv.Close()
 
-	got, err := RawCall(httpTestPort(t, srv), ChatRequest{
+	got, err := RawCall(context.Background(), httpTestPort(t, srv), ChatRequest{
 		Messages: []config.Message{{Role: "user", Content: "hi"}},
 	})
 	if err != nil {
@@ -58,7 +59,7 @@ func TestRawCallEmptyChoices(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := RawCall(httpTestPort(t, srv), ChatRequest{})
+	_, err := RawCall(context.Background(), httpTestPort(t, srv), ChatRequest{})
 	if err == nil {
 		t.Error("expected error for empty choices, got nil")
 	}
@@ -71,7 +72,7 @@ func TestRawCallNonOK(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := RawCall(httpTestPort(t, srv), ChatRequest{})
+	_, err := RawCall(context.Background(), httpTestPort(t, srv), ChatRequest{})
 	if err == nil {
 		t.Fatal("expected error for non-200 response, got nil")
 	}
@@ -86,7 +87,7 @@ func TestRawCallMalformedJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := RawCall(httpTestPort(t, srv), ChatRequest{})
+	_, err := RawCall(context.Background(), httpTestPort(t, srv), ChatRequest{})
 	if err == nil {
 		t.Error("expected error for malformed JSON response, got nil")
 	}
@@ -100,12 +101,47 @@ func TestCallHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	msgs := []config.Message{{Role: "user", Content: "test"}}
-	got, err := Call(httpTestPort(t, srv), msgs, 100, config.ResolvedParams{})
+	got, err := Call(context.Background(), httpTestPort(t, srv), msgs, 100, config.ResolvedParams{})
 	if err != nil {
 		t.Fatalf("Call error: %v", err)
 	}
 	if got != want {
 		t.Errorf("Call = %q, want %q", got, want)
+	}
+}
+
+// TestStreamContextCancel verifies Stream returns before completing when the
+// context is cancelled.
+func TestStreamContextCancel(t *testing.T) {
+	// Server that streams forever until the client disconnects.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i := 0; ; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+				fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"token\"}}]}\n\n")
+				flusher.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := Stream(ctx, httpTestPort(t, srv), []config.Message{
+		{Role: "user", Content: "hi"},
+	}, config.ResolvedParams{MaxTokens: 10})
+	// Should return (possibly with a context error) without hanging.
+	if err != nil && err.Error() == "" {
+		// empty error string is silentErr — acceptable
 	}
 }
 

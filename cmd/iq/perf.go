@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -466,7 +467,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	// Phase 1: batch-embed all docs for throughput measurement.
 	fmt.Fprintf(os.Stderr, "  phase 1/3   batch-embedding %d docs ...", len(texts))
 	t0 := time.Now()
-	embedVecs, err := iembed.TextsOnPort(texts, modelID, port, "document")
+	embedVecs, err := iembed.TextsOnPort(context.Background(), texts, modelID, port, "document")
 	if err != nil {
 		return BenchResult{}, err
 	}
@@ -479,7 +480,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	var latenciesMs []float64
 	for _, text := range texts {
 		t1 := time.Now()
-		_, _ = iembed.TextsOnPort([]string{text}, modelID, port, "document")
+		_, _ = iembed.TextsOnPort(context.Background(), []string{text}, modelID, port, "document")
 		latenciesMs = append(latenciesMs, float64(time.Since(t1).Milliseconds()))
 	}
 	sort.Float64s(latenciesMs)
@@ -502,7 +503,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	fmt.Fprintf(os.Stderr, "  phase 3/3   evaluating %d queries (MRR) ...\n", len(corpus.KBQueries))
 	var mrrScores []float64
 	for qi, q := range corpus.KBQueries {
-		queryVecs, err := iembed.TextsOnPort([]string{q.Query}, modelID, port, "query")
+		queryVecs, err := iembed.TextsOnPort(context.Background(), []string{q.Query}, modelID, port, "query")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "    query %d/%d  SKIP (embed error)\n", qi+1, len(corpus.KBQueries))
 			continue
@@ -595,7 +596,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	for _, c := range cues {
 		cueTexts = append(cueTexts, c.Name+": "+c.Description)
 	}
-	cueVecs, err := iembed.TextsOnPort(cueTexts, modelID, port, "document")
+	cueVecs, err := iembed.TextsOnPort(context.Background(), cueTexts, modelID, port, "document")
 	if err != nil {
 		return BenchResult{}, fmt.Errorf("failed to embed cue descriptions: %w", err)
 	}
@@ -611,7 +612,7 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		t1 := time.Now()
 
 		// Embed the input text.
-		inputVecs, err := iembed.TextsOnPort([]string{input.Text}, modelID, port, "query")
+		inputVecs, err := iembed.TextsOnPort(context.Background(), []string{input.Text}, modelID, port, "query")
 		elapsed := time.Since(t1)
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 
@@ -717,7 +718,7 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		fmt.Fprintf(os.Stderr, "    %d/%d  %-25s ...",
 			pi+1, len(corpus.InferPrompts), prompt.ID)
 		t1 := time.Now()
-		response, err := sidecar.Call(state.Port, messages, 512, perfIP)
+		response, err := sidecar.Call(context.Background(), state.Port, messages, 512, perfIP)
 		elapsed := time.Since(t1)
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 
@@ -799,7 +800,7 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 			pi+1, len(corpus.ToolPrompts), tp.ID, tp.ExpectedTool)
 
 		t1 := time.Now()
-		response, err := sidecar.CallWithGrammar(state.Port, messages, toolIP.MaxTokens, grammar, toolIP)
+		response, err := sidecar.CallWithGrammar(context.Background(), state.Port, messages, toolIP.MaxTokens, grammar, toolIP)
 		elapsed := time.Since(t1)
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 

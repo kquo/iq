@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -1255,7 +1256,7 @@ func refreshToolEmbeddings(model string) error {
 		texts[i] = s.Name + ": " + s.Description
 		names[i] = s.Name
 	}
-	embeddings, err := embed.Texts(texts, "document")
+	embeddings, err := embed.Texts(context.Background(), texts, "document")
 	if err != nil {
 		return fmt.Errorf("failed to embed tool signal descriptions: %w", err)
 	}

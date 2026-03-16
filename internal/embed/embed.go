@@ -2,6 +2,7 @@ package embed
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -194,7 +195,7 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 
 // TextsOnPort sends texts to an embed sidecar at the given port, applying
 // model-specific truncation and instruction prefixes based on model name.
-func TextsOnPort(texts []string, model string, port int, task string) ([][]float32, error) {
+func TextsOnPort(ctx context.Context, texts []string, model string, port int, task string) ([][]float32, error) {
 	// Per-model context window limits.
 	maxRunes := 1600
 	if strings.Contains(strings.ToLower(model), "mxbai") {
@@ -244,7 +245,12 @@ func TextsOnPort(texts []string, model string, port int, task string) ([][]float
 
 	url := fmt.Sprintf("http://localhost:%d/embed", port)
 	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("embed sidecar at :%d unreachable: %w", port, err)
 	}
@@ -269,7 +275,7 @@ func TextsOnPort(texts []string, model string, port int, task string) ([][]float
 
 // Texts calls the local embed sidecar.
 // task is "query" or "document" — controls instruction prefix for models that require it.
-func Texts(texts []string, task string) ([][]float32, error) {
+func Texts(ctx context.Context, texts []string, task string) ([][]float32, error) {
 	state, err := sidecar.ReadState(SlugConst)
 	if err != nil || state == nil || !sidecar.PidAlive(state.PID) {
 		return nil, fmt.Errorf("embed sidecar not running — run: iq start")
@@ -280,7 +286,7 @@ func Texts(texts []string, task string) ([][]float32, error) {
 		return nil, err
 	}
 
-	return TextsOnPort(texts, config.EmbedModel(cfg), state.Port, task)
+	return TextsOnPort(ctx, texts, config.EmbedModel(cfg), state.Port, task)
 }
 
 // ── Cosine similarity ─────────────────────────────────────────────────────────
@@ -372,14 +378,14 @@ func CueEmbeddingsStale(cues []cue.Cue, model string) bool {
 }
 
 // RefreshCueEmbeddings embeds all cue name+description strings and writes the cache.
-func RefreshCueEmbeddings(cues []cue.Cue, model string) error {
+func RefreshCueEmbeddings(ctx context.Context, cues []cue.Cue, model string) error {
 	texts := make([]string, len(cues))
 	names := make([]string, len(cues))
 	for i, c := range cues {
 		texts[i] = c.Name + ": " + c.Description
 		names[i] = c.Name
 	}
-	embeddings, err := Texts(texts, "document")
+	embeddings, err := Texts(ctx, texts, "document")
 	if err != nil {
 		return fmt.Errorf("failed to embed cue descriptions: %w", err)
 	}
@@ -446,13 +452,13 @@ type ClassifyTrace struct {
 // Classify returns the best-matching cue name for the input using hybrid
 // scoring: cosine similarity against pre-computed cue embeddings, augmented
 // by deterministic keyword matching on cue names.
-func Classify(input string, cues []cue.Cue, model string) (string, *ClassifyTrace, error) {
+func Classify(ctx context.Context, input string, cues []cue.Cue, model string) (string, *ClassifyTrace, error) {
 	t0 := time.Now()
 	cacheHit := true
 
 	if CueEmbeddingsStale(cues, model) {
 		cacheHit = false
-		if err := RefreshCueEmbeddings(cues, model); err != nil {
+		if err := RefreshCueEmbeddings(ctx, cues, model); err != nil {
 			return "initial", nil, err
 		}
 	}
@@ -462,7 +468,7 @@ func Classify(input string, cues []cue.Cue, model string) (string, *ClassifyTrac
 		return "initial", nil, fmt.Errorf("cue embeddings unavailable")
 	}
 
-	inputEmb, err := Texts([]string{input}, "query")
+	inputEmb, err := Texts(ctx, []string{input}, "query")
 	if err != nil {
 		return "initial", nil, err
 	}

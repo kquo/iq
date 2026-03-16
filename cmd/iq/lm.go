@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -96,11 +97,11 @@ func newLmSearchCmd() *cobra.Command {
 				limit = 20
 			}
 
-			models, err := lm.HFSearch(query, limit)
+			models, err := lm.HFSearch(context.Background(), query, limit)
 			if err != nil {
 				return err
 			}
-			lm.HFEnrichModels(models)
+			_ = lm.HFEnrichModels(context.Background(), models)
 
 			fmt.Printf("%-60s  %-24s  %10s  %10s  %12s  %12s\n",
 				"MODEL", "TASK", "DISK", "PARAMS", "EST MEM", "DOWNLOADS")
@@ -139,7 +140,7 @@ func newLmGetCmd() *cobra.Command {
 			model := args[0]
 
 			// Check task type before downloading.
-			if m, err := lm.HFFetchModel(model); err == nil && m.PipelineTag != "" && m.PipelineTag != "text-generation" {
+			if m, err := lm.HFFetchModel(context.Background(), model); err == nil && m.PipelineTag != "" && m.PipelineTag != "text-generation" {
 				fmt.Fprintf(os.Stderr, "%s\n",
 					color.Yel(fmt.Sprintf("Warning: model task is %q — IQ only supports text-generation", m.PipelineTag)))
 			}
@@ -177,7 +178,7 @@ func newLmGetCmd() *cobra.Command {
 				for i, e := range entries {
 					if e.ID == model && e.Task == "" {
 						tag := ""
-						if m, err := lm.HFFetchModel(model); err == nil && m.PipelineTag != "" {
+						if m, err := lm.HFFetchModel(context.Background(), model); err == nil && m.PipelineTag != "" {
 							tag = m.PipelineTag
 						} else {
 							tag = lm.InferTaskFromConfig(model)
@@ -220,7 +221,7 @@ func newLmListCmd() *cobra.Command {
 			}
 
 			// Backfill task tags from HF API for entries that don't have one cached.
-			if lm.HFFetchTags(entries) {
+			if updated, _ := lm.HFFetchTags(context.Background(), entries); updated {
 				_ = lm.SaveManifest(entries)
 			}
 
@@ -292,7 +293,7 @@ func newLmShowCmd() *cobra.Command {
 			// Backfill task tag if missing — try HF API, then local config.json.
 			if entry.Task == "" {
 				tag := ""
-				if m, err := lm.HFFetchModel(entry.ID); err == nil && m.PipelineTag != "" {
+				if m, err := lm.HFFetchModel(context.Background(), entry.ID); err == nil && m.PipelineTag != "" {
 					tag = m.PipelineTag
 				} else {
 					tag = lm.InferTaskFromConfig(entry.ID)

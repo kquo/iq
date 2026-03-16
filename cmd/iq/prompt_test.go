@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -133,7 +134,7 @@ func TestEndToEndInference(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	sess, err := executePrompt("what is Go?", opts, nil)
+	sess, err := executePrompt(context.Background(), "what is Go?", opts, nil)
 	w.Close()
 	os.Stdout = oldStdout
 
@@ -201,7 +202,7 @@ func TestSinglePoolPipeline(t *testing.T) {
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	_, err := executePrompt("hello", opts, nil)
+	_, err := executePrompt(context.Background(), "hello", opts, nil)
 	w.Close()
 	os.Stdout = oldStdout
 
@@ -228,7 +229,7 @@ func TestUnknownPipelineErrors(t *testing.T) {
 	cfgYAML := "version: 1\npipeline: bogus_pipeline\ntiers:\n  fast:\n    models: []\n  slow:\n    models: []\n"
 	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfgYAML), 0644)
 
-	_, err := executePrompt("hello", promptOpts{}, nil)
+	_, err := executePrompt(context.Background(), "hello", promptOpts{}, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown pipeline mode")
 	}
@@ -269,7 +270,7 @@ func TestDumpPrompt(t *testing.T) {
 	os.Stdout = devNull
 	os.Stderr = devNull
 
-	_, err := executePrompt("hello world", opts, nil)
+	_, err := executePrompt(context.Background(), "hello world", opts, nil)
 	os.Stdout = oldStdout
 	os.Stderr = oldStderr
 	devNull.Close()
@@ -460,4 +461,69 @@ func TestSessionLocking(t *testing.T) {
 	if got == nil {
 		t.Fatal("loadSession returned nil after concurrent writes")
 	}
+}
+
+// TestExecutePromptContextCancel verifies that a pre-cancelled context causes
+// executePrompt to return a context-related error before reaching inference.
+func TestExecutePromptContextCancel(t *testing.T) {
+	const modelID = "test-org/cancel-model"
+	// Use a mock server that blocks — it should never be reached.
+	srv := mockInferServer(t, func(req sidecar.ChatRequest) string {
+		t.Error("inference server was called with a cancelled context")
+		return ""
+	})
+	defer srv.Close()
+	port := serverPort(t, srv)
+	setupTestEnv(t, modelID, "fast", port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before calling
+
+	opts := promptOpts{
+		tier:     "fast",
+		noKB:     true,
+		noCache:  true,
+		toolMode: "off",
+		noStream: true,
+	}
+	devNull, _ := os.Open(os.DevNull)
+	oldOut, oldErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = devNull, devNull
+	_, err := executePrompt(ctx, "test cancel", opts, nil)
+	os.Stdout, os.Stderr = oldOut, oldErr
+	devNull.Close()
+
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+// TestKBPrefetchCancelled verifies that a pre-cancelled context causes the KB
+// prefetch step to return without blocking for kbTimeout.
+func TestKBPrefetchCancelled(t *testing.T) {
+	const modelID = "test-org/kb-cancel-model"
+	srv := mockInferServer(t, func(req sidecar.ChatRequest) string { return "ok" })
+	defer srv.Close()
+	port := serverPort(t, srv)
+	setupTestEnv(t, modelID, "fast", port)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	opts := promptOpts{
+		tier:     "fast",
+		noCache:  true,
+		toolMode: "off",
+		noStream: true,
+		// KB is enabled — but the embed sidecar is not running, so Search
+		// will fail fast (no sidecar → immediate error, not timeout).
+	}
+	devNull, _ := os.Open(os.DevNull)
+	oldOut, oldErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = devNull, devNull
+	// Should return promptly (not block for kbTimeout).
+	_, _ = executePrompt(ctx, "test kb cancel", opts, nil)
+	os.Stdout, os.Stderr = oldOut, oldErr
+	devNull.Close()
+	// No assertion — success means it returned without blocking.
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,7 +133,7 @@ func newKbSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			vecs, err := embed.Texts([]string{query}, "query")
+			vecs, err := embed.Texts(context.Background(), []string{query}, "query")
 			if err != nil {
 				return err
 			}

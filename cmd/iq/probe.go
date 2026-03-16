@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -80,7 +81,7 @@ func newProbeCmd() *cobra.Command {
 				} else if !embed.SidecarAlive() {
 					fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb: embed sidecar not running — run: iq start"))
 				} else {
-					results, kbErr := kb.Search(message, kb.DefaultK, config.DefaultKbMinScore)
+					results, kbErr := kb.Search(context.Background(), message, kb.DefaultK, config.DefaultKbMinScore)
 					if kbErr != nil {
 						fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb search error: "+kbErr.Error()))
 					} else if len(results) > 0 {
@@ -155,13 +156,13 @@ func newProbeCmd() *cobra.Command {
 			// Infer and time it.
 			t0 := time.Now()
 			if noStream {
-				response, err := sidecar.Call(sc.Port, messages, probeIP.MaxTokens, probeIP)
+				response, err := sidecar.Call(context.Background(), sc.Port, messages, probeIP.MaxTokens, probeIP)
 				if err != nil {
 					return err
 				}
 				fmt.Println(response)
 			} else {
-				_, err = sidecar.Stream(sc.Port, messages, probeIP)
+				_, err = sidecar.Stream(context.Background(), sc.Port, messages, probeIP)
 				if err != nil {
 					return err
 				}

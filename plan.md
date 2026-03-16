@@ -20,15 +20,19 @@ Within that spirit, IQ is also a **framework for building domain-specific local 
 
 These principles set the lens for evaluating all roadmap work. There are two tracks: **foundational pipeline work** (routing, memory, orchestration) that benefits every agent equally, and **domain-tuning work** (model benchmarking, cue customization, KB curation, per-domain config) that defines what any specific agent actually is. Neither track is optional. Pipeline work without domain tuning produces a capable system that's good at nothing in particular; domain tuning without pipeline foundations produces a brittle, slow, hard-to-configure agent. The question to ask of any feature: does it make agents more capable, more accurate, or easier to tune for a specific domain?
 
+
+## Development Methodology
+
+Each FEAT follows an **AC-first workflow**: before any code is written, an acceptance-criteria document is drafted that defines exactly what the implementation must achieve. The AC covers: what the codebase scan found (motivating the change), what is explicitly in scope and out of scope (blast-radius management), and the acceptance tests that must pass. This keeps implementations focused, prevents scope creep, and gives future contributors a clear record of intent.
+
+AC documents live in `docs/` and are checked into the repo alongside the code they describe. Example: [`docs/feat9850_ac.md`](docs/feat9850_ac.md) — context-based concurrency threading through the hot-path pipeline.
+
 Below are sorted easiest → hardest within each group.
 
 
 ## Group A — Pipeline
 
 Core inference routing, model selection, and orchestration. Changes here affect every request.
-
-**FEAT9850** — **Context-based concurrency**
-Wire `context.Context` through the call chain. Replace ad-hoc goroutines (KB prefetch, HF enrichment, sidecar crash detection) with `errgroup`. Add cancellation propagation. Touches the prompt pipeline, sidecar lifecycle, and embed calls.
 
 **FEAT9800** — **Capability-tagged model pool**
 Replace the fixed `fast`/`slow` tier model with capability tags per model (e.g., `fast`, `reasoning`, `code`, `long-context`). Queries route to the best-tagged model, with round-robin within a tag group. This is a fundamental rethink of the routing layer — the cue system's `suggested_tier` field, `resolveRoute`, and `pickSidecar` all change.

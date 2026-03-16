@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,7 +14,7 @@ import (
 
 const (
 	programName    = "iq"
-	programVersion = "0.9.1"
+	programVersion = "0.9.2"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -139,6 +141,8 @@ func runCLI() {
 				printRootHelp()
 				return nil
 			}
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+			defer cancel()
 			input := strings.Join(args, " ")
 			var sess *session
 			if rootOpts.sessionID != "" {
@@ -148,7 +152,7 @@ func runCLI() {
 					return err
 				}
 			}
-			_, err := executePrompt(input, rootOpts, sess)
+			_, err := executePrompt(ctx, input, rootOpts, sess)
 			return err
 		},
 	}

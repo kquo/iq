@@ -2,12 +2,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -514,7 +516,7 @@ Return only valid JSON, nothing else.`
 		}
 		nameCfg, _ := config.Load(nil)
 		nameIP := config.ResolveInferParams(nameCfg, "fast")
-		response, err := sidecar.Call(sc.Port, []config.Message{
+		response, err := sidecar.Call(context.Background(), sc.Port, []config.Message{
 			{Role: "system", Content: systemMsg},
 			{Role: "user", Content: excerpt.String()},
 		}, 60, nameIP)
@@ -568,7 +570,7 @@ type promptOpts struct {
 	dumpPrompt string // file path ("-" for stdout), write assembled messages as JSON
 }
 
-func executePrompt(input string, opts promptOpts, sess *session) (*session, error) {
+func executePrompt(ctx context.Context, input string, opts promptOpts, sess *session) (*session, error) {
 	reg := tools.NewRegistry()
 	cfg, err := config.Load(nil)
 	if err != nil {
@@ -610,7 +612,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			cueName = "initial"
 		} else {
 			em := config.EmbedModel(cfg)
-			cueName, et, err = embed.Classify(input, candidates, em)
+			cueName, et, err = embed.Classify(ctx, input, candidates, em)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("classification error: "+err.Error()+", falling back to initial"))
 				cueName = "initial"
@@ -638,7 +640,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	if kbEnabled {
 		kbCh = make(chan kbResult, 1)
 		go func() {
-			results, kbErr := kb.Search(input, kb.DefaultK, kbMinScore)
+			results, kbErr := kb.Search(ctx, input, kb.DefaultK, kbMinScore)
 			kbCh <- kbResult{results, kbErr}
 		}()
 	}
@@ -863,7 +865,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 							tPass = time.Now()
 						}
-						response, err = sidecar.Call(route.Port, synthMessages, ip.MaxTokens, ip)
+						response, err = sidecar.Call(ctx, route.Port, synthMessages, ip.MaxTokens, ip)
 						if err != nil {
 							return sess, err
 						}
@@ -876,7 +878,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						if trace {
 							traceField("search_error", r.Error)
 						}
-						response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
+						response, err = sidecar.Call(ctx, route.Port, messages, ip.MaxTokens, ip)
 						if err != nil {
 							return sess, err
 						}
@@ -917,7 +919,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 									traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 									tPass = time.Now()
 								}
-								response, err = sidecar.Call(route.Port, synthMsgs, ip.MaxTokens, ip)
+								response, err = sidecar.Call(ctx, route.Port, synthMsgs, ip.MaxTokens, ip)
 								if err != nil {
 									return sess, err
 								}
@@ -947,7 +949,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 								traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 								tPass = time.Now()
 							}
-							response, err = sidecar.Call(route.Port, fallbackMsgs, ip.MaxTokens, ip)
+							response, err = sidecar.Call(ctx, route.Port, fallbackMsgs, ip.MaxTokens, ip)
 							if err != nil {
 								return sess, err
 							}
@@ -962,7 +964,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						if trace {
 							traceField("fallback", fmt.Sprintf("no tool for signal %s — direct inference", tt.BestSignal))
 						}
-						response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
+						response, err = sidecar.Call(ctx, route.Port, messages, ip.MaxTokens, ip)
 						if err != nil {
 							return sess, err
 						}
@@ -981,7 +983,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 					tPass = time.Now()
 				}
-				response, err = sidecar.CallWithGrammar(route.Port, messages, ip.MaxTokens, grammar, ip)
+				response, err = sidecar.CallWithGrammar(ctx, route.Port, messages, ip.MaxTokens, grammar, ip)
 				if err != nil {
 					return sess, err
 				}
@@ -1032,7 +1034,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 							tPass = time.Now()
 						}
-						response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
+						response, err = sidecar.Call(ctx, route.Port, messages, ip.MaxTokens, ip)
 						if err != nil {
 							return sess, err
 						}
@@ -1133,7 +1135,7 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 						traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 						tPass = time.Now()
 					}
-					response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
+					response, err = sidecar.Call(ctx, route.Port, messages, ip.MaxTokens, ip)
 					if err != nil {
 						return sess, err
 					}
@@ -1158,13 +1160,13 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 					traceField("mode", "non-streaming")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 				}
-				response, err = sidecar.Call(route.Port, messages, ip.MaxTokens, ip)
+				response, err = sidecar.Call(ctx, route.Port, messages, ip.MaxTokens, ip)
 				if err != nil {
 					return sess, err
 				}
 				fmt.Println(response)
 			} else {
-				response, err = sidecar.Stream(route.Port, messages, ip)
+				response, err = sidecar.Stream(ctx, route.Port, messages, ip)
 				if err != nil {
 					return sess, err
 				}
@@ -1228,7 +1230,7 @@ var replCommands = map[string]string{
 	"/help":    "show REPL commands",
 }
 
-func runREPL(opts promptOpts) error {
+func runREPL(ctx context.Context, opts promptOpts) error {
 	var sess *session
 	if opts.sessionID != "" {
 		var err error
@@ -1332,7 +1334,7 @@ func runREPL(opts promptOpts) error {
 		turnOpts := opts
 		turnOpts.dryRun = dryRun
 		turnOpts.debug = debug
-		sess, err = executePrompt(input, turnOpts, sess)
+		sess, err = executePrompt(ctx, input, turnOpts, sess)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", color.Gra("error: "+err.Error()))
 		}
@@ -1420,6 +1422,9 @@ func newPromptCmd() *cobra.Command {
 		Short:        "Start the interactive REPL (or send a prompt)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+			defer cancel()
+
 			var sess *session
 			if opts.sessionID != "" {
 				var err error
@@ -1430,7 +1435,7 @@ func newPromptCmd() *cobra.Command {
 			}
 
 			if len(args) == 0 && term.IsTerminal(int(os.Stdin.Fd())) {
-				return runREPL(opts)
+				return runREPL(ctx, opts)
 			}
 
 			var input string
@@ -1448,7 +1453,7 @@ func newPromptCmd() *cobra.Command {
 				return nil
 			}
 
-			_, err := executePrompt(input, opts, sess)
+			_, err := executePrompt(ctx, input, opts, sess)
 			return err
 		},
 	}

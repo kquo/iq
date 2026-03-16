@@ -1,6 +1,7 @@
 package embed
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -63,7 +64,7 @@ func TestTextsOnPort(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	embs, err := TextsOnPort([]string{"hello"}, "test-model", embedTestPort(t, srv), "query")
+	embs, err := TextsOnPort(context.Background(), []string{"hello"}, "test-model", embedTestPort(t, srv), "query")
 	if err != nil {
 		t.Fatalf("TextsOnPort error: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestTextsOnPortNonOK(t *testing.T) {
 	defer srv.Close()
 
 	port := embedTestPort(t, srv)
-	_, err := TextsOnPort([]string{"hello"}, "test-model", port, "query")
+	_, err := TextsOnPort(context.Background(), []string{"hello"}, "test-model", port, "query")
 	if err == nil {
 		t.Fatal("expected error for non-200 response, got nil")
 	}
@@ -111,7 +112,7 @@ func TestTextsOnPortMultipleInputs(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	embs, err := TextsOnPort(inputs, "test-model", embedTestPort(t, srv), "document")
+	embs, err := TextsOnPort(context.Background(), inputs, "test-model", embedTestPort(t, srv), "document")
 	if err != nil {
 		t.Fatalf("TextsOnPort error: %v", err)
 	}

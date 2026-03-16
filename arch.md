@@ -645,10 +645,14 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.9.1   | Test coverage: cache (0→86%), color (0→77%), cue (0→78%), lm (0→37%); cache save() errors made explicit with _ =; arch.md v0.9.0 row added |
+| 0.9.2   | FEAT9850: context.Context threaded through hot-path pipeline (executePrompt, sidecar transport, embed HTTP, kb.Search); sync.WaitGroup replaced with errgroup in HFEnrichModels/HFFetchTags; signal.NotifyContext(SIGINT) at iq ask and root command entry points |
 
 <details>
-<summary>Older versions (v0.2.7 – v0.9.0)</summary>
+<summary>Older versions (v0.2.7 – v0.9.1)</summary>
+
+| Version | Summary |
+|---------|---------|
+| 0.9.1   | Test coverage: cache (0→86%), color (0→77%), cue (0→78%), lm (0→37%); cache save() errors made explicit with _ =; arch.md v0.9.0 row added |
 
 | Version | Summary |
 |---------|---------|
