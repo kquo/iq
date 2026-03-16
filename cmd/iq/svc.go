@@ -25,6 +25,21 @@ func pickSidecar(tier string, preferSmallest bool) (*sidecar.State, error) {
 	})
 }
 
+// pickAnySidecar returns the first live inference sidecar regardless of tier.
+// Used by the single_pool pipeline mode.
+func pickAnySidecar() (*sidecar.State, error) {
+	live, err := sidecar.AllLiveStates()
+	if err != nil {
+		return nil, err
+	}
+	for _, sc := range live {
+		if sc.Tier != "embed" {
+			return sc, nil
+		}
+	}
+	return nil, fmt.Errorf("no running sidecars — run 'iq start'")
+}
+
 // startSidecar resolves model/python paths and delegates to sidecar.StartInfer.
 func startSidecar(tier, modelID string) error {
 	modelPath, err := lm.SnapshotDir(modelID)
@@ -168,7 +183,7 @@ func printStatus() error {
 
 	// CONFIG line aligned with MODEL column.
 	cfgPath, _ := config.Path()
-	fmt.Printf("%-*s  %-*s\n", tierW, "CONFIG", modelW, cfgPath)
+	fmt.Printf("%-*s  %-*s  pipeline: %s\n", tierW, "CONFIG", modelW, cfgPath, cfg.EffectivePipeline())
 
 	// Header.
 	fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %-7s  %8s\n",
@@ -280,6 +295,17 @@ func newStartCmd() *cobra.Command {
 			}
 			// Start embed sidecar first when starting everything (no specific target).
 			if arg == "" {
+				// Show pipeline mode and warn if unrecognised.
+				if cfg, err := config.Load(nil); err == nil {
+					p := cfg.EffectivePipeline()
+					if config.ValidPipeline(p) {
+						fmt.Printf("  pipeline: %s\n", p)
+					} else {
+						fmt.Fprintf(os.Stderr, "  %s  unknown pipeline %q — will error on prompt; fix config.yaml\n",
+							color.Yel("WARN"), p)
+					}
+				}
+
 				// First-run hint: no tier models and embed model not downloaded.
 				if len(config.AllAssignedModels()) == 0 {
 					cfg, err := config.Load(nil)

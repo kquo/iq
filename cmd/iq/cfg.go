@@ -308,6 +308,11 @@ func runConfigValidate() error {
 			warn("embed_model not set (using default: " + config.DefaultEmbedModel + ")")
 		}
 
+		// Check pipeline mode.
+		if p := cfg.EffectivePipeline(); !config.ValidPipeline(p) {
+			fail(fmt.Sprintf("unknown pipeline mode %q (valid: two_tier, single_pool)", p))
+		}
+
 		// Check deprecated fields.
 		if cfg.CueModel != "" {
 			warn("deprecated field cue_model found — should auto-migrate to embed_model")

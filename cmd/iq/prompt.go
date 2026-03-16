@@ -228,6 +228,31 @@ func resolveRoute(cueName string, cues []cue.Cue) (*routeResult, error) {
 	}, nil
 }
 
+// resolveSinglePool picks the first live inference sidecar regardless of tier.
+// The cue's system prompt is still applied so prompt tuning remains active.
+func resolveSinglePool(cueName string, cues []cue.Cue) (*routeResult, error) {
+	sc, err := pickAnySidecar()
+	if err != nil {
+		return nil, err
+	}
+	var sysPrompt, category, suggestedTier string
+	if _, c := cue.Find(cues, cueName); c != nil {
+		sysPrompt = c.SystemPrompt
+		category = c.Category
+		suggestedTier = c.SuggestedTier
+	}
+	return &routeResult{
+		CueName:       cueName,
+		Category:      category,
+		SuggestedTier: suggestedTier,
+		SystemPrompt:  sysPrompt,
+		Tier:          sc.Tier,
+		Port:          sc.Port,
+		ModelID:       sc.Model,
+		TierSource:    "single_pool",
+	}, nil
+}
+
 // ── Trace output ──────────────────────────────────────────────────────────────
 
 // traceStep prints a step header.
@@ -549,8 +574,12 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 	if err != nil {
 		return sess, fmt.Errorf("loading config: %w", err)
 	}
-	if p := cfg.EffectivePipeline(); p != config.PipelineTwoTier {
-		return sess, fmt.Errorf("unknown pipeline mode %q", p)
+	pipeline := cfg.EffectivePipeline()
+	switch pipeline {
+	case config.PipelineTwoTier, config.PipelineSinglePool:
+		// valid
+	default:
+		return sess, fmt.Errorf("unknown pipeline mode %q", pipeline)
 	}
 
 	trace := opts.dryRun || opts.debug || opts.dumpPrompt != ""
@@ -651,6 +680,11 @@ func executePrompt(input string, opts promptOpts, sess *session) (*session, erro
 			Tier:         opts.tier,
 			Port:         sidecar.Port,
 			ModelID:      sidecar.Model,
+		}
+	} else if pipeline == config.PipelineSinglePool {
+		route, err = resolveSinglePool(cueName, cues)
+		if err != nil {
+			return sess, err
 		}
 	} else {
 		route, err = resolveRoute(cueName, cues)

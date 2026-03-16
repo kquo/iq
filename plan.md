@@ -40,12 +40,6 @@ Wire `context.Context` through the call chain. Replace ad-hoc goroutines (KB pre
 **FEAT9820** — **Cue-triggered web RAG** *(extends existing web_search tool)*
 Add a `current_events` cue that, when matched during classification, extracts a search query from the raw prompt, pre-fetches web results, and injects them into context at Step 3 alongside KB chunks — so the model sees fresh web data without needing a tool-call loop. Key work: query extraction before inference, a new fetcher path, and ranking/truncating web chunks vs KB chunks. Web search as a tool already exists (v0.6.3); this promotes it to a RAG source.
 
-**FEAT9810** — **`pipeline: single_pool` — one model, one pass**
-First alternate pipeline mode (requires FEAT9950). All models go into a single flat pool; the fast/slow tier distinction is dropped. The embed sidecar still classifies the cue and detects tools. The pipeline selects a model from the pool (initially first-available) and sends the prompt in a single inference pass — no routing grammar pass, no tier switch.
-
-The speed benefit is elimination of the 2-pass pattern: one embed call (fast) + one inference call. This is the right first experiment for setups where 2-hop latency overhead outweighs the quality benefit of triage routing.
-
-When FEAT9800 lands, `single_pool` either merges into it or becomes the degenerate case where all models are tagged `general`. Scope: new `pipeline: single_pool` execution path in `cmd/iq/`, flat pool config structure (or reuse existing tier models as a merged list). Requires FEAT9950.
 
 **FEAT9800** — **Capability-tagged model pool**
 Replace the fixed `fast`/`slow` tier model with capability tags per model (e.g., `fast`, `reasoning`, `code`, `long-context`). Queries route to the best-tagged model, with round-robin within a tag group. This is a fundamental rethink of the routing layer — the cue system's `suggested_tier` field, `resolveRoute`, and `pickSidecar` all change.

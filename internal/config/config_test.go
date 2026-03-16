@@ -327,6 +327,21 @@ func TestLoadFutureSchemaVersionErrors(t *testing.T) {
 	}
 }
 
+func TestValidPipeline(t *testing.T) {
+	valid := []string{PipelineTwoTier, PipelineSinglePool}
+	for _, p := range valid {
+		if !ValidPipeline(p) {
+			t.Errorf("ValidPipeline(%q) = false, want true", p)
+		}
+	}
+	invalid := []string{"", "bogus", "single_pl", "TWO_TIER"}
+	for _, p := range invalid {
+		if ValidPipeline(p) {
+			t.Errorf("ValidPipeline(%q) = true, want false", p)
+		}
+	}
+}
+
 func TestEffectivePipeline(t *testing.T) {
 	tests := []struct {
 		name   string

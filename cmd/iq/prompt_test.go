@@ -153,6 +153,90 @@ func TestEndToEndInference(t *testing.T) {
 	}
 }
 
+// TestSinglePoolPipeline verifies that pipeline: single_pool routes to the
+// first live sidecar regardless of tier, skipping the fast/slow tier routing.
+func TestSinglePoolPipeline(t *testing.T) {
+	const modelID = "test-org/pool-model"
+	const wantResponse = "single pool response"
+
+	srv := mockInferServer(t, func(req sidecar.ChatRequest) string {
+		return wantResponse
+	})
+	defer srv.Close()
+	port := serverPort(t, srv)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfgDir := filepath.Join(home, ".config", "iq")
+	runDir := filepath.Join(cfgDir, "run")
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write YAML directly so pipeline field is read correctly by go-yaml.
+	// Model is in "fast" tier but tier is irrelevant in single_pool mode.
+	cfgYAML := fmt.Sprintf("version: 1\npipeline: %s\ntiers:\n  fast:\n    models:\n      - %s\n  slow:\n    models: []\n",
+		config.PipelineSinglePool, modelID)
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfgYAML), 0644)
+
+	state := &sidecar.State{
+		Tier:    "fast",
+		Model:   modelID,
+		PID:     os.Getpid(),
+		Port:    port,
+		Started: "2025-01-01T00:00:00Z",
+	}
+	stateData, _ := json.MarshalIndent(state, "", "  ")
+	slug := strings.ReplaceAll(modelID, "/", "--")
+	os.WriteFile(filepath.Join(runDir, slug+".json"), stateData, 0644)
+
+	opts := promptOpts{
+		cueName:  "initial",
+		noKB:     true,
+		noCache:  true,
+		toolMode: "off",
+		noStream: true,
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	_, err := executePrompt("hello", opts, nil)
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("executePrompt error: %v", err)
+	}
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	if got := strings.TrimSpace(string(buf[:n])); got != wantResponse {
+		t.Errorf("response = %q, want %q", got, wantResponse)
+	}
+}
+
+// TestUnknownPipelineErrors verifies that an unrecognised pipeline mode returns
+// an error rather than silently falling through.
+func TestUnknownPipelineErrors(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfgDir := filepath.Join(home, ".config", "iq")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Write YAML directly so the pipeline field is read correctly by go-yaml.
+	cfgYAML := "version: 1\npipeline: bogus_pipeline\ntiers:\n  fast:\n    models: []\n  slow:\n    models: []\n"
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfgYAML), 0644)
+
+	_, err := executePrompt("hello", promptOpts{}, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown pipeline mode")
+	}
+	if !strings.Contains(err.Error(), "bogus_pipeline") {
+		t.Errorf("error should mention the pipeline name, got: %v", err)
+	}
+}
+
 // TestDumpPrompt verifies that --dump-prompt writes the assembled message
 // array as JSON and stops before inference.
 func TestDumpPrompt(t *testing.T) {

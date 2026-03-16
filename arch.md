@@ -123,7 +123,7 @@ tiers:
     # Slow tier inherits global defaults (0.7 temp, 1.3 rep, 8192 tokens)
 
 embed_model: mlx-community/bge-small-en-v1.5-bf16
-pipeline: two_tier  # optional; two_tier is the default
+pipeline: two_tier  # optional; two_tier is the default (single_pool also valid)
 ```
 
 Use `iq perf sweep` to validate these choices on your hardware — sweep the same models under both tier configs to see whether the parameter differences move the needle on latency and quality.
@@ -645,10 +645,14 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.8.18  | Config schema versioning (FEAT9840): `version:` field in config.yaml; `ConfigVersion = 1`; version-dispatched `Load` (v0 → migration chain, v>current → error); `migrateV0` extracts all legacy migration logic; `normalizeConfig` helper; 3 new schema version tests |
+| 0.8.19  | `pipeline: single_pool` mode (FEAT9810): `PipelineSinglePool` constant; `pickAnySidecar` picks first live non-embed sidecar; `resolveSinglePool` routes with cue system prompt but no tier discrimination; pipeline guard replaced with switch; 2 new tests |
 
 <details>
-<summary>Older versions (v0.2.7 – v0.8.17)</summary>
+<summary>Older versions (v0.2.7 – v0.8.18)</summary>
+
+| Version | Summary |
+|---------|---------|
+| 0.8.18  | Config schema versioning (FEAT9840): `version:` field in config.yaml; `ConfigVersion = 1`; version-dispatched `Load` (v0 → migration chain, v>current → error); `migrateV0` extracts all legacy migration logic; `normalizeConfig` helper; 3 new schema version tests |
 
 | Version | Summary |
 |---------|---------|

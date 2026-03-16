@@ -139,6 +139,12 @@ type TierConfig struct {
 // embed-based cue classification and tool detection.
 const PipelineTwoTier = "two_tier"
 
+// PipelineSinglePool is an alternate pipeline mode: all sidecars form one flat
+// pool; the first live sidecar handles every request in a single inference pass
+// with no fast/slow tier distinction. Useful when 2-pass latency overhead
+// outweighs the quality benefit of triage routing.
+const PipelineSinglePool = "single_pool"
+
 type Config struct {
 	Version     int                    `yaml:"version,omitempty"`
 	Tiers       map[string]*TierConfig `yaml:"tiers"`
@@ -160,6 +166,15 @@ func (c *Config) EffectivePipeline() string {
 		return PipelineTwoTier
 	}
 	return c.Pipeline
+}
+
+// ValidPipeline reports whether s is a recognised pipeline mode.
+func ValidPipeline(s string) bool {
+	switch s {
+	case PipelineTwoTier, PipelineSinglePool:
+		return true
+	}
+	return false
 }
 
 // DefaultKbMinScore is the minimum cosine similarity required to inject a KB chunk.

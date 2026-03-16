@@ -16,6 +16,9 @@
 
 ## Pre-Commit Checklist
 Before offering to run a release commit, always complete these steps in order:
+0. **Run `./build.sh` (no tag) yourself** using the Bash tool. Read the output,
+   fix any failures (test errors, vet issues, staticcheck), and re-run until clean.
+   Only proceed to the steps below after a clean build.
 1. Audit `arch.md` against the code — grep thresholds, constants, counts,
    formats, and field orders in source files and fix any drift.
 2. Add version row to `arch.md` Version History. The section has exactly two parts:
