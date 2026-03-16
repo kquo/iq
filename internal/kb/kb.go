@@ -614,17 +614,19 @@ func Context(results []Result) string {
 // ── Ingest ───────────────────────────────────────────────────────────────────
 
 // RemoveSource removes all chunks and the source entry for absPath.
+// It matches exact paths and directory-prefixed paths (absPath + "/"),
+// preventing accidental removal of sibling paths that share a common prefix.
 func RemoveSource(idx *Index, absPath string) *Index {
 	filtered := idx.Chunks[:0]
 	for _, c := range idx.Chunks {
-		if !strings.HasPrefix(c.Source, absPath) {
+		if c.Source != absPath && !strings.HasPrefix(c.Source, absPath+"/") {
 			filtered = append(filtered, c)
 		}
 	}
 	idx.Chunks = filtered
 	sources := idx.Sources[:0]
 	for _, s := range idx.Sources {
-		if s.Path != absPath {
+		if s.Path != absPath && !strings.HasPrefix(s.Path, absPath+"/") {
 			sources = append(sources, s)
 		}
 	}

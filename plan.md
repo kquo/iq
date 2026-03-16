@@ -30,9 +30,6 @@ Sorted easiest → hardest within each group.
 
 ## Group C — Cross-Cutting Quality
 
-**FEAT9880** — **KB source removal prefix collision**
-`RemoveSource` uses `strings.HasPrefix`, so removing `/data/app` silently deletes `/data/app2` as well. Fix: switch to exact-path or directory-boundary matching (`source == path || strings.HasPrefix(source, path+"/")`). Silent data loss — high priority despite the small fix. See `internal/kb/kb.go:616`.
-
 **FEAT9870** — **`RawCall` timeout and status-code guard**
 `transport.go` uses bare `http.Post` with no deadline and never checks `resp.StatusCode`, so a stuck or erroring sidecar hangs the CLI indefinitely or surfaces as a misleading JSON parse error. Fix: add an `http.Client` with a configurable timeout and an explicit non-200 error return. See `internal/sidecar/transport.go:65`.
 
