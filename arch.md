@@ -645,13 +645,15 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.8.19  | `pipeline: single_pool` mode (FEAT9810): `PipelineSinglePool` constant; `pickAnySidecar` picks first live non-embed sidecar; `resolveSinglePool` routes with cue system prompt but no tier discrimination; pipeline guard replaced with switch; 2 new tests |
+| 0.9.1   | Test coverage: cache (0→86%), color (0→77%), cue (0→78%), lm (0→37%); cache save() errors made explicit with _ =; arch.md v0.9.0 row added |
 
 <details>
-<summary>Older versions (v0.2.7 – v0.8.18)</summary>
+<summary>Older versions (v0.2.7 – v0.9.0)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.9.0   | Housekeeping: semver discipline adopted (PATCH/MINOR rules in CLAUDE.md); plan.md consolidated to 4 groups (A=Pipeline, B=Knowledge & Context, C=Capabilities & Integration, D=Platform & Observability); CONTRIBUTING.md and CLA.md merged |
+| 0.8.19  | `pipeline: single_pool` mode (FEAT9810): `PipelineSinglePool` constant; `pickAnySidecar` picks first live non-embed sidecar; `resolveSinglePool` routes with cue system prompt but no tier discrimination; pipeline guard replaced with switch; 2 new tests |
 | 0.8.18  | Config schema versioning (FEAT9840): `version:` field in config.yaml; `ConfigVersion = 1`; version-dispatched `Load` (v0 → migration chain, v>current → error); `migrateV0` extracts all legacy migration logic; `normalizeConfig` helper; 3 new schema version tests |
 
 | Version | Summary |

@@ -108,12 +108,12 @@ func Check(key string) (string, *HitResult) {
 	age := time.Since(ts)
 	if age > TTL {
 		delete(c, key)
-		save(c)
+		_ = save(c) // best-effort: prune expired entry
 		return "", &HitResult{Key: key, Elapsed: time.Since(t0)}
 	}
 	entry.Hits++
 	c[key] = entry
-	save(c)
+	_ = save(c) // best-effort: persist hit count
 	return entry.Response, &HitResult{
 		Key:     key,
 		Hit:     true,
@@ -142,7 +142,7 @@ func Write(key, response, model, cueName string) {
 		Cue:       cueName,
 		Timestamp: now.UTC().Format(time.RFC3339),
 	}
-	save(c)
+	_ = save(c) // best-effort: cache write failures are non-fatal
 }
 
 // FormatAge formats a duration as a human-readable age string.
