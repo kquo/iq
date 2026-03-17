@@ -5,6 +5,7 @@
 package color
 
 import (
+	"fmt"
 	"os"
 )
 
@@ -23,27 +24,37 @@ var enabled = func() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }()
 
-func wrap(code, s string) string {
+func wrap(code string, v any) string {
+	s := fmt.Sprint(v)
 	if !enabled {
 		return s
 	}
 	return "\033[" + code + "m" + s + "\033[0m"
 }
 
-// Gra renders s in dark gray.
-func Gra(s string) string { return wrap("90", s) }
+// Gra renders v in dark gray.
+func Gra(v any) string { return wrap("90", v) }
 
-// Grn renders s in green.
-func Grn(s string) string { return wrap("32", s) }
+// Grn renders v in green.
+func Grn(v any) string { return wrap("32", v) }
 
-// Yel renders s in yellow.
-func Yel(s string) string { return wrap("33", s) }
+// GrnR renders v in reverse video green (green background, dark text).
+func GrnR(v any) string { return wrap("7;32", v) }
 
-// Red renders s in bright red.
-func Red(s string) string { return wrap("91", s) }
+// Yel renders v in yellow.
+func Yel(v any) string { return wrap("33", v) }
 
-// Whi renders s in white.
-func Whi(s string) string { return wrap("37", s) }
+// Blu renders v in bright blue.
+func Blu(v any) string { return wrap("94", v) }
 
-// Whi2 renders s in bright white.
-func Whi2(s string) string { return wrap("97", s) }
+// Cya renders v in cyan.
+func Cya(v any) string { return wrap("36", v) }
+
+// Red renders v in bright red.
+func Red(v any) string { return wrap("91", v) }
+
+// Whi renders v in white.
+func Whi(v any) string { return wrap("37", v) }
+
+// Whi2 renders v in bright white.
+func Whi2(v any) string { return wrap("97", v) }

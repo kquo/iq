@@ -12,11 +12,14 @@ import (
 func TestColorFunctionsContainInput(t *testing.T) {
 	cases := []struct {
 		name string
-		fn   func(string) string
+		fn   func(any) string
 	}{
 		{"Gra", Gra},
 		{"Grn", Grn},
+		{"GrnR", GrnR},
 		{"Yel", Yel},
+		{"Blu", Blu},
+		{"Cya", Cya},
 		{"Red", Red},
 		{"Whi", Whi},
 		{"Whi2", Whi2},
@@ -40,11 +43,14 @@ func TestColorFunctionsNoTTY(t *testing.T) {
 	}
 	cases := []struct {
 		name string
-		fn   func(string) string
+		fn   func(any) string
 	}{
 		{"Gra", Gra},
 		{"Grn", Grn},
+		{"GrnR", GrnR},
 		{"Yel", Yel},
+		{"Blu", Blu},
+		{"Cya", Cya},
 		{"Red", Red},
 		{"Whi", Whi},
 		{"Whi2", Whi2},

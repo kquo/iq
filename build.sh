@@ -111,8 +111,8 @@ fi
 TOTAL_LINE=$(go tool cover -func="$COVER_FILE" 2>/dev/null | grep "^total:" || true)
 if [ -n "$TOTAL_LINE" ]; then
     TOTAL_PCT=$(echo "$TOTAL_LINE" | awk '{print $NF}' | tr -d '%')
-    DOMAIN_PCT=$(grep "^iq/internal/" "$COVER_FILE" 2>/dev/null \
-        | awk '{t+=$2; if($3>0) c+=$2} END{if(t>0) printf "%.1f", c/t*100; else print "0"}')
+    DOMAIN_PCT=$(grep "^${Prg}/internal/" "$COVER_FILE" 2>/dev/null \
+        | awk '{t+=$2; if($3>0) c+=$2} END{if(t>0) printf "%.1f", c/t*100; else print "0"}' || true)
     DOM_INT=${DOMAIN_PCT%.*}
     if [ "$DOM_INT" -ge 75 ]; then
         COV_COLOR=$Gre

@@ -645,24 +645,18 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
+| 0.9.4   | `internal/color`: all funcs accept `any` via fmt.Sprint; add GrnR (reverse-video green), Blu, Cya; color test coverage 77→81% |
+<details>
+<summary>Older versions (v0.2.7 – v0.9.3)</summary>
+
+| Version | Summary |
+|---------|---------|
 | 0.9.3   | Test coverage: cmd/iq (9→11%), kb (3→21%), lm (36→53%), sidecar +CallWithGrammar; pure-function tests across cmd/iq and internal/*; build.sh coverage display: domain (internal/*) as primary signal with total in parentheses |
 | 0.9.2   | FEAT9850: context.Context threaded through hot-path pipeline (executePrompt, sidecar transport, embed HTTP, kb.Search); sync.WaitGroup replaced with errgroup in HFEnrichModels/HFFetchTags; signal.NotifyContext(SIGINT) at iq ask and root command entry points |
-
-<details>
-<summary>Older versions (v0.2.7 – v0.9.1)</summary>
-
-| Version | Summary |
-|---------|---------|
 | 0.9.1   | Test coverage: cache (0→86%), color (0→77%), cue (0→78%), lm (0→37%); cache save() errors made explicit with _ =; arch.md v0.9.0 row added |
-
-| Version | Summary |
-|---------|---------|
 | 0.9.0   | Housekeeping: semver discipline adopted (PATCH/MINOR rules in CLAUDE.md); plan.md consolidated to 4 groups (A=Pipeline, B=Knowledge & Context, C=Capabilities & Integration, D=Platform & Observability); CONTRIBUTING.md and CLA.md merged |
 | 0.8.19  | `pipeline: single_pool` mode (FEAT9810): `PipelineSinglePool` constant; `pickAnySidecar` picks first live non-embed sidecar; `resolveSinglePool` routes with cue system prompt but no tier discrimination; pipeline guard replaced with switch; 2 new tests |
 | 0.8.18  | Config schema versioning (FEAT9840): `version:` field in config.yaml; `ConfigVersion = 1`; version-dispatched `Load` (v0 → migration chain, v>current → error); `migrateV0` extracts all legacy migration logic; `normalizeConfig` helper; 3 new schema version tests |
-
-| Version | Summary |
-|---------|---------|
 | 0.8.17  | Stale sidecar state / port exhaustion (FEAT9860): `NextAvailablePort` uses `AllLiveStates` (skips dead PIDs); `StartInfer` and `StartSidecar` remove state + kill process on early crash and readiness timeout; 3 new port-allocation tests |
 | 0.8.16  | `RawCall` timeout + status-code guard (FEAT9870): swap bare `http.Post` for `inferClient` (`http.Client{Timeout: 5m}`); explicit non-200 error with status code and body; `Stream` unchanged (timeout would cancel mid-stream); `TestRawCallNonOK` added |
 | 0.8.15  | Synthesis pass for `read_file` short-circuit: after file is read, model answers original question using content (same pattern as `web_search`); fixes "does arch.md have version history?", "print last 10 lines", etc.; other file tools remain self-contained (FEAT9872) |
