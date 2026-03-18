@@ -112,31 +112,22 @@ max_tokens: 8192
 tiers:
   fast:
     models:
-      - mlx-community/Llama-3.2-3B-Instruct-4bit
-    # Per-tier overrides — tuned for quick, deterministic triage
-    repetition_penalty: 1.1
-    temperature: 0.3
-    max_tokens: 2048
-  slow:
-    models:
       - mlx-community/Qwen2.5-7B-Instruct-4bit
-    # Slow tier inherits global defaults (0.7 temp, 1.3 rep, 8192 tokens)
 
 embed_model: mlx-community/bge-small-en-v1.5-bf16
-pipeline: two_tier  # optional; two_tier is the default (single_pool also valid)
 ```
 
-Use `iq perf sweep` to validate these choices on your hardware — sweep the same models under both tier configs to see whether the parameter differences move the needle on latency and quality.
+Use `iq perf sweep` to validate model and parameter choices on your hardware.
 
-Tier commands: `iq tier show`, `iq tier add <tier> <model>`, `iq tier rm <tier> <model>`.
+Tier commands: `iq tier show`, `iq tier add fast <model>`, `iq tier rm fast <model>`.
 
 Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
 **Schema versioning** — `config.yaml` carries a `version:` field (integer). `ConfigVersion = 1` is the current schema. On load, the version is peeked first: version 0 (absent field) triggers the legacy migration chain; version > `ConfigVersion` returns a hard error ("upgrade iq"); current version is unmarshalled directly. After any migration the version is stamped to `ConfigVersion` and the file is saved. `Load()` always returns a `Config` with `Version == ConfigVersion` after a successful migration.
 
-Auto-migration chain (v0 → v1): old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`, legacy `cue_model`/`kb_model` fields are migrated to the unified `embed_model`.
+Auto-migration chain (v0 → v1): old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`, legacy `cue_model`/`kb_model` fields are migrated to the unified `embed_model`. The legacy `pipeline:` field is silently ignored on load (removed in v0.10.0).
 
-**Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings (including `pipeline` mode), tier pools with per-tier overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, tier model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
+**Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings, model pool with per-tier inference overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
 
 ### Cue Definitions
 
@@ -410,7 +401,7 @@ A `Client` struct in `internal/search` carries configuration (Brave API key) and
 
 ```
 ~/.config/iq/
-├── config.yaml                  # tier pool assignments + embed model + tool_paths + brave_api_key + pipeline
+├── config.yaml                  # model pool assignments + embed model + inference params + tool_paths + brave_api_key
 ├── models.json                  # manifest of downloaded models (id, pulled_at, hf_cache_path, task)
 ├── cues.yaml                    # cue definitions (seeded from embedded defaults)
 ├── cue_embeddings.json          # cue description embeddings (auto-built, versioned)
@@ -628,7 +619,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | File | Purpose |
 |------|---------|
 | `cmd/iq/main.go` | CLI entry point, root command, version, help routing |
-| `cmd/iq/svc.go` | Status display, tier/embed commands, thin wrappers for sidecar package |
+| `cmd/iq/svc.go` | Status display, model pool/embed/restart commands, thin wrappers for sidecar package |
 | `cmd/iq/cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `cmd/iq/prompt.go` | 8-step execution pipeline, session management, REPL, trace output |
 | `cmd/iq/prompt_test.go` | End-to-end orchestration tests with mock sidecar (httptest) |
@@ -645,12 +636,13 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.9.4   | `internal/color`: all funcs accept `any` via fmt.Sprint; add GrnR (reverse-video green), Blu, Cya; color test coverage 77→81% |
+| 0.10.0  | Design pivot (A1): retire `pipeline:` config field and two_tier/single_pool routing modes; flat model pool is now the only inference path; `resolveRoute` replaces `resolveSinglePool`+`resolveRoute`; `TierSource` = "pool"; `iq restart` command added; `iq stop` works with no models assigned; `pipeline:` silently ignored on load; `docs/design-pivot-01.md` added |
 <details>
-<summary>Older versions (v0.2.7 – v0.9.3)</summary>
+<summary>Older versions (v0.2.7 – v0.9.4)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.9.4   | `internal/color`: all funcs accept `any` via fmt.Sprint; add GrnR (reverse-video green), Blu, Cya; color test coverage 77→81% |
 | 0.9.3   | Test coverage: cmd/iq (9→11%), kb (3→21%), lm (36→53%), sidecar +CallWithGrammar; pure-function tests across cmd/iq and internal/*; build.sh coverage display: domain (internal/*) as primary signal with total in parentheses |
 | 0.9.2   | FEAT9850: context.Context threaded through hot-path pipeline (executePrompt, sidecar transport, embed HTTP, kb.Search); sync.WaitGroup replaced with errgroup in HFEnrichModels/HFFetchTags; signal.NotifyContext(SIGINT) at iq ask and root command entry points |
 | 0.9.1   | Test coverage: cache (0→86%), color (0→77%), cue (0→78%), lm (0→37%); cache save() errors made explicit with _ =; arch.md v0.9.0 row added |

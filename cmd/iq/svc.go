@@ -26,7 +26,6 @@ func pickSidecar(tier string, preferSmallest bool) (*sidecar.State, error) {
 }
 
 // pickAnySidecar returns the first live inference sidecar regardless of tier.
-// Used by the single_pool pipeline mode.
 func pickAnySidecar() (*sidecar.State, error) {
 	live, err := sidecar.AllLiveStates()
 	if err != nil {
@@ -183,7 +182,7 @@ func printStatus() error {
 
 	// CONFIG line aligned with MODEL column.
 	cfgPath, _ := config.Path()
-	fmt.Printf("%-*s  %-*s  pipeline: %s\n", tierW, "CONFIG", modelW, cfgPath, cfg.EffectivePipeline())
+	fmt.Printf("%-*s  %-*s\n", tierW, "CONFIG", modelW, cfgPath)
 
 	// Header.
 	fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %-7s  %8s\n",
@@ -259,6 +258,7 @@ func newSvcCmd() *cobra.Command {
 		newSvcStatusCmd(),
 		newStartCmd(),
 		newStopCmd(),
+		newRestartCmd(),
 		newTierCmd(),
 		newEmbedCmd(),
 		newDocCmd(),
@@ -295,17 +295,6 @@ func newStartCmd() *cobra.Command {
 			}
 			// Start embed sidecar first when starting everything (no specific target).
 			if arg == "" {
-				// Show pipeline mode and warn if unrecognised.
-				if cfg, err := config.Load(nil); err == nil {
-					p := cfg.EffectivePipeline()
-					if config.ValidPipeline(p) {
-						fmt.Printf("  pipeline: %s\n", p)
-					} else {
-						fmt.Fprintf(os.Stderr, "  %s  unknown pipeline %q — will error on prompt; fix config.yaml\n",
-							color.Yel("WARN"), p)
-					}
-				}
-
 				// First-run hint: no tier models and embed model not downloaded.
 				if len(config.AllAssignedModels()) == 0 {
 					cfg, err := config.Load(nil)
@@ -380,7 +369,7 @@ func newStopCmd() *cobra.Command {
 				arg = args[0]
 			}
 			models, err := resolveModels(arg)
-			if err != nil {
+			if err != nil && arg != "" {
 				return err
 			}
 			for _, modelID := range models {
@@ -394,6 +383,53 @@ func newStopCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "  error stopping embed: %s\n", err.Error())
 				}
 				sidecar.KillOrphanSidecars()
+			}
+			return nil
+		},
+	}
+}
+
+// ── restart ───────────────────────────────────────────────────────────────────
+
+func newRestartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "restart [tier|model]",
+		Short:        "Restart sidecars (stop then start)",
+		SilenceUsage: true,
+		Args:         argsUsage(cobra.MaximumNArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			arg := ""
+			if len(args) > 0 {
+				arg = args[0]
+			}
+			// Stop phase — mirrors newStopCmd.
+			models, _ := resolveModels(arg)
+			for _, modelID := range models {
+				if err := sidecar.Stop(modelID); err != nil {
+					fmt.Fprintf(os.Stderr, "  error stopping %s: %s\n", modelID, err.Error())
+				}
+			}
+			if arg == "" {
+				if err := sidecar.Stop(embed.SlugConst); err != nil {
+					fmt.Fprintf(os.Stderr, "  error stopping embed: %s\n", err.Error())
+				}
+				sidecar.KillOrphanSidecars()
+			}
+			// Start phase — mirrors newStartCmd.
+			if arg == "" {
+				if err := startEmbedSidecar(); err != nil {
+					fmt.Fprintf(os.Stderr, "  error starting embed: %s\n", err.Error())
+				}
+			}
+			models, err := resolveModels(arg)
+			if err != nil {
+				return err
+			}
+			for _, modelID := range models {
+				tier := config.TierForModel(modelID)
+				if err := startSidecar(tier, modelID); err != nil {
+					fmt.Fprintf(os.Stderr, "  error starting %s: %s\n", modelID, err.Error())
+				}
 			}
 			return nil
 		},

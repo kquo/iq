@@ -124,8 +124,6 @@ func runConfigShow() error {
 	fmt.Println()
 
 	cfgField("embed_model", config.EmbedModel(cfg))
-	cfgField("pipeline", cfg.EffectivePipeline())
-
 	if cfg.BraveAPIKey != "" {
 		masked := cfg.BraveAPIKey[:4] + strings.Repeat("*", len(cfg.BraveAPIKey)-4)
 		cfgField("brave_api_key", masked)
@@ -306,11 +304,6 @@ func runConfigValidate() error {
 		// Check embed model.
 		if cfg.EmbedModel == "" {
 			warn("embed_model not set (using default: " + config.DefaultEmbedModel + ")")
-		}
-
-		// Check pipeline mode.
-		if p := cfg.EffectivePipeline(); !config.ValidPipeline(p) {
-			fail(fmt.Sprintf("unknown pipeline mode %q (valid: two_tier, single_pool)", p))
 		}
 
 		// Check deprecated fields.

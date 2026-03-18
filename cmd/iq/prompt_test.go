@@ -154,90 +154,6 @@ func TestEndToEndInference(t *testing.T) {
 	}
 }
 
-// TestSinglePoolPipeline verifies that pipeline: single_pool routes to the
-// first live sidecar regardless of tier, skipping the fast/slow tier routing.
-func TestSinglePoolPipeline(t *testing.T) {
-	const modelID = "test-org/pool-model"
-	const wantResponse = "single pool response"
-
-	srv := mockInferServer(t, func(req sidecar.ChatRequest) string {
-		return wantResponse
-	})
-	defer srv.Close()
-	port := serverPort(t, srv)
-
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	cfgDir := filepath.Join(home, ".config", "iq")
-	runDir := filepath.Join(cfgDir, "run")
-	if err := os.MkdirAll(runDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Write YAML directly so pipeline field is read correctly by go-yaml.
-	// Model is in "fast" tier but tier is irrelevant in single_pool mode.
-	cfgYAML := fmt.Sprintf("version: 1\npipeline: %s\ntiers:\n  fast:\n    models:\n      - %s\n  slow:\n    models: []\n",
-		config.PipelineSinglePool, modelID)
-	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfgYAML), 0644)
-
-	state := &sidecar.State{
-		Tier:    "fast",
-		Model:   modelID,
-		PID:     os.Getpid(),
-		Port:    port,
-		Started: "2025-01-01T00:00:00Z",
-	}
-	stateData, _ := json.MarshalIndent(state, "", "  ")
-	slug := strings.ReplaceAll(modelID, "/", "--")
-	os.WriteFile(filepath.Join(runDir, slug+".json"), stateData, 0644)
-
-	opts := promptOpts{
-		cueName:  "initial",
-		noKB:     true,
-		noCache:  true,
-		toolMode: "off",
-		noStream: true,
-	}
-
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	_, err := executePrompt(context.Background(), "hello", opts, nil)
-	w.Close()
-	os.Stdout = oldStdout
-
-	if err != nil {
-		t.Fatalf("executePrompt error: %v", err)
-	}
-	buf := make([]byte, 4096)
-	n, _ := r.Read(buf)
-	if got := strings.TrimSpace(string(buf[:n])); got != wantResponse {
-		t.Errorf("response = %q, want %q", got, wantResponse)
-	}
-}
-
-// TestUnknownPipelineErrors verifies that an unrecognised pipeline mode returns
-// an error rather than silently falling through.
-func TestUnknownPipelineErrors(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	cfgDir := filepath.Join(home, ".config", "iq")
-	if err := os.MkdirAll(cfgDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	// Write YAML directly so the pipeline field is read correctly by go-yaml.
-	cfgYAML := "version: 1\npipeline: bogus_pipeline\ntiers:\n  fast:\n    models: []\n  slow:\n    models: []\n"
-	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfgYAML), 0644)
-
-	_, err := executePrompt(context.Background(), "hello", promptOpts{}, nil)
-	if err == nil {
-		t.Fatal("expected error for unknown pipeline mode")
-	}
-	if !strings.Contains(err.Error(), "bogus_pipeline") {
-		t.Errorf("error should mention the pipeline name, got: %v", err)
-	}
-}
-
 // TestDumpPrompt verifies that --dump-prompt writes the assembled message
 // array as JSON and stops before inference.
 func TestDumpPrompt(t *testing.T) {
@@ -356,29 +272,26 @@ func writeRunState(t *testing.T, home, tier, modelID string, port int) {
 	os.WriteFile(filepath.Join(runDir, slug+".json"), data, 0644)
 }
 
-// TestResolveRouteTierFallback exercises resolveRoute's tier selection and
-// fallback logic without requiring a running sidecar or embed server.
-func TestResolveRouteTierFallback(t *testing.T) {
+// TestResolveRoute exercises flat-pool routing: any live sidecar is picked
+// regardless of cue's suggested tier, and TierSource is always "pool".
+func TestResolveRoute(t *testing.T) {
 	makeCues := func(name, tier string) []cue.Cue {
 		return []cue.Cue{{Name: name, Category: "test", SuggestedTier: tier}}
 	}
 
 	tests := []struct {
-		name          string
-		cueName       string
-		suggestedTier string
-		setupFast     bool
-		setupSlow     bool
-		wantTier      string
-		wantSource    string
-		wantErr       bool
+		name      string
+		cueName   string
+		setupFast bool
+		setupSlow bool
+		wantModel string
+		wantErr   bool
 	}{
-		{"suggested fast honored", "mycue", "fast", true, false, "fast", "suggested_tier", false},
-		{"suggested slow honored", "mycue", "slow", false, true, "slow", "suggested_tier", false},
-		{"blank tier falls back to fast", "mycue", "", true, false, "fast", "fallback", false},
-		{"fast unavailable falls back to slow", "mycue", "fast", false, true, "slow", "fallback", false},
-		{"both unavailable returns error", "mycue", "fast", false, false, "", "", true},
-		{"unknown cue returns error", "no-such-cue", "fast", true, false, "", "", true},
+		{"routes to fast when only fast is live", "mycue", true, false, "org/fast-model", false},
+		{"routes to slow when only slow is live", "mycue", false, true, "org/slow-model", false},
+		{"routes to first live when both available", "mycue", true, true, "org/fast-model", false},
+		{"errors when no sidecars are live", "mycue", false, false, "", true},
+		{"unknown cue routes without error (empty system prompt)", "no-such-cue", true, false, "org/fast-model", false},
 	}
 
 	for _, tc := range tests {
@@ -393,7 +306,7 @@ func TestResolveRouteTierFallback(t *testing.T) {
 				writeRunState(t, home, "slow", "org/slow-model", 27002)
 			}
 
-			cues := makeCues("mycue", tc.suggestedTier)
+			cues := makeCues("mycue", "fast")
 			route, err := resolveRoute(tc.cueName, cues)
 
 			if tc.wantErr {
@@ -405,11 +318,11 @@ func TestResolveRouteTierFallback(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if route.Tier != tc.wantTier {
-				t.Errorf("tier = %q, want %q", route.Tier, tc.wantTier)
+			if route.ModelID != tc.wantModel {
+				t.Errorf("model = %q, want %q", route.ModelID, tc.wantModel)
 			}
-			if route.TierSource != tc.wantSource {
-				t.Errorf("tierSource = %q, want %q", route.TierSource, tc.wantSource)
+			if route.TierSource != "pool" {
+				t.Errorf("tierSource = %q, want %q", route.TierSource, "pool")
 			}
 		})
 	}

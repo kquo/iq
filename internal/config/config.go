@@ -134,17 +134,7 @@ type TierConfig struct {
 
 // ── Config file ──────────────────────────────────────────────────────────────
 
-// Config stores pools of models per tier, global inference defaults, and the shared embed model.
-// PipelineTwoTier is the default pipeline mode: fast/slow tier routing with
-// embed-based cue classification and tool detection.
-const PipelineTwoTier = "two_tier"
-
-// PipelineSinglePool is an alternate pipeline mode: all sidecars form one flat
-// pool; the first live sidecar handles every request in a single inference pass
-// with no fast/slow tier distinction. Useful when 2-pass latency overhead
-// outweighs the quality benefit of triage routing.
-const PipelineSinglePool = "single_pool"
-
+// Config stores the model pool, global inference defaults, and the shared embed model.
 type Config struct {
 	Version     int                    `yaml:"version,omitempty"`
 	Tiers       map[string]*TierConfig `yaml:"tiers"`
@@ -153,28 +143,9 @@ type Config struct {
 	KbMinScore  float64  `yaml:"kb_min_score,omitempty"`
 	ToolPaths   []string `yaml:"tool_paths,omitempty"`
 	BraveAPIKey string   `yaml:"brave_api_key,omitempty"` // Brave Search fallback API key
-	Pipeline    string   `yaml:"pipeline,omitempty"`
 	// Legacy fields — migrated to EmbedModel on load.
 	CueModel string `yaml:"cue_model,omitempty"`
 	KbModel  string `yaml:"kb_model,omitempty"`
-}
-
-// EffectivePipeline returns the configured pipeline mode, defaulting to
-// PipelineTwoTier when the field is absent or empty.
-func (c *Config) EffectivePipeline() string {
-	if c == nil || c.Pipeline == "" {
-		return PipelineTwoTier
-	}
-	return c.Pipeline
-}
-
-// ValidPipeline reports whether s is a recognised pipeline mode.
-func ValidPipeline(s string) bool {
-	switch s {
-	case PipelineTwoTier, PipelineSinglePool:
-		return true
-	}
-	return false
 }
 
 // DefaultKbMinScore is the minimum cosine similarity required to inject a KB chunk.

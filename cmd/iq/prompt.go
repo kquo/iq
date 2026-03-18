@@ -167,72 +167,9 @@ type routeResult struct {
 	TierSource    string // "cue_override", "suggested_tier", "fallback"
 }
 
+// resolveRoute picks the first live inference sidecar and applies the cue's
+// system prompt. The model pool is flat — no fast/slow tier discrimination.
 func resolveRoute(cueName string, cues []cue.Cue) (*routeResult, error) {
-	_, c := cue.Find(cues, cueName)
-	if c == nil {
-		return nil, fmt.Errorf("cue %q not found", cueName)
-	}
-
-	// Direct model override on the cue — kept for power users but not
-	// actively promoted. Find which tier it belongs to and pick its sidecar.
-	if c.Model != "" {
-		tier := config.TierForModel(c.Model)
-		if tier == "" {
-			return nil, fmt.Errorf("cue %q has model %q but it is not in any tier pool", cueName, c.Model)
-		}
-		sc, err := pickSidecar(tier, false)
-		if err != nil {
-			return nil, fmt.Errorf("cue model override: %w", err)
-		}
-		return &routeResult{
-			CueName:       cueName,
-			Category:      c.Category,
-			SuggestedTier: c.SuggestedTier,
-			SystemPrompt:  c.SystemPrompt,
-			Tier:          tier,
-			Port:          sc.Port,
-			ModelID:       sc.Model,
-			TierSource:    "cue_override",
-		}, nil
-	}
-
-	// Use suggested_tier, fall back to "fast".
-	tier := c.SuggestedTier
-	tierSource := "suggested_tier"
-	if tier != "fast" && tier != "slow" {
-		tier = "fast"
-		tierSource = "fallback"
-	}
-	sidecar, err := pickSidecar(tier, false)
-	if err != nil {
-		// Try the other tier as fallback.
-		other := "slow"
-		if tier == "slow" {
-			other = "fast"
-		}
-		sidecar, err = pickSidecar(other, false)
-		if err != nil {
-			return nil, fmt.Errorf("no running sidecars in %s or %s tier — run 'iq start'", tier, other)
-		}
-		tier = other
-		tierSource = "fallback"
-	}
-
-	return &routeResult{
-		CueName:       cueName,
-		Category:      c.Category,
-		SuggestedTier: c.SuggestedTier,
-		SystemPrompt:  c.SystemPrompt,
-		Tier:          tier,
-		Port:          sidecar.Port,
-		ModelID:       sidecar.Model,
-		TierSource:    tierSource,
-	}, nil
-}
-
-// resolveSinglePool picks the first live inference sidecar regardless of tier.
-// The cue's system prompt is still applied so prompt tuning remains active.
-func resolveSinglePool(cueName string, cues []cue.Cue) (*routeResult, error) {
 	sc, err := pickAnySidecar()
 	if err != nil {
 		return nil, err
@@ -251,7 +188,7 @@ func resolveSinglePool(cueName string, cues []cue.Cue) (*routeResult, error) {
 		Tier:          sc.Tier,
 		Port:          sc.Port,
 		ModelID:       sc.Model,
-		TierSource:    "single_pool",
+		TierSource:    "pool",
 	}, nil
 }
 
@@ -510,12 +447,12 @@ func autoNameSession(s *session) {
 		systemMsg := `Given this conversation excerpt, return a JSON object with exactly two fields:
 "name" (max 5 words, title case) and "description" (max 15 words).
 Return only valid JSON, nothing else.`
-		sc, err := pickSidecar("fast", true)
+		sc, err := pickAnySidecar()
 		if err != nil {
 			return
 		}
 		nameCfg, _ := config.Load(nil)
-		nameIP := config.ResolveInferParams(nameCfg, "fast")
+		nameIP := config.ResolveInferParams(nameCfg, sc.Tier)
 		response, err := sidecar.Call(context.Background(), sc.Port, []config.Message{
 			{Role: "system", Content: systemMsg},
 			{Role: "user", Content: excerpt.String()},
@@ -576,14 +513,6 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 	if err != nil {
 		return sess, fmt.Errorf("loading config: %w", err)
 	}
-	pipeline := cfg.EffectivePipeline()
-	switch pipeline {
-	case config.PipelineTwoTier, config.PipelineSinglePool:
-		// valid
-	default:
-		return sess, fmt.Errorf("unknown pipeline mode %q", pipeline)
-	}
-
 	trace := opts.dryRun || opts.debug || opts.dumpPrompt != ""
 	cues, err := cue.Load()
 	if err != nil {
@@ -682,11 +611,6 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 			Tier:         opts.tier,
 			Port:         sidecar.Port,
 			ModelID:      sidecar.Model,
-		}
-	} else if pipeline == config.PipelineSinglePool {
-		route, err = resolveSinglePool(cueName, cues)
-		if err != nil {
-			return sess, err
 		}
 	} else {
 		route, err = resolveRoute(cueName, cues)

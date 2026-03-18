@@ -326,37 +326,3 @@ func TestLoadFutureSchemaVersionErrors(t *testing.T) {
 		t.Fatal("Load with future schema version should return an error")
 	}
 }
-
-func TestValidPipeline(t *testing.T) {
-	valid := []string{PipelineTwoTier, PipelineSinglePool}
-	for _, p := range valid {
-		if !ValidPipeline(p) {
-			t.Errorf("ValidPipeline(%q) = false, want true", p)
-		}
-	}
-	invalid := []string{"", "bogus", "single_pl", "TWO_TIER"}
-	for _, p := range invalid {
-		if ValidPipeline(p) {
-			t.Errorf("ValidPipeline(%q) = true, want false", p)
-		}
-	}
-}
-
-func TestEffectivePipeline(t *testing.T) {
-	tests := []struct {
-		name   string
-		cfg    *Config
-		expect string
-	}{
-		{"nil config", nil, PipelineTwoTier},
-		{"empty pipeline field", &Config{}, PipelineTwoTier},
-		{"explicit two_tier", &Config{Pipeline: PipelineTwoTier}, PipelineTwoTier},
-		{"unknown mode returned as-is", &Config{Pipeline: "single_pool"}, "single_pool"},
-	}
-	for _, tc := range tests {
-		got := tc.cfg.EffectivePipeline()
-		if got != tc.expect {
-			t.Errorf("%s: EffectivePipeline() = %q, want %q", tc.name, got, tc.expect)
-		}
-	}
-}

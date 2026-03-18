@@ -14,7 +14,7 @@ import (
 
 const (
 	programName    = "iq"
-	programVersion = "0.9.4"
+	programVersion = "0.10.0"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -47,6 +47,7 @@ func printRootHelp() {
 	fmt.Printf("%s\n", color.Whi2("SERVICE"))
 	fmt.Printf("  %-24s %s\n", "start [tier|model]", "Start sidecars")
 	fmt.Printf("  %-24s %s\n", "stop [tier|model]", "Stop sidecars")
+	fmt.Printf("  %-24s %s\n", "restart [tier|model]", "Restart sidecars (stop + start)")
 	fmt.Printf("  %-24s %s\n", "st|status", "Show running sidecar status")
 	fmt.Printf("  %-24s %s\n", "doc", "Check runtime dependencies and model readiness")
 	fmt.Printf("  %-24s %s\n", "tier", "Manage model tier pool assignments")
@@ -81,6 +82,7 @@ func printRootHelp() {
 	fmt.Printf("  $ %s ask\n", n)
 	fmt.Printf("  $ %s start\n", n)
 	fmt.Printf("  $ %s stop\n", n)
+	fmt.Printf("  $ %s restart\n", n)
 	fmt.Printf("  $ %s st\n", n)
 	fmt.Printf("  $ %s doc\n", n)
 }
@@ -168,6 +170,7 @@ func runCLI() {
 		newVersionCmd(),
 		newStartCmd(),
 		newStopCmd(),
+		newRestartCmd(),
 		newStatusCmd(),
 		newDocCmd(),
 		newTierCmd(),
