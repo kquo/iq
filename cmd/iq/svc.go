@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 
@@ -18,14 +17,7 @@ import (
 	"iq/internal/sidecar"
 )
 
-// pickSidecar wraps sidecar.PickSidecar with the lm.DiskUsage resolver.
-func pickSidecar(tier string, preferSmallest bool) (*sidecar.State, error) {
-	return sidecar.PickSidecar(tier, preferSmallest, func(modelID string) int64 {
-		return lm.DiskUsage(lm.HFCacheDir(modelID))
-	})
-}
-
-// pickAnySidecar returns the first live inference sidecar regardless of tier.
+// pickAnySidecar returns the first live inference sidecar.
 func pickAnySidecar() (*sidecar.State, error) {
 	live, err := sidecar.AllLiveStates()
 	if err != nil {
@@ -40,7 +32,7 @@ func pickAnySidecar() (*sidecar.State, error) {
 }
 
 // startSidecar resolves model/python paths and delegates to sidecar.StartInfer.
-func startSidecar(tier, modelID string) error {
+func startSidecar(modelID string) error {
 	modelPath, err := lm.SnapshotDir(modelID)
 	if err != nil {
 		return fmt.Errorf("cannot resolve model path: %w", err)
@@ -49,7 +41,7 @@ func startSidecar(tier, modelID string) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve Python interpreter: %w", err)
 	}
-	_, err = sidecar.StartInfer(tier, modelID, modelPath, pyPath)
+	_, err = sidecar.StartInfer(modelID, modelPath, pyPath)
 	return err
 }
 
@@ -65,38 +57,23 @@ func startEmbedSidecar() error {
 }
 
 // resolveModels returns the model IDs to act on given an optional arg.
-// Arg may be a tier name ("fast"/"slow"), a model ID, or empty (all assigned).
+// Arg may be a model ID from the pool, or empty (all assigned models).
 func resolveModels(arg string) ([]string, error) {
 	cfg, err := config.Load(nil)
 	if err != nil {
 		return nil, err
 	}
 	if arg == "" {
-		all := config.AllAssignedModels()
+		all := cfg.AllModels()
 		if len(all) == 0 {
-			return nil, fmt.Errorf("no models assigned — run 'iq tier add <tier> <model>' first")
+			return nil, fmt.Errorf("no models assigned — run 'iq pool add <model>' first")
 		}
 		return all, nil
 	}
-	// Tier name?
-	for _, t := range config.TierOrder {
-		if t == arg {
-			models := cfg.TierModels(t)
-			if len(models) == 0 {
-				return nil, fmt.Errorf("tier %q has no models assigned", arg)
-			}
-			return models, nil
-		}
+	if cfg.HasModel(arg) {
+		return []string{arg}, nil
 	}
-	// Model ID?
-	for _, t := range config.TierOrder {
-		for _, m := range cfg.TierModels(t) {
-			if m == arg {
-				return []string{m}, nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("%q is not a recognised tier or assigned model", arg)
+	return nil, fmt.Errorf("%q is not an assigned model — run 'iq pool add %s' first", arg, arg)
 }
 
 // ── Status (shared logic) ─────────────────────────────────────────────────────
@@ -108,7 +85,7 @@ func printStatus() error {
 	}
 
 	type statusRow struct {
-		tier     string
+		role     string // "infer" or "embed"
 		model    string
 		endpoint string
 		pid      int
@@ -120,25 +97,24 @@ func printStatus() error {
 	var rows []statusRow
 	var totalKB int64
 
-	for _, tier := range config.TierOrder {
-		for _, model := range cfg.TierModels(tier) {
-			state, _ := sidecar.ReadState(model)
-			endpoint := ""
-			if state != nil {
-				endpoint = sidecar.Endpoint(state.Port)
-			}
-			if state == nil || !sidecar.PidAlive(state.PID) {
-				rows = append(rows, statusRow{tier, model, endpoint, 0, "—", false, "—"})
-				continue
-			}
-			rss := sidecar.ProcessRSSKB(state.PID)
-			totalKB += rss
-			mem := lm.FormatMB(rss * 1024)
-			if rss == 0 {
-				mem = "?"
-			}
-			rows = append(rows, statusRow{tier, model, endpoint, state.PID, sidecar.FormatUptime(state.Started), true, mem})
+	// Inference pool models.
+	for _, model := range cfg.AllModels() {
+		state, _ := sidecar.ReadState(model)
+		endpoint := ""
+		if state != nil {
+			endpoint = sidecar.Endpoint(state.Port)
 		}
+		if state == nil || !sidecar.PidAlive(state.PID) {
+			rows = append(rows, statusRow{"infer", model, endpoint, 0, "—", false, "—"})
+			continue
+		}
+		rss := sidecar.ProcessRSSKB(state.PID)
+		totalKB += rss
+		mem := lm.FormatMB(rss * 1024)
+		if rss == 0 {
+			mem = "?"
+		}
+		rows = append(rows, statusRow{"infer", model, endpoint, state.PID, sidecar.FormatUptime(state.Started), true, mem})
 	}
 
 	// Embed sidecar row.
@@ -151,7 +127,7 @@ func printStatus() error {
 			endpoint = sidecar.Endpoint(eState.Port)
 		}
 		if eState == nil || !sidecar.PidAlive(eState.PID) {
-			rows = append(rows, statusRow{slug, model, endpoint, 0, "—", false, "—"})
+			rows = append(rows, statusRow{"embed", model, endpoint, 0, "—", false, "—"})
 		} else {
 			rss := sidecar.ProcessRSSKB(eState.PID)
 			totalKB += rss
@@ -159,17 +135,9 @@ func printStatus() error {
 			if rss == 0 {
 				mem = "?"
 			}
-			rows = append(rows, statusRow{slug, model, endpoint, eState.PID, sidecar.FormatUptime(eState.Started), true, mem})
+			rows = append(rows, statusRow{"embed", model, endpoint, eState.PID, sidecar.FormatUptime(eState.Started), true, mem})
 		}
 	}
-	// Compute TIER column width dynamically (longest tier name).
-	tierW := len("TIER")
-	for _, r := range rows {
-		if len(r.tier) > tierW {
-			tierW = len(r.tier)
-		}
-	}
-	tierW += 2
 
 	// Compute MODEL column width.
 	modelW := len("MODEL")
@@ -180,13 +148,13 @@ func printStatus() error {
 	}
 	modelW += 2
 
-	// CONFIG line aligned with MODEL column.
+	// CONFIG line.
 	cfgPath, _ := config.Path()
-	fmt.Printf("%-*s  %-*s\n", tierW, "CONFIG", modelW, cfgPath)
+	fmt.Printf("CONFIG  %s\n", cfgPath)
 
 	// Header.
-	fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %-7s  %8s\n",
-		tierW, "TIER", modelW, "MODEL", "ENDPOINT", "PID", "UPTIME", "RUNNING", "MEM")
+	fmt.Printf("%-*s  %-28s  %-7s  %-8s  %-7s  %8s\n",
+		modelW, "MODEL", "ENDPOINT", "PID", "UPTIME", "RUNNING", "MEM")
 
 	for _, r := range rows {
 		// Pad the raw string to fixed width BEFORE colorizing — ANSI escape codes
@@ -197,24 +165,22 @@ func printStatus() error {
 			runDisplay = color.Grn(fmt.Sprintf("%-7s", "yes"))
 		}
 		if !r.running {
-			fmt.Printf("%-*s  %-*s  %-28s  %-7s  %-8s  %s  %8s\n",
-				tierW, r.tier, modelW, r.model, r.endpoint, "—", r.uptime, runDisplay, r.mem)
+			fmt.Printf("%-*s  %-28s  %-7s  %-8s  %s  %8s\n",
+				modelW, r.model, r.endpoint, "—", r.uptime, runDisplay, r.mem)
 		} else {
-			fmt.Printf("%-*s  %-*s  %-28s  %-7d  %-8s  %s  %8s\n",
-				tierW, r.tier, modelW, r.model, r.endpoint, r.pid, r.uptime, runDisplay, r.mem)
+			fmt.Printf("%-*s  %-28s  %-7d  %-8s  %s  %8s\n",
+				modelW, r.model, r.endpoint, r.pid, r.uptime, runDisplay, r.mem)
 		}
 	}
 
 	iqRSS := sidecar.ProcessRSSKB(os.Getpid())
 	totalKB += iqRSS
 	// Last line: IQ mem left-aligned, total mem right-aligned to MEM column.
-	// Column positions: 6+2 + modelW+2 + 28+2 + 7+2 + 8+2 + 7+2 + 8 = left of MEM column
-	lineW := tierW + 2 + modelW + 2 + 28 + 2 + 7 + 2 + 8 + 2 + 7 + 2 + 8
+	lineW := modelW + 2 + 28 + 2 + 7 + 2 + 8 + 2 + 7 + 2 + 8
 	iqLabel := "IQ process mem:"
 	iqVal := lm.FormatMB(iqRSS * 1024)
 	totLabel := "Total mem:"
 	totVal := lm.FormatMB(totalKB * 1024)
-	// Build the line: left part + right part padded to lineW.
 	left := fmt.Sprintf("%-20s %s", iqLabel, iqVal)
 	right := fmt.Sprintf("%s  %8s", totLabel, totVal)
 	gap := max(lineW-len(left)-len(right), 2)
@@ -228,10 +194,10 @@ func printSvcHelp() {
 	n := programName
 	fmt.Printf("Legacy alias — svc commands have moved to the root.\n\n")
 	fmt.Printf("%s\n", color.Whi2("NEW USAGE"))
-	fmt.Printf("  %s start [tier|model]\n", n)
-	fmt.Printf("  %s stop [tier|model]\n", n)
+	fmt.Printf("  %s start [model]\n", n)
+	fmt.Printf("  %s stop [model]\n", n)
 	fmt.Printf("  %s status\n", n)
-	fmt.Printf("  %s tier show|add|rm\n", n)
+	fmt.Printf("  %s pool list|add|rm\n", n)
 	fmt.Printf("  %s embed show|set|rm\n", n)
 	fmt.Printf("  %s doc\n", n)
 }
@@ -259,7 +225,7 @@ func newSvcCmd() *cobra.Command {
 		newStartCmd(),
 		newStopCmd(),
 		newRestartCmd(),
-		newTierCmd(),
+		newPoolCmd(),
 		newEmbedCmd(),
 		newDocCmd(),
 	)
@@ -284,8 +250,8 @@ func newSvcStatusCmd() *cobra.Command {
 
 func newStartCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "start [tier|model]",
-		Short:        "Start sidecars for all, a tier pool, or a specific model",
+		Use:          "start [model]",
+		Short:        "Start sidecars for all assigned models, or a specific model",
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -295,12 +261,12 @@ func newStartCmd() *cobra.Command {
 			}
 			// Start embed sidecar first when starting everything (no specific target).
 			if arg == "" {
-				// First-run hint: no tier models and embed model not downloaded.
-				if len(config.AllAssignedModels()) == 0 {
-					cfg, err := config.Load(nil)
-					if err != nil {
-						return err
-					}
+				// First-run hint: no models in pool and embed model not downloaded.
+				cfg, cfgErr := config.Load(nil)
+				if cfgErr != nil {
+					return cfgErr
+				}
+				if len(cfg.AllModels()) == 0 {
 					emDir := lm.HFCacheDir(config.EmbedModel(cfg))
 					if _, err := os.Stat(emDir); err != nil {
 						fmt.Println("No models configured. Recommended setup:")
@@ -310,8 +276,8 @@ func newStartCmd() *cobra.Command {
 						fmt.Println("  iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit")
 						fmt.Println()
 						fmt.Println("  iq embed set mlx-community/bge-small-en-v1.5-bf16")
-						fmt.Println("  iq tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
-						fmt.Println("  iq tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
+						fmt.Println("  iq pool add mlx-community/Llama-3.2-3B-Instruct-4bit")
+						fmt.Println("  iq pool add mlx-community/Qwen2.5-7B-Instruct-4bit")
 						fmt.Println()
 						fmt.Println("Then run 'iq start' again.")
 						return nil
@@ -320,15 +286,15 @@ func newStartCmd() *cobra.Command {
 				if err := startEmbedSidecar(); err != nil {
 					fmt.Fprintf(os.Stderr, "  error starting embed: %s\n", err.Error())
 				}
-				// Hint when embed started but no tier models configured yet.
-				if len(config.AllAssignedModels()) == 0 {
+				// Hint when embed started but no pool models configured yet.
+				if len(cfg.AllModels()) == 0 {
 					fmt.Println("No models configured. Recommended setup:")
 					fmt.Println()
 					fmt.Println("  iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit")
 					fmt.Println("  iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit")
 					fmt.Println()
-					fmt.Println("  iq tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit")
-					fmt.Println("  iq tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit")
+					fmt.Println("  iq pool add mlx-community/Llama-3.2-3B-Instruct-4bit")
+					fmt.Println("  iq pool add mlx-community/Qwen2.5-7B-Instruct-4bit")
 					fmt.Println()
 					fmt.Println("Then run 'iq start' again.")
 					return nil
@@ -339,14 +305,13 @@ func newStartCmd() *cobra.Command {
 				return err
 			}
 			for _, modelID := range models {
-				tier := config.TierForModel(modelID)
 				state, _ := sidecar.ReadState(modelID)
 				if state != nil && sidecar.PidAlive(state.PID) {
 					fmt.Printf("  pid %-7d  %s  %s\n",
 						state.PID, sidecar.Endpoint(state.Port), color.Gra("already running"))
 					continue
 				}
-				if err := startSidecar(tier, modelID); err != nil {
+				if err := startSidecar(modelID); err != nil {
 					fmt.Fprintf(os.Stderr, "  error starting %s: %s\n", modelID, err.Error())
 				}
 			}
@@ -359,8 +324,8 @@ func newStartCmd() *cobra.Command {
 
 func newStopCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "stop [tier|model]",
-		Short:        "Stop sidecars for all, a tier pool, or a specific model",
+		Use:          "stop [model]",
+		Short:        "Stop sidecars for all assigned models, or a specific model",
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -393,7 +358,7 @@ func newStopCmd() *cobra.Command {
 
 func newRestartCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "restart [tier|model]",
+		Use:          "restart [model]",
 		Short:        "Restart sidecars (stop then start)",
 		SilenceUsage: true,
 		Args:         argsUsage(cobra.MaximumNArgs(1)),
@@ -426,8 +391,7 @@ func newRestartCmd() *cobra.Command {
 				return err
 			}
 			for _, modelID := range models {
-				tier := config.TierForModel(modelID)
-				if err := startSidecar(tier, modelID); err != nil {
+				if err := startSidecar(modelID); err != nil {
 					fmt.Fprintf(os.Stderr, "  error starting %s: %s\n", modelID, err.Error())
 				}
 			}
@@ -436,137 +400,116 @@ func newRestartCmd() *cobra.Command {
 	}
 }
 
-// ── tier ──────────────────────────────────────────────────────────────────────
+// ── pool ──────────────────────────────────────────────────────────────────────
 
-func printTierHelp() {
+func printPoolHelp() {
 	n := programName
-	fmt.Printf("Manage model tier pool assignments.\n\n")
+	fmt.Printf("Manage the inference model pool.\n\n")
 	fmt.Printf("%s\n", color.Whi2("USAGE"))
-	fmt.Printf("  %s tier <command> [flags]\n\n", n)
+	fmt.Printf("  %s pool [command]\n\n", n)
 	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
-	fmt.Printf("  %-10s %s\n", "show", "Show current tier assignments")
-	fmt.Printf("  %-10s %s\n", "add", "Add a model to a tier pool")
-	fmt.Printf("  %-10s %s\n\n", "rm", "Remove a model from a tier pool")
-	fmt.Printf("%s\n", color.Whi2("TIERS"))
-	fmt.Printf("  %-8s %s\n", "fast", "Sub-2GB models — used for classification and quick tasks")
-	fmt.Printf("  %-8s %s\n\n", "slow", "2GB+ models — used for quality inference")
+	fmt.Printf("  %-10s %s\n", "list", "List models in the pool (default)")
+	fmt.Printf("  %-10s %s\n", "add <model>", "Add a model to the pool")
+	fmt.Printf("  %-10s %s\n\n", "rm <model>", "Remove a model from the pool")
 	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s tier show\n", n)
-	fmt.Printf("  $ %s tier add fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
-	fmt.Printf("  $ %s tier add slow mlx-community/Phi-4-mini-reasoning-4bit\n", n)
-	fmt.Printf("  $ %s tier rm fast mlx-community/SmolLM2-135M-Instruct-8bit\n", n)
+	fmt.Printf("  $ %s pool\n", n)
+	fmt.Printf("  $ %s pool add mlx-community/Llama-3.2-3B-Instruct-4bit\n", n)
+	fmt.Printf("  $ %s pool rm mlx-community/Llama-3.2-3B-Instruct-4bit\n", n)
 }
 
-func newTierCmd() *cobra.Command {
+func newPoolCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "tier",
-		Short:        "Manage model tier pool assignments",
+		Use:          "pool",
+		Short:        "Manage the inference model pool",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			printTierHelp()
-			return nil
+			// Bare `iq pool` = `iq pool list`
+			return newPoolListCmd().RunE(cmd, args)
 		},
 	}
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		printTierHelp()
+		printPoolHelp()
 	})
-	cmd.AddCommand(newTierShowCmd(), newTierAddCmd(), newTierRmCmd())
+	cmd.AddCommand(newPoolListCmd(), newPoolAddCmd(), newPoolRmCmd())
 	return cmd
 }
 
-func newTierShowCmd() *cobra.Command {
+func newPoolListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "show",
-		Short:        "Show current tier assignments",
+		Use:          "list",
+		Short:        "List models in the pool",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
-			for _, t := range config.TierOrder {
-				models := cfg.TierModels(t)
-				if len(models) == 0 {
-					fmt.Printf("%-6s  %s\n", t, color.Gra("<empty>"))
-				} else {
-					for _, m := range models {
-						fmt.Printf("%-6s  %s\n", t, color.Grn(m))
-					}
-				}
+			models := cfg.AllModels()
+			if len(models) == 0 {
+				fmt.Printf("%s\n", color.Gra("<empty>"))
+				return nil
+			}
+			for _, m := range models {
+				fmt.Printf("%s\n", color.Grn(m))
 			}
 			return nil
 		},
 	}
 }
 
-func newTierAddCmd() *cobra.Command {
+func newPoolAddCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "add <tier> <model>",
-		Short:        "Add a model to a tier pool",
+		Use:          "add <model>",
+		Short:        "Add a model to the pool",
 		SilenceUsage: true,
-		Args:         argsUsage(cobra.ExactArgs(2)),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			tier, modelID := args[0], args[1]
-			if tier != "fast" && tier != "slow" {
-				return fmt.Errorf("unknown tier %q — valid tiers: fast, slow", tier)
-			}
+			modelID := args[0]
 			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
-			if slices.Contains(cfg.TierModels(tier), modelID) {
-				fmt.Printf("%s is already in the %s tier\n", modelID, tier)
+			if cfg.HasModel(modelID) {
+				fmt.Printf("%s is already in the pool\n", modelID)
 				return nil
 			}
-			other := "slow"
-			if tier == "slow" {
-				other = "fast"
-			}
-			for i, m := range cfg.TierModels(other) {
-				if m == modelID {
-					fmt.Fprintf(os.Stderr, "%s\n", color.Gra(
-						fmt.Sprintf("warning: %s moved from %s to %s", modelID, other, tier)))
-					cfg.Tiers[other].Models = append(cfg.Tiers[other].Models[:i], cfg.Tiers[other].Models[i+1:]...)
-					break
-				}
-			}
-			cfg.Tiers[tier].Models = append(cfg.Tiers[tier].Models, modelID)
+			cfg.Models = append(cfg.Models, config.ModelEntry{ID: modelID})
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("%-6s  %s\n", tier, color.Grn(modelID))
+			fmt.Printf("%s\n", color.Grn(modelID))
 			return nil
 		},
 	}
 }
 
-func newTierRmCmd() *cobra.Command {
+func newPoolRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "rm <tier> <model>",
-		Short:        "Remove a model from a tier pool",
+		Use:          "rm <model>",
+		Short:        "Remove a model from the pool",
 		SilenceUsage: true,
-		Args:         argsUsage(cobra.ExactArgs(2)),
+		Args:         argsUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			tier, modelID := args[0], args[1]
+			modelID := args[0]
 			cfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
 			found := false
-			for i, m := range cfg.TierModels(tier) {
-				if m == modelID {
-					cfg.Tiers[tier].Models = append(cfg.Tiers[tier].Models[:i], cfg.Tiers[tier].Models[i+1:]...)
+			for i, m := range cfg.Models {
+				if m.ID == modelID {
+					cfg.Models = append(cfg.Models[:i], cfg.Models[i+1:]...)
 					found = true
 					break
 				}
 			}
 			if !found {
-				return fmt.Errorf("%s is not in the %s tier", modelID, tier)
+				return fmt.Errorf("%s is not in the pool", modelID)
 			}
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("removed %s from %s tier\n", modelID, tier)
+			fmt.Printf("removed %s from pool\n", modelID)
 			return nil
 		},
 	}
@@ -821,27 +764,26 @@ func newDocCmd() *cobra.Command {
 				checks = append(checks, runDocCheck("  embed_model", d, ok, false))
 			}
 
-			// ── tier model cache dirs ──
+			// ── pool model cache dirs ──
 			cfg, cfgErr := config.Load(nil)
 			if cfgErr != nil {
 				return cfgErr
 			}
-			for _, t := range config.TierOrder {
-				for _, model := range cfg.TierModels(t) {
-					cacheDir := lm.HFCacheDir(model)
-					_, statErr := os.Stat(cacheDir)
-					modelOK := statErr == nil
-					if modelOK {
-						parent := filepath.Dir(cacheDir)
-						detail = color.Gra(parent+"/") + color.Whi(filepath.Base(cacheDir))
-					} else {
-						detail = color.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", model))
-					}
-					checks = append(checks, runDocCheck(t, detail, modelOK, false))
+			poolModels := cfg.AllModels()
+			for _, model := range poolModels {
+				cacheDir := lm.HFCacheDir(model)
+				_, statErr := os.Stat(cacheDir)
+				modelOK := statErr == nil
+				if modelOK {
+					parent := filepath.Dir(cacheDir)
+					detail = color.Gra(parent+"/") + color.Whi(filepath.Base(cacheDir))
+				} else {
+					detail = color.Gra(fmt.Sprintf("cache not found — run: iq lm get %s", model))
 				}
+				checks = append(checks, runDocCheck("pool", detail, modelOK, false))
 			}
-			if len(cfg.TierModels("fast")) == 0 && len(cfg.TierModels("slow")) == 0 {
-				checks = append(checks, runDocCheck("tier models", color.Gra("no models assigned"), true, true))
+			if len(poolModels) == 0 {
+				checks = append(checks, runDocCheck("pool models", color.Gra("no models assigned"), true, true))
 			}
 
 			// ── print results ──

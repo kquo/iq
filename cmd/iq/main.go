@@ -14,7 +14,7 @@ import (
 
 const (
 	programName    = "iq"
-	programVersion = "0.10.0"
+	programVersion = "0.11.0"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -173,7 +173,7 @@ func runCLI() {
 		newRestartCmd(),
 		newStatusCmd(),
 		newDocCmd(),
-		newTierCmd(),
+		newPoolCmd(),
 		newEmbedCmd(),
 		newLmCmd(),
 		newPromptCmd(),

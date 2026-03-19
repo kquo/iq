@@ -997,7 +997,7 @@ func newPerfBenchCmd() *cobra.Command {
 					state, _ := sidecar.ReadState(mid)
 					if state == nil || !sidecar.PidAlive(state.PID) {
 						fmt.Fprintf(os.Stderr, "  starting    sidecar for %s ...\n", mid)
-						if err := startSidecar(benchTierFor(mid), mid); err != nil {
+						if err := startSidecar(mid); err != nil {
 							if lm.IsModelNotDownloaded(err) {
 								fmt.Fprintf(os.Stderr, "  %s\n", color.Red(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
 							} else {
@@ -1091,10 +1091,9 @@ func newPerfBenchCmd() *cobra.Command {
 }
 
 // newPerfSweepCmd automates model comparison: for each model it temporarily
-// assigns to a tier, starts the sidecar, runs benchmarks, stops the sidecar,
-// and restores the original tier config. Produces a comparison table at the end.
+// adds to the pool, starts the sidecar, runs benchmarks, stops the sidecar,
+// and restores the original pool config. Produces a comparison table at the end.
 func newPerfSweepCmd() *cobra.Command {
-	var tier string
 	var modelsFlag string
 	var benchType string
 	var verbose bool
@@ -1107,10 +1106,6 @@ func newPerfSweepCmd() *cobra.Command {
 			if modelsFlag == "" {
 				return fmt.Errorf("--models is required for sweep")
 			}
-			if tier == "" {
-				tier = "fast"
-			}
-
 			var models []string
 			for m := range strings.SplitSeq(modelsFlag, ",") {
 				m = strings.TrimSpace(m)
@@ -1140,45 +1135,44 @@ func newPerfSweepCmd() *cobra.Command {
 				return err
 			}
 
-			// Save original tier config for restoration.
+			// Save original pool membership for restoration after sweep.
 			origCfg, err := config.Load(nil)
 			if err != nil {
 				return err
 			}
-			origModels := make([]string, len(origCfg.TierModels(tier)))
-			copy(origModels, origCfg.TierModels(tier))
+			origPool := origCfg.AllModels()
 
 			// Sweep each model.
 			for mi, mid := range models {
 				fmt.Fprintf(os.Stderr, "\n%s  %s (%d/%d)\n",
 					color.Whi2("SWEEP"), mid, mi+1, len(models))
 
-				// Temporarily assign model to tier.
+				// Temporarily add model to pool if needed.
 				cfg, err := config.Load(nil)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "  error loading config: %s\n", err)
 					continue
 				}
-				if !slices.Contains(cfg.TierModels(tier), mid) {
-					cfg.Tiers[tier].Models = append(cfg.Tiers[tier].Models, mid)
+				if !cfg.HasModel(mid) {
+					cfg.Models = append(cfg.Models, config.ModelEntry{ID: mid})
 					if err := config.Save(cfg); err != nil {
 						fmt.Fprintf(os.Stderr, "  error saving config: %s\n", err)
 						continue
 					}
-					fmt.Fprintf(os.Stderr, "  tier        temporarily assigned %s → %s\n", mid, tier)
+					fmt.Fprintf(os.Stderr, "  pool        temporarily added %s\n", mid)
 				} else {
-					fmt.Fprintf(os.Stderr, "  tier        %s already in %s\n", mid, tier)
+					fmt.Fprintf(os.Stderr, "  pool        %s already in pool\n", mid)
 				}
 
 				// Start sidecar.
 				fmt.Fprintf(os.Stderr, "  starting    sidecar for %s ...\n", mid)
-				if err := startSidecar(tier, mid); err != nil {
+				if err := startSidecar(mid); err != nil {
 					if lm.IsModelNotDownloaded(err) {
 						fmt.Fprintf(os.Stderr, "  %s\n", color.Red(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
 					} else {
 						fmt.Fprintf(os.Stderr, "  error: %s — skipping\n", err)
 					}
-					sweepCleanupModel(mid, tier, origModels)
+					sweepCleanupModel(mid, origPool)
 					continue
 				}
 
@@ -1213,7 +1207,7 @@ func newPerfSweepCmd() *cobra.Command {
 				if err := sidecar.Stop(mid); err != nil {
 					fmt.Fprintf(os.Stderr, "  error stopping: %s\n", err)
 				}
-				sweepCleanupModel(mid, tier, origModels)
+				sweepCleanupModel(mid, origPool)
 			}
 
 			// Save results.
@@ -1229,45 +1223,29 @@ func newPerfSweepCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&tier, "tier", "fast", "Tier to assign models to during sweep")
 	cmd.Flags().StringVar(&modelsFlag, "models", "", "Comma-separated model IDs to sweep (required)")
 	cmd.Flags().StringVar(&benchType, "type", "", "Benchmark type: infer, tool, kb, cue (default: infer)")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show debug detail for each prompt (tool bench)")
 	return cmd
 }
 
-// benchTierFor returns the configured tier for modelID, defaulting to "fast".
-func benchTierFor(modelID string) string {
-	cfg, err := config.Load(nil)
-	if err != nil {
-		return "fast"
-	}
-	for _, tier := range []string{"fast", "slow"} {
-		if slices.Contains(cfg.TierModels(tier), modelID) {
-			return tier
-		}
-	}
-	return "fast"
-}
-
-// sweepCleanupModel removes a model from the tier if it wasn't in the original config.
-func sweepCleanupModel(modelID, tier string, origModels []string) {
-	if slices.Contains(origModels, modelID) {
-		return // was already assigned, leave it
+// sweepCleanupModel removes a model from the pool if it wasn't there before the sweep.
+func sweepCleanupModel(modelID string, origPool []string) {
+	if slices.Contains(origPool, modelID) {
+		return // was already in pool, leave it
 	}
 	cfg, err := config.Load(nil)
 	if err != nil {
 		return
 	}
-	filtered := cfg.Tiers[tier].Models[:0]
-	for _, m := range cfg.Tiers[tier].Models {
-		if m != modelID {
-			filtered = append(filtered, m)
+	for i, m := range cfg.Models {
+		if m.ID == modelID {
+			cfg.Models = append(cfg.Models[:i], cfg.Models[i+1:]...)
+			break
 		}
 	}
-	cfg.Tiers[tier].Models = filtered
-	config.Save(cfg)
-	fmt.Fprintf(os.Stderr, "  tier        restored (removed %s from %s)\n", modelID, tier)
+	config.Save(cfg) //nolint:errcheck // best-effort cleanup
+	fmt.Fprintf(os.Stderr, "  pool        restored (removed %s)\n", modelID)
 }
 
 func newPerfShowCmd() *cobra.Command {

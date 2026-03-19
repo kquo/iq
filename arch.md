@@ -2,7 +2,7 @@
 
 ## Overview
 
-IQ is a local generative AI system for Apple Silicon, capable of running LLMs entirely offline with no cloud dependency. The **`iq`** CLI binary orchestrates this system — managing model downloads, tier assignment, cue definitions, knowledge base access, sidecar processes, and intelligent prompt routing — all from a unified command-line interface.
+IQ is a local generative AI system for Apple Silicon, capable of running LLMs entirely offline with no cloud dependency. The **`iq`** CLI binary orchestrates this system — managing model downloads, model pool management, cue definitions, knowledge base access, sidecar processes, and intelligent prompt routing — all from a unified command-line interface.
 
 ## System Diagram
 
@@ -19,11 +19,11 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 │ HF      │ │config│ │cues    │ │ infer_server.py      │ │ sessions/        │
 │ cache   │ │.yaml │ │.yaml   │ │ sidecars (pool)      │ │ <id>.yaml        │
 │         │ │      │ │        │ │                      │ │                  │
-│~/.cache/│ │tiers:│ │name    │ │ fast pool :27001+    │ │ kb.json          │
-│hugging  │ │ fast │ │category│ │ slow pool :27001+    │ │ (vector index)   │
-│face/hub/│ │ slow │ │desc    │ │                      │ │                  │
+│~/.cache/│ │models│ │name    │ │ pool      :27001+    │ │ kb.json          │
+│hugging  │ │- id  │ │category│ │                      │ │ (vector index)   │
+│face/hub/│ │      │ │desc    │ │                      │ │                  │
 │models-- │ │      │ │prompt  │ │ OpenAI-compatible    │ └──────────────────┘
-│org--repo│ │      │ │tier    │ │ HTTP API             │ ┌──────────────────┐
+│org--repo│ │      │ │model   │ │ HTTP API             │ ┌──────────────────┐
 │/snapshot│ └──────┘ └────────┘ └──────────────────────┘ │ embed sidecar    │
 │  /hash/ │                                              │ :27000           │
 └─────────┘                                              └──────────────────┘
@@ -36,7 +36,7 @@ Domain logic lives in isolated packages under `internal/`. Each package owns one
 
 | Package | Domain |
 |---------|--------|
-| `internal/config` | Config CRUD, tier definitions, embed model, migrations |
+| `internal/config` | Config CRUD, model pool, embed model, migrations |
 | `internal/search` | DuckDuckGo web search client with Brave fallback; `Client` struct for concurrency-safe config |
 | `internal/sidecar` | Sidecar lifecycle, port allocation, pool dispatch, state files, HTTP transport (Call/Stream/RawCall) |
 | `internal/cue` | Cue types, CRUD, defaults, lookup helpers, embedded default YAML |
@@ -58,7 +58,7 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 `iq lm search` queries the HF API, enriches results in parallel (one goroutine per model) to populate DISK and EST MEM, and displays TASK / DISK / PARAMS / EST MEM / DOWNLOADS. The TASK column shows the HuggingFace `pipeline_tag` — green for `text-generation` and `feature-extraction` (displayed as `embedding`), red for unsupported types (e.g. `image-text-to-text`). Accepts an optional query string or a numeric count (e.g. `iq lm search 100`).
 
-`iq lm get` checks the model's task type before downloading; if it is not `text-generation`, a yellow warning is printed (download proceeds anyway). After download, the `pipeline_tag` is cached in the manifest for offline display. Infers a suggested tier from disk size (< 2GB → fast, else slow) and prints the `iq tier add` command to assign it.
+`iq lm get` checks the model's task type before downloading; if it is not `text-generation`, a yellow warning is printed (download proceeds anyway). After download, the `pipeline_tag` is cached in the manifest for offline display. Infers a suggested size (`small` for < 2GB, `large` otherwise) and prints the `iq pool add` command to assign it.
 
 `iq lm list` displays TASK alongside DISK / PULLED / PARAMS / EST MEM / TIER. On first display, missing task tags are backfilled from the HF API in parallel (with local `config.json` inference as fallback) and persisted to the manifest.
 
@@ -66,18 +66,13 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 **Local task inference** (`inferTaskFromConfig`) — when the HF API returns no `pipeline_tag`, IQ reads the model's local `config.json` and infers the task: vision indicator keys (`vision_config`, `visual`, `vision_tower`, `image_size`) or known VLM `model_type` values → `image-text-to-text`; known text-generation `model_type` values (only after confirming no vision indicators) → `text-generation`.
 
-`iq lm rm` auto-clears tier assignments and stops running sidecars (including the embed sidecar) with yellow warnings before prompting for confirmation. The confirmation prompt is printed in yellow with `[y/N]` in default color.
+`iq lm rm` auto-removes the model from the pool and stops running sidecars (including the embed sidecar) with yellow warnings before prompting for confirmation. The confirmation prompt is printed in yellow with `[y/N]` in default color.
 
 ### Configuration
 
-Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Message`, `Config`, `TierConfig`, `InferParams`, `ResolvedParams` structs, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `TierForModel()`, `AllAssignedModels()`, `ResolveInferParams()`, `TierOrder`, and `DefaultEmbedModel`. `Message` is the shared role+content type used across inference, session persistence, and cache key computation. `Load()` returns in-memory defaults on read-only filesystems. Tiers are **pools** — each tier holds a list of model IDs and optional inference parameter overrides.
+Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Message`, `Config`, `ModelEntry`, `InferParams`, `ResolvedParams` structs, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `AllModels()`, `HasModel()`, `ModelEntryFor()`, `ResolveInferParams()`, and `DefaultEmbedModel`. `Message` is the shared role+content type used across inference, session persistence, and cache key computation. `Load()` returns in-memory defaults on read-only filesystems. The model pool is a flat ordered list of `ModelEntry` values — each entry holds a model ID and optional per-model inference parameter overrides.
 
-```
-fast    sub-2GB models — used for quick inference tasks
-slow    2GB+ models    — used for quality inference
-```
-
-**Inference parameters** — eight parameters can be tuned globally and/or per-tier:
+**Inference parameters** — eight parameters can be tuned globally and/or per-model:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -90,44 +85,35 @@ slow    2GB+ models    — used for quality inference
 | `stop` | — | List of strings that halt generation early (trimmed from response) |
 | `seed` | — | Fix the random seed for reproducible outputs |
 
-The first three always carry a hardcoded default. The last five are unset by default (nil/empty) — when absent, mlx_lm uses its own defaults. Resolution order: **per-tier override > global config > hardcoded default**. Pointer types (`*float64`, `*int`) distinguish "not set" from "set to zero."
+The first three always carry a hardcoded default. The last five are unset by default (nil/empty) — when absent, mlx_lm uses its own defaults. Resolution order: **per-model override > global config > hardcoded default**. Pointer types (`*float64`, `*int`) distinguish "not set" from "set to zero."
 
 Practical guidance: stacking multiple sampling strategies (e.g. `top_k` + `top_p` + `min_p`) can interact in non-obvious ways. Most setups get 90% of the benefit from `temperature` + `top_p` (or `min_p`) + `stop`.
 
-**Recommended per-tier tuning** — each tier serves a different role, and inference parameters should reflect that:
-
-| Parameter | `fast` (triage) | `slow` (quality) | Why |
-|-----------|----------------|-----------------|-----|
-| `temperature` | 0.3 | 0.7 | Fast tasks (classify, short answers, tool routing) need consistency; slow tasks (reasoning, generation) benefit from expressiveness |
-| `repetition_penalty` | 1.1 | 1.3 | Short outputs rarely loop; longer outputs need a heavier hand to avoid repetition |
-| `max_tokens` | 2048 | 8192 | Cap fast responses since triage doesn't need length; give slow models room for deeper reasoning |
-
 ```yaml
-# Global defaults (populated on first creation; editable)
-version: 1
+# v2 schema — flat models list with optional per-model param overrides
+version: 2
 repetition_penalty: 1.3
 temperature: 0.7
 max_tokens: 8192
-
-tiers:
-  fast:
-    models:
-      - mlx-community/Qwen2.5-7B-Instruct-4bit
-
+models:
+  - id: mlx-community/Qwen2.5-7B-Instruct-4bit
+  - id: mlx-community/Llama-3.2-3B-Instruct-4bit
+    temperature: 0.3
+    max_tokens: 2048
 embed_model: mlx-community/bge-small-en-v1.5-bf16
 ```
 
 Use `iq perf sweep` to validate model and parameter choices on your hardware.
 
-Tier commands: `iq tier show`, `iq tier add fast <model>`, `iq tier rm fast <model>`.
+Pool commands: `iq pool list`, `iq pool add <model>`, `iq pool rm <model>`.
 
 Embed model commands: `iq embed show`, `iq embed set <model>`, `iq embed rm`.
 
-**Schema versioning** — `config.yaml` carries a `version:` field (integer). `ConfigVersion = 1` is the current schema. On load, the version is peeked first: version 0 (absent field) triggers the legacy migration chain; version > `ConfigVersion` returns a hard error ("upgrade iq"); current version is unmarshalled directly. After any migration the version is stamped to `ConfigVersion` and the file is saved. `Load()` always returns a `Config` with `Version == ConfigVersion` after a successful migration.
+**Schema versioning** — `config.yaml` carries a `version:` field (integer). `ConfigVersion = 2` is the current schema. On load, the version is peeked first: version 0 (absent field) triggers the legacy migration chain; version 1 triggers `migrateV1`; version > `ConfigVersion` returns a hard error ("upgrade iq"); current version is unmarshalled directly. After any migration the version is stamped to `ConfigVersion` and the file is saved. `Load()` always returns a `Config` with `Version == ConfigVersion` after a successful migration.
 
-Auto-migration chain (v0 → v1): old config formats are silently converted — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`) uses the 2GB disk threshold, flat-list tiers (`tiers: {fast: [model-a]}`) become structured `TierConfig`, legacy `cue_model`/`kb_model` fields are migrated to the unified `embed_model`. The legacy `pipeline:` field is silently ignored on load (removed in v0.10.0).
+Auto-migration chain: v0 (no version field) — four-tier single-string (`tiny`/`fast`/`balanced`/`quality`), flat-list tiers, and legacy `cue_model`/`kb_model` fields are converted via `migrateV0`. v1 — structured `tiers: {fast: [...], slow: [...]}` is converted to the flat `models:` list by `migrateV1`: each model ID in each tier becomes a `ModelEntry`, preserving any per-tier param overrides as per-model overrides; order is fast-first then slow. The legacy `pipeline:` field is silently ignored on load (removed in v0.10.0).
 
-**Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings, model pool with per-tier inference overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
+**Config inspection** — `iq config` (or `iq config show`) dumps the full effective configuration: config.yaml settings, model pool with per-model inference overrides, cue summary (count + categories), KB status (sources/chunks), all operational thresholds (cue classify 0.40, keyword boost 0.10, tool classify 0.60, KB min score 0.72, KB top-k 3), and runtime constants (ports, timeouts, cache TTL, registry sizes). `iq config validate` checks config.yaml parse, model assignments, embed model, deprecated fields, tool path existence, inference param ranges, cue uniqueness, and KB integrity — reports errors and warnings.
 
 ### Cue Definitions
 
@@ -137,7 +123,7 @@ The **`iq cue`** command manages `~/.config/iq/cues.yaml`, seeded from an embedd
 general  code  reasoning  language_tasks  generation  summarization  safety  domain
 ```
 
-Each cue carries a `name`, `category`, `description`, `system_prompt`, `suggested_tier`, and an optional direct `model` override (kept for power users, not actively promoted in routing).
+Each cue carries a `name`, `category`, `description`, `system_prompt`, `suggested_tier` (retained for backward compatibility, not used in routing), and an optional direct `model` override (kept for power users, not actively promoted in routing).
 
 Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `sync`.
 
@@ -145,7 +131,7 @@ Commands: `list`, `show`, `add`, `edit`, `rm`, `assign`, `unassign`, `reset`, `s
 
 ### Service Daemon
 
-The **`iq start`** / **`iq stop`** commands manage sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, extracted to `~/.config/iq/` at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, tier, model, start time), and logs go to `~/.config/iq/run/<model-slug>.log`.
+The **`iq start`** / **`iq stop`** commands manage sidecar processes. Each sidecar runs as a detached `infer_server.py` process (a custom MLX inference server embedded in the Go binary, extracted to `~/.config/iq/` at startup). Ports are assigned dynamically starting at 27001. State is persisted to `~/.config/iq/run/<model-slug>.json` (PID, port, model, start time; `tier` field always `"infer"` for inference sidecars), and logs go to `~/.config/iq/run/<model-slug>.log`.
 
 Start sequence:
 1. Allocate next free port from 27001+
@@ -156,15 +142,15 @@ Start sequence:
 6. Poll `GET /v1/models` until 200 OK or 120s timeout. A background goroutine calls `cmd.Wait()` to detect early crashes reliably (avoids zombie-pid false positives from signal-0 checks).
 7. On failure: print last 10 log lines + path
 
-`iq start/stop` accepts a tier name (acts on the whole pool), a model ID (acts on one), or no argument (all assigned models). On first run with no tiers configured, `iq start` prints a recommended setup with example `iq lm get` and `iq tier add` commands.
+`iq start/stop` accepts a model ID (acts on one) or no argument (all assigned models). On first run with no models in the pool, `iq start` prints a recommended setup with example `iq lm get` and `iq pool add` commands.
 
-**Pool dispatcher (`pickSidecar`)** — scans live state files for a given tier and returns one. With `preferSmallest: true`, it returns the model with the smallest disk footprint (used by the auto-naming background goroutine).
+**Pool dispatcher (`pickAnySidecar`)** — scans live state files and returns the first live inference sidecar (excluding the embed sidecar).
 
 `iq doc` checks runtime dependencies: `python3` available, `mlx_lm.server` found (needed for its venv Python) and `--model` flag supported, `mlx-embedding-models` package installed, all assigned model HuggingFace cache dirs exist.
 
 **Embeddings** — handled by a single local Python sidecar (`embed_model`, port 27000) started with `iq start`. Serves cue classification, tool detection, and KB indexing/retrieval. Configure via `iq embed`.
 
-`iq status` (alias: `iq st`) shows TIER / MODEL / ENDPOINT / PID / UPTIME / MEM for all assigned models plus the embed sidecar row, IQ process memory, and combined total.
+`iq status` (alias: `iq st`) shows MODEL / ENDPOINT / PID / UPTIME / RUNNING / MEM for all running inference sidecars plus the embed sidecar row, IQ process memory, and combined total.
 
 ### Knowledge Base
 
@@ -255,7 +241,7 @@ The 5 tool signals and the tools they cover:
 
 Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and versioned with an FNV32a hash over signal names and descriptions so they auto-refresh when signals change.
 
-**Step 2 — ROUTE.** Resolves sidecar from the cue. Priority: cue direct model override → cue `suggested_tier` → fast fallback → cross-tier fallback → error.
+**Step 2 — ROUTE.** Resolves sidecar from the cue. Picks the first live inference sidecar from the flat pool (`pickAnySidecar`) and applies the cue's system prompt. No tier discrimination.
 
 **Step 3 — KB RETRIEVE.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-3 most similar chunks are retrieved via hybrid scoring. Only chunks whose score meets the minimum threshold (`kb_min_score`, default 0.72; configurable in `config.yaml`) are injected as plain text context in the user message. If no chunks clear the threshold, KB injection is skipped entirely. Skipped silently if KB is empty or unavailable.
 
@@ -278,13 +264,13 @@ When tools are enabled, inference takes one of two paths based on how tools were
 
 **Step 5b — CACHE WRITE.** On a cache miss, stores the inference response in `response_cache.json` keyed by the same FNV64a hash from Step 4b. Expired entries (>1 hour) are pruned on write. Skipped when cache is disabled or session mode is active.
 
-**Step 6 — PERSIST.** Appends the turn to `~/.config/iq/sessions/<id>.yaml`. Reads and writes are protected by `syscall.Flock` advisory locks (`<id>.yaml.lock`) — shared for reads, exclusive for writes — preventing YAML corruption from concurrent REPL instances. After the first exchange, a background goroutine asks the smallest fast-tier model to generate a short name (≤ 5 words) and description (≤ 15 words) for the session.
+**Step 6 — PERSIST.** Appends the turn to `~/.config/iq/sessions/<id>.yaml`. Reads and writes are protected by `syscall.Flock` advisory locks (`<id>.yaml.lock`) — shared for reads, exclusive for writes — preventing YAML corruption from concurrent REPL instances. After the first exchange, a background goroutine asks any available sidecar to generate a short name (≤ 5 words) and description (≤ 15 words) for the session.
 
 **Flags:**
 ```
 -r, --cue <n>       Skip classification, use this cue directly
 -c, --category <n>  Restrict auto-classification to one category
-    --tier <n>      Override tier directly, bypass cue system
+    --model <id>    Override model directly (must be running)
 -s, --session <id>  Load/continue a named session
 -K, --no-kb         Disable knowledge base retrieval for this prompt
     --no-cache      Disable response cache
@@ -327,7 +313,7 @@ The **`iq pry`** command bypasses the IQ prompt pipeline, sending a message dire
 
 
 ```
-iq pry <model|tier> [flags] <message>
+iq pry <model> [flags] <message>
 
 -c, --cue <n>       Use a cue's system prompt
 -s, --system <text> Use a literal system prompt
@@ -335,7 +321,7 @@ iq pry <model|tier> [flags] <message>
 -S, --no-stream     Collect full response before printing
 ```
 
-`--cue` and `--system` are mutually exclusive. Accepts a tier name or specific model ID. Prints routing info in gray before the response and elapsed time after.
+`--cue` and `--system` are mutually exclusive. Accepts a specific model ID. Prints routing info in gray before the response and elapsed time after.
 
 ### Benchmarking
 
@@ -347,9 +333,9 @@ Benchmark types:
 - **Tool use** — sends 14 prompts (2 per tool) through the routing grammar pipeline; measures routing accuracy (did the model pick the correct tool?) and execution success rate. Use `-v` for per-prompt debug detail.
 - **Inference latency** — measures P50/P95 latency and throughput
 
-**Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, `bench` auto-starts the sidecar if not running (using the model's configured tier, defaulting to `fast`) and stops it after the run.
+**Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, `bench` auto-starts the sidecar if not running and stops it after the run.
 
-**Automated sweep** — `iq perf sweep --models m1,m2 --tier fast --type infer` automates the full tier-assignment cycle: for each model it temporarily assigns to the tier, starts the sidecar, runs benchmarks, stops the sidecar, and restores the original tier config. Produces a comparison table at the end.
+**Automated sweep** — `iq perf sweep --models m1,m2 --type infer` automates the pool-add/start/bench/stop cycle: for each model it temporarily adds to the pool, starts the sidecar, runs benchmarks, stops the sidecar, and restores the original pool. Produces a comparison table at the end.
 
 **Model not downloaded** — if a model's HuggingFace snapshot is missing, both `bench` and `sweep` print a red hint: `model not downloaded — run: iq lm get <model>`.
 
@@ -357,9 +343,9 @@ Commands:
 ```
 iq perf bench [--type <type>] [--model <id>] [-v]             # run benchmarks
 iq perf bench --type cue --models model-a,model-b,model-c     # compare models
-iq perf sweep --models m1,m2 --tier fast --type infer          # automated sweep
-iq perf show [model] [type]                                    # display stored results
-iq perf clear                                                  # wipe benchmark history
+iq perf sweep --models m1,m2 --type infer                     # automated sweep
+iq perf show [model] [type]                                   # display stored results
+iq perf clear                                                 # wipe benchmark history
 ```
 
 ### Embed Sidecar
@@ -412,7 +398,7 @@ A `Client` struct in `internal/search` carries configuration (Brave API key) and
 ├── embed_server.py              # extracted embedding sidecar script (see dev hot-reload below)
 ├── benchmarks.json              # performance benchmark results
 ├── run/
-│   ├── <model-slug>.json        # generative sidecar state (PID, port, tier, model)
+│   ├── <model-slug>.json        # generative sidecar state (PID, port, model; tier="infer")
 │   └── <model-slug>.log
 └── sessions/
     ├── <id>.yaml                # conversation history per session
@@ -463,9 +449,8 @@ STEP 1b  TOOL DETECT      │                │
     │                     │                │
     ▼                     │                │
 STEP 2  RESOLVE ROUTE     │                │
-  cue.model override  →  pickSidecar      │
-  cue.suggested_tier  →  pickSidecar      │
-  fallback            →  pickSidecar       │
+  pickAnySidecar()    →  first live infer  │
+  apply cue sys prompt                     │
     │                     │                │
     ▼                     └────────────────┘
 STEP 3  KB COLLECT  (blocks with 5s timeout to receive async KB result)
@@ -503,7 +488,7 @@ STEP 5b CACHE WRITE  (on cache miss, stores response)
     ▼
 STEP 6  PERSIST
   append turn to session YAML
-  background: auto-name via smallest fast-tier (first turn only)
+  background: auto-name via any available sidecar (first turn only)
 ```
 
 ## Debug Trace Format
@@ -526,8 +511,8 @@ STEP 1b TOOL DETECT
 STEP 2  RESOLVE ROUTE
   task          Map resolved cue to model tier and running sidecar
   model         Llama-3.2-3B-Instruct-4bit @ localhost:27001
-  cue           initial → general/fast
-  tier_source   suggested_tier
+  cue           initial → general
+  model_source  pool
   elapsed       0ms
 
 STEP 3  KB RETRIEVE
@@ -599,7 +584,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | File | Purpose |
 |------|---------|
-| `internal/config/config.go` | Config struct, Load/Save, tier helpers, embed model, kb_min_score, legacy migrations |
+| `internal/config/config.go` | Config struct, Load/Save, model pool helpers, embed model, kb_min_score, legacy migrations |
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 | `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
 | `internal/sidecar/transport.go` | OpenAI-compatible HTTP transport: ChatRequest, Call, CallWithGrammar, Stream, RawCall, StripThinkBlocks |
@@ -619,7 +604,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | File | Purpose |
 |------|---------|
 | `cmd/iq/main.go` | CLI entry point, root command, version, help routing |
-| `cmd/iq/svc.go` | Status display, model pool/embed/restart commands, thin wrappers for sidecar package |
+| `cmd/iq/svc.go` | Status display, pool/embed/restart commands (`iq pool list/add/rm`, `iq start/stop/restart`), thin wrappers for sidecar package |
 | `cmd/iq/cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `cmd/iq/prompt.go` | 8-step execution pipeline, session management, REPL, trace output |
 | `cmd/iq/prompt_test.go` | End-to-end orchestration tests with mock sidecar (httptest) |
@@ -636,11 +621,13 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.10.0  | Design pivot (A1): retire `pipeline:` config field and two_tier/single_pool routing modes; flat model pool is now the only inference path; `resolveRoute` replaces `resolveSinglePool`+`resolveRoute`; `TierSource` = "pool"; `iq restart` command added; `iq stop` works with no models assigned; `pipeline:` silently ignored on load; `docs/design-pivot-01.md` added |
+| 0.11.0  | A1B — schema v2: flat `models:` list replaces `tiers:` map; `ModelEntry` with per-model param overrides; `ConfigVersion = 2`; `migrateV1` converts v1 tiers to flat list preserving param overrides; `iq pool list/add/rm` replaces `iq tier show/add/rm`; `iq lm get` prints `iq pool add`; `SuggestTier` → `SuggestSize` (returns "small"/"large"); `--tier` flag → `--model` flag on `iq ask`/`iq pry`; TIER column removed from `iq st`; sweep no longer needs `--tier` flag |
 <details>
-<summary>Older versions (v0.2.7 – v0.9.4)</summary>
+<summary>Older versions (v0.2.7 – v0.10.0)</summary>
 
 | Version | Summary |
+|---------|---------|
+| 0.10.0  | Design pivot (A1): retire `pipeline:` config field and two_tier/single_pool routing modes; flat model pool is now the only inference path; `resolveRoute` replaces `resolveSinglePool`+`resolveRoute`; `TierSource` = "pool"; `iq restart` command added; `iq stop` works with no models assigned; `pipeline:` silently ignored on load; `docs/design-pivot-01.md` added |
 |---------|---------|
 | 0.9.4   | `internal/color`: all funcs accept `any` via fmt.Sprint; add GrnR (reverse-video green), Blu, Cya; color test coverage 77→81% |
 | 0.9.3   | Test coverage: cmd/iq (9→11%), kb (3→21%), lm (36→53%), sidecar +CallWithGrammar; pure-function tests across cmd/iq and internal/*; build.sh coverage display: domain (internal/*) as primary signal with total in parentheses |

@@ -208,7 +208,7 @@ func PickSidecar(tier string, preferSmallest bool, diskUsage func(string) int64)
 		}
 	}
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no running %s-tier sidecar — run 'iq start %s'", tier, tier)
+		return nil, fmt.Errorf("no running sidecar for %q — run 'iq start %s'", tier, tier)
 	}
 	if preferSmallest && len(candidates) > 1 && diskUsage != nil {
 		best := candidates[0]
@@ -320,10 +320,10 @@ func IsVisionModel(modelPath string) bool {
 	return false
 }
 
-// StartInfer spawns infer_server.py for the given tier/model.
+// StartInfer spawns infer_server.py for the given model.
 // modelPath and pythonPath must be pre-resolved by the caller.
 // Returns the State on success (the caller may want to register in manifest, etc.).
-func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
+func StartInfer(modelID, modelPath, pythonPath string) (*State, error) {
 	port, err := NextAvailablePort()
 	if err != nil {
 		return nil, err
@@ -375,7 +375,7 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 	lf.Close()
 
 	state := &State{
-		Tier:    tier,
+		Tier:    "infer",
 		Model:   modelID,
 		PID:     cmd.Process.Pid,
 		Port:    port,
@@ -390,7 +390,7 @@ func StartInfer(tier, modelID, modelPath, pythonPath string) (*State, error) {
 	go func() { exited <- cmd.Wait() }()
 
 	fmt.Printf("  %-11s  pid %-7d  %s  ",
-		tier, cmd.Process.Pid, Endpoint(port))
+		modelID, cmd.Process.Pid, Endpoint(port))
 	healthURL := fmt.Sprintf("%s/v1/models", Endpoint(port))
 	deadline := time.Now().Add(ReadyTimeout)
 	client := &http.Client{Timeout: 2 * time.Second}

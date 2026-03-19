@@ -335,20 +335,22 @@ func ParseQuant(id string) string {
 	return m
 }
 
-// SuggestTier returns a tier name based on model parameter count heuristic.
-func SuggestTier(id string) string {
+// SuggestSize returns a display size hint ("small" or "large") based on the
+// model's disk footprint or parameter count heuristic. Used for informational
+// display only — not a routing concept.
+func SuggestSize(id string) string {
 	// Prefer actual disk size if model is already downloaded.
 	disk := DiskUsage(HFCacheDir(id))
 	if disk > 0 {
 		if disk < 2*1024*1024*1024 { // < 2GB
-			return "fast"
+			return "small"
 		}
-		return "slow"
+		return "large"
 	}
 	// Not yet downloaded — estimate from parameter count in model name.
 	raw := ParseParams(id)
 	if raw == "-" {
-		return "slow" // unknown → assume large
+		return "large" // unknown → assume large
 	}
 	upper := strings.ToUpper(raw)
 	var mb int64
@@ -361,14 +363,14 @@ func SuggestTier(id string) string {
 		fmt.Sscanf(raw[:len(raw)-1], "%f", &f)
 		mb = int64(f)
 	} else {
-		return "slow"
+		return "large"
 	}
 	// Rough heuristic: 4-bit quant ~0.5 bytes/param + overhead.
 	// 2GB disk ≈ ~3B params at 4-bit.
 	if mb < 3000 {
-		return "fast"
+		return "small"
 	}
-	return "slow"
+	return "large"
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────

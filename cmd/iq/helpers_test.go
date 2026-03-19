@@ -62,12 +62,12 @@ func TestShortID(t *testing.T) {
 // ── newSession ────────────────────────────────────────────────────────────────
 
 func TestNewSession(t *testing.T) {
-	s := newSession("my-cue", "fast")
+	s := newSession("my-cue", "mlx-community/Llama-3.2-3B-Instruct-4bit")
 	if s.Cue != "my-cue" {
 		t.Errorf("newSession.Cue = %q, want %q", s.Cue, "my-cue")
 	}
-	if s.Tier != "fast" {
-		t.Errorf("newSession.Tier = %q, want %q", s.Tier, "fast")
+	if s.Model != "mlx-community/Llama-3.2-3B-Instruct-4bit" {
+		t.Errorf("newSession.Model = %q, want %q", s.Model, "mlx-community/Llama-3.2-3B-Instruct-4bit")
 	}
 	if s.ID == "" {
 		t.Error("newSession.ID is empty")
@@ -118,7 +118,7 @@ func TestSessionRoundTrip(t *testing.T) {
 		ID:      "test-roundtrip",
 		Name:    "my session",
 		Cue:     "general",
-		Tier:    "fast",
+		Model:   "mlx-community/test-model",
 		Created: time.Now().UTC().Format(time.RFC3339),
 		Messages: []config.Message{
 			{Role: "user", Content: "hello"},
@@ -136,9 +136,9 @@ func TestSessionRoundTrip(t *testing.T) {
 	if got == nil {
 		t.Fatal("loadSession returned nil")
 	}
-	if got.ID != s.ID || got.Cue != s.Cue || got.Tier != s.Tier {
-		t.Errorf("round-trip mismatch: got %+v, want ID=%s Cue=%s Tier=%s",
-			got, s.ID, s.Cue, s.Tier)
+	if got.ID != s.ID || got.Cue != s.Cue || got.Model != s.Model {
+		t.Errorf("round-trip mismatch: got %+v, want ID=%s Cue=%s Model=%s",
+			got, s.ID, s.Cue, s.Model)
 	}
 	if len(got.Messages) != 2 || got.Messages[0].Content != "hello" {
 		t.Errorf("round-trip messages mismatch: got %+v", got.Messages)
@@ -160,53 +160,56 @@ func TestLoadSessionMissing(t *testing.T) {
 
 // ── resolveModels ─────────────────────────────────────────────────────────────
 
-// writeCfgYAML writes a minimal config.yaml with the given tier models.
-func writeCfgYAML(t *testing.T, home, fastModel, slowModel string) {
+// writeCfgYAML writes a minimal v2 config.yaml with the given pool models.
+func writeCfgYAML(t *testing.T, home string, models ...string) {
 	t.Helper()
 	cfgDir := filepath.Join(home, ".config", "iq")
 	if err := os.MkdirAll(cfgDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	fast := "[]"
-	if fastModel != "" {
-		fast = fmt.Sprintf("\n      - %s", fastModel)
+	var entries strings.Builder
+	for _, m := range models {
+		if m != "" {
+			entries.WriteString(fmt.Sprintf("  - id: %s\n", m))
+		}
 	}
-	slow := "[]"
-	if slowModel != "" {
-		slow = fmt.Sprintf("\n      - %s", slowModel)
+	var yaml string
+	if entries.String() == "" {
+		yaml = "version: 2\nmodels: []\n"
+	} else {
+		yaml = fmt.Sprintf("version: 2\nmodels:\n%s", entries.String())
 	}
-	yaml := fmt.Sprintf("version: 1\ntiers:\n  fast:\n    models: %s\n  slow:\n    models: %s\n", fast, slow)
 	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(yaml), 0644)
 }
 
 func TestResolveModels(t *testing.T) {
-	t.Run("tier name fast", func(t *testing.T) {
+	t.Run("specific model ID", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
-		writeCfgYAML(t, home, "org/fast-model", "")
-		got, err := resolveModels("fast")
+		writeCfgYAML(t, home, "org/fast-model")
+		got, err := resolveModels("org/fast-model")
 		if err != nil {
-			t.Fatalf("resolveModels(fast): %v", err)
+			t.Fatalf("resolveModels(org/fast-model): %v", err)
 		}
 		if len(got) != 1 || got[0] != "org/fast-model" {
-			t.Errorf("resolveModels(fast) = %v, want [org/fast-model]", got)
+			t.Errorf("resolveModels(org/fast-model) = %v, want [org/fast-model]", got)
 		}
 	})
 
-	t.Run("tier name empty", func(t *testing.T) {
+	t.Run("empty pool", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
-		writeCfgYAML(t, home, "", "")
-		_, err := resolveModels("fast")
+		writeCfgYAML(t, home)
+		_, err := resolveModels("")
 		if err == nil || !strings.Contains(err.Error(), "no models") {
-			t.Errorf("resolveModels(empty tier): want 'no models' error, got %v", err)
+			t.Errorf("resolveModels(empty pool): want 'no models' error, got %v", err)
 		}
 	})
 
 	t.Run("model ID", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
-		writeCfgYAML(t, home, "org/my-model", "")
+		writeCfgYAML(t, home, "org/my-model")
 		got, err := resolveModels("org/my-model")
 		if err != nil {
 			t.Fatalf("resolveModels(model ID): %v", err)
@@ -219,7 +222,7 @@ func TestResolveModels(t *testing.T) {
 	t.Run("unknown arg", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
-		writeCfgYAML(t, home, "org/fast-model", "")
+		writeCfgYAML(t, home, "org/fast-model")
 		_, err := resolveModels("not-a-tier-or-model")
 		if err == nil {
 			t.Error("resolveModels(unknown): expected error, got nil")

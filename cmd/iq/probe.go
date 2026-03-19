@@ -22,7 +22,7 @@ func printProbeHelp() {
 	n := programName
 	fmt.Printf("Send a raw message directly to a model sidecar, bypassing the IQ framework.\n\n")
 	fmt.Printf("%s\n", color.Whi2("USAGE"))
-	fmt.Printf("  %s pry <model|tier> [flags] <message>\n\n", n)
+	fmt.Printf("  %s pry <model> [flags] <message>\n\n", n)
 	fmt.Printf("%s\n", color.Whi2("FLAGS"))
 	fmt.Printf("  %-30s %s\n", "-c, --cue <name>", "Use a cue's system prompt")
 	fmt.Printf("  %-30s %s\n", "-s, --system <text>", "Use a literal system prompt")
@@ -31,11 +31,9 @@ func printProbeHelp() {
 	fmt.Printf("%s\n", color.Whi2("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
 	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s pry fast \"what is 2+2?\"\n", n)
-	fmt.Printf("  $ %s pry slow \"explain gradient descent\"\n", n)
 	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"hello\"\n", n)
-	fmt.Printf("  $ %s pry fast \"respond in pirate speak\" -s \"You are a pirate.\"\n", n)
-	fmt.Printf("  $ %s pry fast \"solve x^2 + 3x - 4\" -c math\n", n)
+	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"respond in pirate speak\" -s \"You are a pirate.\"\n", n)
+	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"solve x^2 + 3x - 4\" -c math\n", n)
 }
 
 // ── Command ───────────────────────────────────────────────────────────────────
@@ -47,7 +45,7 @@ func newProbeCmd() *cobra.Command {
 	var useKB bool
 
 	cmd := &cobra.Command{
-		Use:          "pry <model|tier> <message>",
+		Use:          "pry <model> <message>",
 		Aliases:      []string{"probe"},
 		Short:        "Send a raw message directly to a model sidecar",
 		SilenceUsage: true,
@@ -96,41 +94,33 @@ func newProbeCmd() *cobra.Command {
 				}
 			}
 
-			// Resolve sidecar — tier name or specific model ID.
+			// Resolve sidecar by model ID.
 			var sc *sidecar.State
 			var err error
-			switch target {
-			case "fast", "slow":
-				sc, err = pickSidecar(target, false)
-				if err != nil {
-					return err
-				}
-			default:
-				// Try by slug first (e.g. state file keyed by model ID).
-				sc, err = sidecar.ReadState(target)
-				if err != nil {
-					return err
-				}
-				// If not found by slug, scan all live states for a matching Model field.
-				// This handles the embed sidecar whose state is keyed as "embed" but
-				// whose Model field holds the full HF model ID.
-				if sc == nil || !sidecar.PidAlive(sc.PID) {
-					live, lErr := sidecar.AllLiveStates()
-					if lErr == nil {
-						for _, s := range live {
-							if s.Model == target {
-								sc = s
-								break
-							}
+			// Try by slug first (e.g. state file keyed by model ID).
+			sc, err = sidecar.ReadState(target)
+			if err != nil {
+				return err
+			}
+			// If not found by slug, scan all live states for a matching Model field.
+			// This handles the embed sidecar whose state is keyed as "embed" but
+			// whose Model field holds the full HF model ID.
+			if sc == nil || !sidecar.PidAlive(sc.PID) {
+				live, lErr := sidecar.AllLiveStates()
+				if lErr == nil {
+					for _, s := range live {
+						if s.Model == target {
+							sc = s
+							break
 						}
 					}
 				}
-				if sc == nil || !sidecar.PidAlive(sc.PID) {
-					return fmt.Errorf("%s is not running — run 'iq start %s' first", target, target)
-				}
-				if sc.Tier == "embed" {
-					return fmt.Errorf("%s is an embedding model — it does not support chat inference", target)
-				}
+			}
+			if sc == nil || !sidecar.PidAlive(sc.PID) {
+				return fmt.Errorf("%s is not running — run 'iq start %s' first", target, target)
+			}
+			if sc.Tier == "embed" {
+				return fmt.Errorf("%s is an embedding model — it does not support chat inference", target)
 			}
 
 			// Print routing header in gray.
@@ -139,8 +129,8 @@ func newProbeCmd() *cobra.Command {
 				cueTag = "  cue:" + cueName
 			}
 			fmt.Fprintf(os.Stderr, "%s\n",
-				color.Gra(fmt.Sprintf("[%s  %s  :%d%s]",
-					sc.Tier, sc.Model, sc.Port, cueTag)))
+				color.Gra(fmt.Sprintf("[%s  :%d%s]",
+					sc.Model, sc.Port, cueTag)))
 
 			// Build messages.
 			var messages []config.Message
@@ -151,7 +141,7 @@ func newProbeCmd() *cobra.Command {
 
 			// Resolve inference parameters for this tier.
 			probeCfg, _ := config.Load(nil)
-			probeIP := config.ResolveInferParams(probeCfg, sc.Tier)
+			probeIP := config.ResolveInferParams(probeCfg, sc.Model)
 
 			// Infer and time it.
 			t0 := time.Now()

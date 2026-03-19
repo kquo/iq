@@ -22,6 +22,8 @@ Within that spirit, IQ is also a **framework for building domain-specific local 
 
 See [`docs/design-pivot-01.md`](docs/design-pivot-01.md) for the rationale behind the current roadmap structure.
 
+**Longer-term:** IQ is planned to split into three focused binaries (`iq`, `lm`, `kb`) sharing a common set of internal packages in a monorepo. This roadmap covers `iq` only. See [`docs/project-split-01.md`](docs/project-split-01.md) for the split design and extraction sequence.
+
 
 ## Development Methodology
 
@@ -35,9 +37,6 @@ Features are identified by group letter + sequence number: `A1`, `B2`, etc. Sort
 ## Group A — Pipeline consolidation
 
 Finish the simplification that A1 started. Changes here reduce inference passes and remove routing complexity.
-
-**A1B — Rename `tiers:` to flat `models:` list** *(schema v2 migration)*
-`tiers: {fast: ..., slow: ...}` is vestigial naming from the two-tier era. Replace with a flat `models: [model-id, ...]` list and global-only inference params. Requires: config schema v2, `migrateV1` to flatten tiers on load, rename `iq tier` → `iq model` command group, remove `TierConfig`/`TierOrder`/`TierForModel`/`TierModels`, simplify `ResolveInferParams` (drop tier arg), update sidecar `State.Tier` handling, update `lm.SuggestTier`, update probe/perf/status display. See `docs/a1b_ac.md` (to be written before implementation).
 
 **A2 — Model-driven tool dispatch (drop the grammar harness)**
 Tool detection is already handled by embed short-circuit. For cases that reach the grammar pass today, replace it with model-driven dispatch: send tool definitions in the system prompt and let the model emit `<tool_call>` blocks or plain text organically. Eliminates the last conditional inference pass for capable models. Smaller models that can't reliably emit structured calls get a lightweight fallback.

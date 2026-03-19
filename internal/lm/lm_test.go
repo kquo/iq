@@ -377,22 +377,22 @@ func TestHFFetchModelCancelledContext(t *testing.T) {
 	}
 }
 
-// ── SuggestTier ───────────────────────────────────────────────────────────────
+// ── SuggestSize ───────────────────────────────────────────────────────────────
 
-func TestSuggestTierByName(t *testing.T) {
-	// These models are not downloaded, so SuggestTier falls back to param count.
+func TestSuggestSizeByName(t *testing.T) {
+	// These models are not downloaded, so SuggestSize falls back to param count.
 	cases := []struct {
 		id   string
 		want string
 	}{
-		{"org/tiny-135m-4bit", "fast"},    // 135M → fast
-		{"org/large-7b-instruct", "slow"}, // 7B → slow
-		{"org/unknown-model", "slow"},     // unknown → assume large
+		{"org/tiny-135m-4bit", "small"},    // 135M → small
+		{"org/large-7b-instruct", "large"}, // 7B → large
+		{"org/unknown-model", "large"},     // unknown → assume large
 	}
 	for _, tc := range cases {
-		got := SuggestTier(tc.id)
+		got := SuggestSize(tc.id)
 		if got != tc.want {
-			t.Errorf("SuggestTier(%q) = %q, want %q", tc.id, got, tc.want)
+			t.Errorf("SuggestSize(%q) = %q, want %q", tc.id, got, tc.want)
 		}
 	}
 }

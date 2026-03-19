@@ -15,7 +15,7 @@ func writeTestState(t *testing.T, home, modelID string, port, pid int) {
 		t.Fatalf("mkdir run dir: %v", err)
 	}
 	state := &State{
-		Tier:    "fast",
+		Tier:    "infer",
 		Model:   modelID,
 		PID:     pid,
 		Port:    port,

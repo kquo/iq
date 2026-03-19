@@ -97,29 +97,25 @@ func runConfigShow() error {
 	cfgField("seed", fmtOptI(gp.Seed, false, "—  (random)"))
 	fmt.Println()
 
-	// Tiers — mirrors config.yaml structure, showing resolved effective values per tier.
-	cfgField("tiers:", "")
-	for _, t := range config.TierOrder {
-		models := cfg.TierModels(t)
-		cfgField(fmt.Sprintf("  %s:", t), "")
-		if len(models) == 0 {
-			cfgField("    models", "(empty)")
-		} else {
-			for _, m := range models {
-				fmt.Printf("      - %s\n", m)
-			}
-		}
-		// Show effective inference params for this tier.
-		tp := config.ResolveInferParams(cfg, t)
-		tc := cfg.Tiers[t]
-		cfgField("    repetition_penalty", fmtParam(tp.RepetitionPenalty, tc != nil && tc.RepetitionPenalty != nil, "%.1f"))
-		cfgField("    temperature", fmtParam(tp.Temperature, tc != nil && tc.Temperature != nil, "%.1f"))
-		cfgField("    max_tokens", fmtParamInt(tp.MaxTokens, tc != nil && tc.MaxTokens != nil))
-		cfgField("    top_p", fmtOptF(tp.TopP, tc != nil && tc.TopP != nil, "1.0  (mlx_lm default)", "%.2f"))
-		cfgField("    min_p", fmtOptF(tp.MinP, tc != nil && tc.MinP != nil, "0.0  (mlx_lm default)", "%.2f"))
-		cfgField("    top_k", fmtOptI(tp.TopK, tc != nil && tc.TopK != nil, "0  (mlx_lm default)"))
-		cfgField("    stop", fmtStop(tp.Stop, tc != nil && len(tc.Stop) > 0))
-		cfgField("    seed", fmtOptI(tp.Seed, tc != nil && tc.Seed != nil, "—  (random)"))
+	// Pool — flat list of inference models with per-model param overrides.
+	cfgField("models:", "")
+	poolModels := cfg.AllModels()
+	if len(poolModels) == 0 {
+		cfgField("  (empty)", "")
+	}
+	for _, m := range poolModels {
+		cfgField(fmt.Sprintf("  - %s", m), "")
+		// Show effective inference params for this model.
+		rp := config.ResolveInferParams(cfg, m)
+		me := cfg.ModelEntryFor(m)
+		cfgField("    repetition_penalty", fmtParam(rp.RepetitionPenalty, me != nil && me.RepetitionPenalty != nil, "%.1f"))
+		cfgField("    temperature", fmtParam(rp.Temperature, me != nil && me.Temperature != nil, "%.1f"))
+		cfgField("    max_tokens", fmtParamInt(rp.MaxTokens, me != nil && me.MaxTokens != nil))
+		cfgField("    top_p", fmtOptF(rp.TopP, me != nil && me.TopP != nil, "1.0  (mlx_lm default)", "%.2f"))
+		cfgField("    min_p", fmtOptF(rp.MinP, me != nil && me.MinP != nil, "0.0  (mlx_lm default)", "%.2f"))
+		cfgField("    top_k", fmtOptI(rp.TopK, me != nil && me.TopK != nil, "0  (mlx_lm default)"))
+		cfgField("    stop", fmtStop(rp.Stop, me != nil && len(me.Stop) > 0))
+		cfgField("    seed", fmtOptI(rp.Seed, me != nil && me.Seed != nil, "—  (random)"))
 	}
 	fmt.Println()
 
@@ -290,15 +286,9 @@ func runConfigValidate() error {
 	if err != nil {
 		fail("config load error: " + err.Error())
 	} else {
-		// Check tiers have models.
-		emptyTiers := 0
-		for _, t := range config.TierOrder {
-			if len(cfg.TierModels(t)) == 0 {
-				emptyTiers++
-			}
-		}
-		if emptyTiers == len(config.TierOrder) {
-			warn("no models assigned to any tier — run: iq tier add <tier> <model>")
+		// Check pool has models.
+		if len(cfg.AllModels()) == 0 {
+			warn("no models in pool — run: iq pool add <model>")
 		}
 
 		// Check embed model.

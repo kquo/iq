@@ -192,10 +192,10 @@ func newLmGetCmd() *cobra.Command {
 				}
 			}
 
-			tier := lm.SuggestTier(model)
-			fmt.Printf("\nSuggested tier: %s\n", color.Grn(tier))
+			size := lm.SuggestSize(model)
+			fmt.Printf("\nSuggested size: %s\n", color.Grn(size))
 			fmt.Printf("%s\n", color.Gra(
-				fmt.Sprintf("  iq tier add %s %s", tier, model)))
+				fmt.Sprintf("  iq pool add %s", model)))
 
 			return nil
 		},
@@ -238,16 +238,10 @@ func newLmListCmd() *cobra.Command {
 				var tierDisplay string
 				if e.ID == emM {
 					tierDisplay = color.Grn(fmt.Sprintf("%-6s", "embed"))
+				} else if cfg != nil && cfg.HasModel(e.ID) {
+					tierDisplay = color.Grn(fmt.Sprintf("%-6s", "pool"))
 				} else {
-					tier := config.TierForModel(e.ID)
-					tierRaw := "<unset>"
-					if tier != "" {
-						tierRaw = tier
-					}
-					tierDisplay = color.Gra(fmt.Sprintf("%-6s", tierRaw))
-					if tier != "" {
-						tierDisplay = color.Grn(fmt.Sprintf("%-6s", tierRaw))
-					}
+					tierDisplay = color.Gra(fmt.Sprintf("%-6s", "<unset>"))
 				}
 				fmt.Printf("%-55s  %s  %8s  %-10s  %8s  %10s  %s\n",
 					e.ID,
@@ -277,6 +271,7 @@ func newLmShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg, _ := config.Load(nil)
 
 			id := args[0]
 			var entry *lm.ManifestEntry
@@ -349,14 +344,13 @@ func newLmShowCmd() *cobra.Command {
 			fmt.Printf("%-12s %s\n", "CACHE", cacheDir)
 			fmt.Printf("%-12s %s\n", "CUE", cue.ForModel(entry.ID))
 
-			tier := config.TierForModel(entry.ID)
-			if tier == "" {
-				suggested := lm.SuggestTier(entry.ID)
-				fmt.Printf("%-12s %s\n", "TIER", color.Gra("<unset>"))
-				fmt.Printf("%-12s %s\n", "",
-					color.Gra(fmt.Sprintf("iq tier add %s %s", suggested, entry.ID)))
+			if cfg != nil && cfg.HasModel(entry.ID) {
+				fmt.Printf("%-12s %s\n", "POOL", color.Grn("yes"))
 			} else {
-				fmt.Printf("%-12s %s\n", "TIER", color.Grn(tier))
+				size := lm.SuggestSize(entry.ID)
+				fmt.Printf("%-12s %s\n", "POOL", color.Gra("<unset>"))
+				fmt.Printf("%-12s %s\n", "",
+					color.Gra(fmt.Sprintf("iq pool add %s  (size hint: %s)", entry.ID, size)))
 			}
 
 			files, ferr := lm.SnapshotFiles(cacheDir)
@@ -402,8 +396,8 @@ func newLmRmCmd() *cobra.Command {
 				}
 			}
 
-			// Warn and auto-clear if model is assigned to a tier.
-			if t := config.TierForModel(model); t != "" {
+			// Warn and auto-clear if model is in the pool.
+			if cfg != nil && cfg.HasModel(model) {
 				state, _ := sidecar.ReadState(model)
 				if state != nil && sidecar.PidAlive(state.PID) {
 					fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: stopping "+model+" sidecar"))
@@ -411,13 +405,13 @@ func newLmRmCmd() *cobra.Command {
 						return fmt.Errorf("failed to stop sidecar: %w", err)
 					}
 				}
-				fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: removing "+model+" from "+t+" tier"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: removing "+model+" from pool"))
 				// Reload config in case it was modified above.
 				cfg, _ = config.Load(nil)
 				if cfg != nil {
-					for i, m := range cfg.TierModels(t) {
-						if m == model {
-							cfg.Tiers[t].Models = append(cfg.Tiers[t].Models[:i], cfg.Tiers[t].Models[i+1:]...)
+					for i, m := range cfg.Models {
+						if m.ID == model {
+							cfg.Models = append(cfg.Models[:i], cfg.Models[i+1:]...)
 							break
 						}
 					}

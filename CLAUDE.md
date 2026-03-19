@@ -10,6 +10,8 @@
     - Runs vet (`go vet`) and static analysis (`staticcheck`)
     - Runs all tests
     - Builds binaries in $GOPATH/bin
+  - `./build.sh` with no arguments builds **all** utilities in the repo
+  - `./build.sh <name>` (e.g. `./build.sh cash5`) builds only that utility
 
 ## Versioning
 - Current version from latest Git tag, or from `programVersion` in `cmd/iq/main.go`

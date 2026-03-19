@@ -56,7 +56,7 @@ func serverPort(t *testing.T, srv *httptest.Server) int {
 // setupTestEnv creates a minimal ~/.config/iq structure under a temp dir,
 // writes config.yaml and a sidecar state file, and sets HOME so all
 // config/sidecar lookups resolve there.
-func setupTestEnv(t *testing.T, modelID string, tier string, port int) string {
+func setupTestEnv(t *testing.T, modelID string, port int) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -67,15 +67,9 @@ func setupTestEnv(t *testing.T, modelID string, tier string, port int) string {
 		t.Fatal(err)
 	}
 
-	// Write config.yaml with the model in the specified tier.
+	// Write config.yaml with the model in the flat pool.
 	cfg := &config.Config{
-		Tiers: map[string]*config.TierConfig{
-			"fast": {Models: []string{}},
-			"slow": {Models: []string{}},
-		},
-	}
-	if tc, ok := cfg.Tiers[tier]; ok {
-		tc.Models = []string{modelID}
+		Models: []config.ModelEntry{{ID: modelID}},
 	}
 	cfgData, _ := json.Marshal(cfg) // yaml would be better but json is valid yaml
 	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), cfgData, 0644)
@@ -83,7 +77,7 @@ func setupTestEnv(t *testing.T, modelID string, tier string, port int) string {
 	// Write sidecar state file so PickSidecar finds it.
 	// PID = our own process, which PidAlive always reports as true.
 	state := &sidecar.State{
-		Tier:    tier,
+		Tier:    "infer",
 		Model:   modelID,
 		PID:     os.Getpid(),
 		Port:    port,
@@ -118,11 +112,11 @@ func TestEndToEndInference(t *testing.T) {
 	defer srv.Close()
 	port := serverPort(t, srv)
 
-	setupTestEnv(t, modelID, "fast", port)
+	setupTestEnv(t, modelID, port)
 
-	// Execute with cue+tier forced, all optional features off, no streaming.
+	// Execute with model forced, all optional features off, no streaming.
 	opts := promptOpts{
-		tier:     "fast",
+		model:    modelID,
 		noKB:     true,
 		noCache:  true,
 		toolMode: "off",
@@ -167,11 +161,11 @@ func TestDumpPrompt(t *testing.T) {
 	defer srv.Close()
 	port := serverPort(t, srv)
 
-	home := setupTestEnv(t, modelID, "fast", port)
+	home := setupTestEnv(t, modelID, port)
 
 	dumpFile := filepath.Join(home, "prompt.json")
 	opts := promptOpts{
-		tier:       "fast",
+		model:      modelID,
 		noKB:       true,
 		noCache:    true,
 		toolMode:   "off",
@@ -252,16 +246,16 @@ func TestHelpFlagCoverage(t *testing.T) {
 	}
 }
 
-// writeRunState is a test helper that writes a sidecar state file for a given
-// tier into the run directory under the given home path.
-func writeRunState(t *testing.T, home, tier, modelID string, port int) {
+// writeRunState is a test helper that writes a sidecar state file
+// into the run directory under the given home path.
+func writeRunState(t *testing.T, home, modelID string, port int) {
 	t.Helper()
 	runDir := filepath.Join(home, ".config", "iq", "run")
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	state := &sidecar.State{
-		Tier:    tier,
+		Tier:    "infer",
 		Model:   modelID,
 		PID:     os.Getpid(),
 		Port:    port,
@@ -300,10 +294,10 @@ func TestResolveRoute(t *testing.T) {
 			t.Setenv("HOME", home)
 
 			if tc.setupFast {
-				writeRunState(t, home, "fast", "org/fast-model", 27001)
+				writeRunState(t, home, "org/fast-model", 27001)
 			}
 			if tc.setupSlow {
-				writeRunState(t, home, "slow", "org/slow-model", 27002)
+				writeRunState(t, home, "org/slow-model", 27002)
 			}
 
 			cues := makeCues("mycue", "fast")
@@ -321,8 +315,8 @@ func TestResolveRoute(t *testing.T) {
 			if route.ModelID != tc.wantModel {
 				t.Errorf("model = %q, want %q", route.ModelID, tc.wantModel)
 			}
-			if route.TierSource != "pool" {
-				t.Errorf("tierSource = %q, want %q", route.TierSource, "pool")
+			if route.ModelSource != "pool" {
+				t.Errorf("modelSource = %q, want %q", route.ModelSource, "pool")
 			}
 		})
 	}
@@ -339,7 +333,6 @@ func TestSessionLocking(t *testing.T) {
 		ID:   "test-lock-session",
 		Name: "initial",
 		Cue:  "general",
-		Tier: "fast",
 	}
 	if err := saveSession(base); err != nil {
 		t.Fatalf("initial saveSession: %v", err)
@@ -356,7 +349,6 @@ func TestSessionLocking(t *testing.T) {
 				ID:       base.ID,
 				Name:     fmt.Sprintf("worker-%d", n),
 				Cue:      base.Cue,
-				Tier:     base.Tier,
 				Messages: []config.Message{{Role: "user", Content: fmt.Sprintf("msg-%d", n)}},
 			}
 			if err := saveSession(s); err != nil {
@@ -387,13 +379,13 @@ func TestExecutePromptContextCancel(t *testing.T) {
 	})
 	defer srv.Close()
 	port := serverPort(t, srv)
-	setupTestEnv(t, modelID, "fast", port)
+	setupTestEnv(t, modelID, port)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling
 
 	opts := promptOpts{
-		tier:     "fast",
+		model:    modelID,
 		noKB:     true,
 		noCache:  true,
 		toolMode: "off",
@@ -418,13 +410,13 @@ func TestKBPrefetchCancelled(t *testing.T) {
 	srv := mockInferServer(t, func(req sidecar.ChatRequest) string { return "ok" })
 	defer srv.Close()
 	port := serverPort(t, srv)
-	setupTestEnv(t, modelID, "fast", port)
+	setupTestEnv(t, modelID, port)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	opts := promptOpts{
-		tier:     "fast",
+		model:    modelID,
 		noCache:  true,
 		toolMode: "off",
 		noStream: true,

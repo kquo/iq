@@ -41,7 +41,7 @@ type session struct {
 	Name        string           `yaml:"name"`
 	Description string           `yaml:"description"`
 	Cue         string           `yaml:"cue"`
-	Tier        string           `yaml:"tier"`
+	Model       string           `yaml:"model"`
 	Created     string           `yaml:"created"`
 	Updated     string           `yaml:"updated"`
 	Messages    []config.Message `yaml:"messages"`
@@ -131,12 +131,12 @@ func saveSession(s *session) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func newSession(cueN, tierN string) *session {
+func newSession(cueN, modelN string) *session {
 	id := shortID()
 	return &session{
 		ID:      id,
 		Cue:     cueN,
-		Tier:    tierN,
+		Model:   modelN,
 		Created: time.Now().UTC().Format(time.RFC3339),
 		Updated: time.Now().UTC().Format(time.RFC3339),
 	}
@@ -157,14 +157,12 @@ func shortID() string {
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 type routeResult struct {
-	CueName       string
-	Category      string
-	SuggestedTier string
-	SystemPrompt  string
-	Tier          string
-	Port          int
-	ModelID       string
-	TierSource    string // "cue_override", "suggested_tier", "fallback"
+	CueName      string
+	Category     string
+	SystemPrompt string
+	Port         int
+	ModelID      string
+	ModelSource  string // "pool", "flag_override"
 }
 
 // resolveRoute picks the first live inference sidecar and applies the cue's
@@ -174,21 +172,18 @@ func resolveRoute(cueName string, cues []cue.Cue) (*routeResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	var sysPrompt, category, suggestedTier string
+	var sysPrompt, category string
 	if _, c := cue.Find(cues, cueName); c != nil {
 		sysPrompt = c.SystemPrompt
 		category = c.Category
-		suggestedTier = c.SuggestedTier
 	}
 	return &routeResult{
-		CueName:       cueName,
-		Category:      category,
-		SuggestedTier: suggestedTier,
-		SystemPrompt:  sysPrompt,
-		Tier:          sc.Tier,
-		Port:          sc.Port,
-		ModelID:       sc.Model,
-		TierSource:    "pool",
+		CueName:      cueName,
+		Category:     category,
+		SystemPrompt: sysPrompt,
+		Port:         sc.Port,
+		ModelID:      sc.Model,
+		ModelSource:  "pool",
 	}, nil
 }
 
@@ -366,8 +361,8 @@ func printStep2Route(route *routeResult, elapsed time.Duration) {
 	traceStep("2 ", "RESOLVE ROUTE")
 	traceField("task", "Map resolved cue to model tier and running sidecar")
 	traceField("model", fmt.Sprintf("%s @ localhost:%d", route.ModelID, route.Port))
-	traceField("cue", fmt.Sprintf("%s → %s/%s", route.CueName, route.Category, route.Tier))
-	traceField("tier_source", route.TierSource)
+	traceField("cue", fmt.Sprintf("%s → %s", route.CueName, route.Category))
+	traceField("model_source", route.ModelSource)
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
@@ -452,7 +447,7 @@ Return only valid JSON, nothing else.`
 			return
 		}
 		nameCfg, _ := config.Load(nil)
-		nameIP := config.ResolveInferParams(nameCfg, sc.Tier)
+		nameIP := config.ResolveInferParams(nameCfg, sc.Model)
 		response, err := sidecar.Call(context.Background(), sc.Port, []config.Message{
 			{Role: "system", Content: systemMsg},
 			{Role: "user", Content: excerpt.String()},
@@ -496,7 +491,7 @@ func truncate(s string, n int) string {
 type promptOpts struct {
 	cueName    string
 	category   string
-	tier       string
+	model      string
 	sessionID  string
 	dryRun     bool
 	debug      bool
@@ -523,7 +518,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 	cueName := opts.cueName
 	var et *embed.ClassifyTrace
 
-	if cueName == "" && opts.tier == "" {
+	if cueName == "" && opts.model == "" {
 		candidates := cues
 		if opts.category != "" {
 			candidates = nil
@@ -599,18 +594,16 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 	// ── Step 2: RESOLVE ROUTE ──
 	var route *routeResult
 	t2 := time.Now()
-	if opts.tier != "" {
-		sidecar, sErr := pickSidecar(opts.tier, false)
-		if sErr != nil {
-			return sess, fmt.Errorf("--tier %s: %w", opts.tier, sErr)
+	if opts.model != "" {
+		sc2, sErr := sidecar.ReadState(opts.model)
+		if sErr != nil || sc2 == nil || !sidecar.PidAlive(sc2.PID) {
+			return sess, fmt.Errorf("--model %s: not running", opts.model)
 		}
 		route = &routeResult{
-			CueName:      "none",
-			TierSource:   "flag_override",
-			SystemPrompt: "",
-			Tier:         opts.tier,
-			Port:         sidecar.Port,
-			ModelID:      sidecar.Model,
+			CueName:     "none",
+			ModelSource: "flag_override",
+			Port:        sc2.Port,
+			ModelID:     sc2.Model,
 		}
 	} else {
 		route, err = resolveRoute(cueName, cues)
@@ -623,7 +616,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 	}
 
 	// Resolve inference parameters: per-tier > global > hardcoded default.
-	ip := config.ResolveInferParams(cfg, route.Tier)
+	ip := config.ResolveInferParams(cfg, route.ModelID)
 
 	// Wire search client with Brave fallback key if configured.
 	tools.SetSearchClient(search.NewClient(cfg.BraveAPIKey))
@@ -1113,7 +1106,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 	// ── Step 6: SESSION ──
 	if opts.sessionID != "" || sess != nil {
 		if sess == nil {
-			sess = newSession(route.CueName, route.Tier)
+			sess = newSession(route.CueName, route.ModelID)
 			if opts.sessionID != "" {
 				sess.ID = opts.sessionID
 			}
@@ -1197,14 +1190,14 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 				fmt.Printf("name:        %s\n", sess.Name)
 				fmt.Printf("description: %s\n", sess.Description)
 				fmt.Printf("cue:         %s\n", sess.Cue)
-				fmt.Printf("tier:        %s\n", sess.Tier)
+				fmt.Printf("model:       %s\n", sess.Model)
 				fmt.Printf("turns:       %d\n", len(sess.Messages))
 			}
 			continue
 		case "/clear":
 			sess = nil
 			if opts.sessionID != "" {
-				sess = newSession(opts.cueName, opts.tier)
+				sess = newSession(opts.cueName, opts.model)
 				sess.ID = opts.sessionID
 			}
 			fmt.Println(color.Gra("session cleared"))
@@ -1276,7 +1269,7 @@ func printPromptHelp() {
 	fmt.Printf("%s\n", color.Whi2("FLAGS"))
 	fmt.Printf("  %-32s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-32s %s\n", "-c, --category <n>", "Classify within a category only")
-	fmt.Printf("  %-32s %s\n", "    --tier <n>", "Override tier directly, bypass cue system")
+	fmt.Printf("  %-32s %s\n", "    --model <id>", "Override model directly (must be running)")
 	fmt.Printf("  %-32s %s\n", "-s, --session <id>", "Load/continue a session by ID")
 	fmt.Printf("  %-32s %s\n", "-n, --dry-run", "Trace steps 1–4, skip inference")
 	fmt.Printf("  %-32s %s\n", "    --dump-prompt <f>", "Write assembled messages as JSON (- for stdout), skip inference")
@@ -1306,7 +1299,7 @@ func addPromptFlags(cmd *cobra.Command, opts *promptOpts) {
 	var toolsOn, noTools bool
 	cmd.Flags().StringVarP(&opts.cueName, "cue", "r", "", "Skip classification, use this cue")
 	cmd.Flags().StringVarP(&opts.category, "category", "c", "", "Classify within a category only")
-	cmd.Flags().StringVar(&opts.tier, "tier", "", "Override tier directly")
+	cmd.Flags().StringVar(&opts.model, "model", "", "Override model directly (must be running)")
 	cmd.Flags().StringVarP(&opts.sessionID, "session", "s", "", "Load/continue a session by ID")
 	cmd.Flags().BoolVarP(&opts.dryRun, "dry-run", "n", false, "Trace steps 1-4, skip inference")
 	cmd.Flags().StringVar(&opts.dumpPrompt, "dump-prompt", "", "Write assembled message array as JSON to file (- for stdout), skip inference")
