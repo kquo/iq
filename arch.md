@@ -70,7 +70,7 @@ Key operations: `search`, `get`, `list`, `show`, `rm`.
 
 ### Configuration
 
-Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Message`, `Config`, `ModelEntry`, `InferParams`, `ResolvedParams` structs, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `AllModels()`, `HasModel()`, `ModelEntryFor()`, `ResolveInferParams()`, and `DefaultEmbedModel`. `Message` is the shared role+content type used across inference, session persistence, and cache key computation. `Load()` returns in-memory defaults on read-only filesystems. The model pool is a flat ordered list of `ModelEntry` values — each entry holds a model ID and optional per-model inference parameter overrides.
+Manages `~/.config/iq/config.yaml` via the `internal/config` package. Exports `Message`, `Config`, `ModelEntry`, `InferParams`, `ResolvedParams` structs, `Dir()`, `Path()`, `Load()`, `Save()`, `EmbedModel()`, `AllModels()`, `HasModel()`, `ModelEntryFor()`, `ResolveInferParams()`, and `DefaultEmbedModel`. `Message` is the shared role+content type used across inference, session persistence, and cache key computation. `Load()` returns in-memory defaults on read-only filesystems. The model pool is a flat ordered list of `ModelEntry` values — each entry holds a model ID, an optional `context_window` (input budget for trimming), and optional per-model inference parameter overrides.
 
 **Inference parameters** — eight parameters can be tuned globally and/or per-model:
 
@@ -245,7 +245,7 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 **Step 3 — KB RETRIEVE.** If `kb.json` exists and the embed sidecar is running (and `--no-kb` is not set), the top-3 most similar chunks are retrieved via hybrid scoring. Only chunks whose score meets the minimum threshold (`kb_min_score`, default 0.72; configurable in `config.yaml`) are injected as plain text context in the user message. If no chunks clear the threshold, KB injection is skipped entirely. Skipped silently if KB is empty or unavailable.
 
-**Step 4 — ASSEMBLE.** Combines system prompt (from cue, plus tool instructions if tools enabled), session history (if any), and user message (with KB context prepended if any) into the structured message array sent to inference. `--dump-prompt <file>` writes this array as indented JSON and exits before inference (use `-` for stdout).
+**Step 4 — ASSEMBLE.** Combines system prompt (from cue, plus tool instructions if tools enabled), session history (if any), and user message (with KB context prepended if any) into the structured message array sent to inference. After assembly, if `context_window` is set on the active model, IQ estimates total input tokens (chars/4 heuristic) and trims to fit `context_window − max_tokens` tokens: KB chunks are dropped first (from the end), then session turns oldest-first; the system prompt and current user input are never trimmed. A gray warning is printed if anything was dropped. `--dump-prompt <file>` writes the post-trim array as indented JSON and exits before inference (use `-` for stdout).
 
 **Step 4b — CACHE CHECK.** Computes an FNV64a hash over the assembled message array and model ID, then looks up the hash in `~/.config/iq/response_cache.json`. On a hit (entry exists and is within the 1-hour TTL), the cached response is returned immediately and inference is skipped entirely. Disabled in session mode, when tools are enabled (tool results depend on live execution), and via `--no-cache`.
 
@@ -461,6 +461,7 @@ STEP 4  ASSEMBLE
   system:    cue.system_prompt + tool instructions (if tools enabled)
   ...        session history (if -s)
   user:      kb_context (if any) + input
+  [context budget trim: drop KB chunks then session turns if over context_window − max_tokens]
     │
     ▼
 STEP 4b CACHE CHECK  (if !session && !tools && !--no-cache)
@@ -525,6 +526,10 @@ STEP 3  KB RETRIEVE
 
 STEP 4  ASSEMBLE
   task          Combine system prompt, session history, and user message into message array
+  messages      3
+  est_tokens    1842
+  budget        28672        (context_window=32768, max_tokens=4096)
+  trimmed       —            (or: "2 KB chunks, 1 session turn")
   [system]
     ...
   [user]
@@ -581,7 +586,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | File | Purpose |
 |------|---------|
-| `internal/config/config.go` | Config struct, Load/Save, model pool helpers, embed model, kb_min_score, legacy migrations |
+| `internal/config/config.go` | Config struct, Load/Save, model pool helpers, embed model, kb_min_score, context_window, legacy migrations |
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 | `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
 | `internal/sidecar/transport.go` | OpenAI-compatible HTTP transport: ChatRequest, Call, Stream, RawCall, StripThinkBlocks |
@@ -604,6 +609,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `cmd/iq/svc.go` | Status display, pool/embed/restart commands (`iq pool list/add/rm`, `iq start/stop/restart`), thin wrappers for sidecar package |
 | `cmd/iq/cue.go` | Cue CLI commands (list, show, add, edit, rm, assign, reset, sync) |
 | `cmd/iq/prompt.go` | 8-step execution pipeline, session management, REPL, trace output |
+| `cmd/iq/context.go` | Context budget trimming: token estimation, KB chunk drop, session turn drop |
 | `cmd/iq/prompt_test.go` | End-to-end orchestration tests with mock sidecar (httptest) |
 | `cmd/iq/tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
 | `cmd/iq/kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
@@ -618,12 +624,13 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.11.1  | A2 — drop routing grammar harness: remove `CallWithGrammar`, `RouteGrammar`, `RoutingGrammarProcessor`; rename `BuildRoutingPrompt`→`BuildToolPrompt`; remove `RegistryNames`; collapse grammar path into unified model-driven tool loop; fix root help stale `tier`/`--tier` references |
+| 0.12.0  | A3 — context budget management: `context_window` field on `ModelEntry`; chars/4 token estimation; trim KB chunks then session turns to fit `context_window − max_tokens` budget; gray warning on trim; Step 4 trace shows `est_tokens`/`budget`/`trimmed`; `iq cfg show` displays `context_window` per model |
 <details>
-<summary>Older versions (v0.2.7 – v0.11.0)</summary>
+<summary>Older versions (v0.2.7 – v0.11.1)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.11.1  | A2 — drop routing grammar harness: remove `CallWithGrammar`, `RouteGrammar`, `RoutingGrammarProcessor`; rename `BuildRoutingPrompt`→`BuildToolPrompt`; remove `RegistryNames`; collapse grammar path into unified model-driven tool loop; fix root help stale `tier`/`--tier` references |
 | 0.11.0  | A1B — schema v2: flat `models:` list replaces `tiers:` map; `ModelEntry` with per-model param overrides; `ConfigVersion = 2`; `migrateV1` converts v1 tiers to flat list preserving param overrides; `iq pool list/add/rm` replaces `iq tier show/add/rm`; `iq lm get` prints `iq pool add`; `SuggestTier` → `SuggestSize` (returns "small"/"large"); `--tier` flag → `--model` flag on `iq ask`/`iq pry`; TIER column removed from `iq st`; sweep no longer needs `--tier` flag |
 | 0.10.0  | Design pivot (A1): retire `pipeline:` config field and two_tier/single_pool routing modes; flat model pool is now the only inference path; `resolveRoute` replaces `resolveSinglePool`+`resolveRoute`; `TierSource` = "pool"; `iq restart` command added; `iq stop` works with no models assigned; `pipeline:` silently ignored on load; `docs/design-pivot-01.md` added |
 |---------|---------|

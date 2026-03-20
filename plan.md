@@ -38,10 +38,6 @@ Features are identified by group letter + sequence number: `A1`, `B2`, etc. Sort
 
 Finish the simplification that A1 started. Changes here reduce inference passes and remove routing complexity.
 
-**A3 — Context budget management**
-Before inference, estimate assembled context size against the target model's known context window. Trim in priority order: KB chunks first, then session history; system prompt and user input are never trimmed. Warn the user if anything was dropped. Pure Go work, no inference changes.
-
-
 ## Group B — Write tools
 
 What makes IQ useful for local development. Each write tool requires a spec, a safety model, and a confirmation prompt before execution. Read-only tools already exist; these are the next tier.

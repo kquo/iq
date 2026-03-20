@@ -51,10 +51,12 @@ type InferParams struct {
 // The three legacy fields always carry a value (hardcoded default applies).
 // The five extended fields are nil/empty when not configured — the sidecar
 // omits them from the request and lets mlx_lm use its own defaults.
+// ContextWindow is 0 when not configured (trimming disabled).
 type ResolvedParams struct {
 	RepetitionPenalty float64
 	Temperature       float64
 	MaxTokens         int
+	ContextWindow     int
 	TopP              *float64
 	MinP              *float64
 	TopK              *int
@@ -67,8 +69,9 @@ type ResolvedParams struct {
 // ModelEntry is a single inference model in the flat pool with optional
 // per-model inference param overrides.
 type ModelEntry struct {
-	ID          string `yaml:"id"`
-	InferParams `yaml:",inline"`
+	ID            string `yaml:"id"`
+	ContextWindow int    `yaml:"context_window,omitempty"`
+	InferParams   `yaml:",inline"`
 }
 
 // ── Config file ──────────────────────────────────────────────────────────────
@@ -173,6 +176,9 @@ func ResolveInferParams(cfg *Config, modelID string) ResolvedParams {
 	}
 	// Per-model overrides.
 	if me := cfg.ModelEntryFor(modelID); me != nil {
+		if me.ContextWindow > 0 {
+			p.ContextWindow = me.ContextWindow
+		}
 		if me.RepetitionPenalty != nil {
 			p.RepetitionPenalty = *me.RepetitionPenalty
 		}

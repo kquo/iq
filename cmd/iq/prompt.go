@@ -384,10 +384,22 @@ func printStep3KB(results []kb.Result, model string, minScore float32, elapsed t
 	traceField("elapsed", fmt.Sprintf("%dms", elapsed.Milliseconds()))
 }
 
-// printStep4Assemble prints the full message array that will be sent.
-func printStep4Assemble(messages []config.Message) {
+// printStep4Assemble prints the assembled message array and trim stats.
+func printStep4Assemble(messages []config.Message, contextWindow, maxTokens int, ctrim contextTrim) {
 	traceStep("4 ", "ASSEMBLE")
 	traceField("task", "Combine system prompt, session history, and user message into message array")
+	traceField("messages", fmt.Sprintf("%d", len(messages)))
+	traceField("est_tokens", fmt.Sprintf("%d", estimateTokens(messages)))
+	if contextWindow > 0 {
+		traceField("budget", fmt.Sprintf("%d  (context_window=%d, max_tokens=%d)",
+			contextWindow-maxTokens, contextWindow, maxTokens))
+		w := trimWarning(ctrim, contextWindow)
+		if w == "" {
+			traceField("trimmed", "—")
+		} else {
+			traceField("trimmed", strings.TrimPrefix(strings.TrimSuffix(w, "]"), "[context trimmed: "))
+		}
+	}
 	for _, m := range messages {
 		traceBlock(m.Role, m.Content, true)
 	}
@@ -624,11 +636,13 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 	// ── Step 3: KB COLLECT ──
 	// Collect the async KB prefetch result with a timeout.
 	var kbContext string
+	var kbResults []kb.Result
 	if kbCh != nil {
 		t3 := time.Now()
 		select {
 		case kr := <-kbCh:
 			if kr.err == nil {
+				kbResults = kr.results
 				if len(kr.results) > 0 {
 					kbContext = kb.Context(kr.results)
 				}
@@ -650,6 +664,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 	// ── Step 4: ASSEMBLE ──
 
 	var messages []config.Message
+	var activeKBResults []kb.Result // kbResults actually embedded in the user message
 	if sess != nil && len(sess.Messages) > 0 {
 		messages = append(messages, sess.Messages...)
 		// If tools active, inject tool prompt into existing system message.
@@ -662,6 +677,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 		// context as a prefix in the user message, immediately before the
 		// question. Avoids overriding the cue prompt and the hard "only use
 		// the text above" constraint that was tuned for tiny models.
+		activeKBResults = kbResults
 		sysprompt := route.SystemPrompt
 		if sysprompt == "" {
 			sysprompt = "You are a helpful assistant."
@@ -685,8 +701,18 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 		}
 		messages = append(messages, config.Message{Role: "user", Content: input})
 	}
+
+	// ── Context budget trimming ──
+	var ctrim contextTrim
+	if ip.ContextWindow > 0 {
+		messages, _, ctrim = trimToContextBudget(
+			messages, activeKBResults, input, ip.ContextWindow, ip.MaxTokens)
+	}
 	if trace {
-		printStep4Assemble(messages)
+		printStep4Assemble(messages, ip.ContextWindow, ip.MaxTokens, ctrim)
+	}
+	if w := trimWarning(ctrim, ip.ContextWindow); w != "" && !trace {
+		fmt.Fprintf(os.Stderr, "%s\n", color.Gra(w))
 	}
 
 	// ── Dump prompt ──

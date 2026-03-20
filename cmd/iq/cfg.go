@@ -108,6 +108,9 @@ func runConfigShow() error {
 		// Show effective inference params for this model.
 		rp := config.ResolveInferParams(cfg, m)
 		me := cfg.ModelEntryFor(m)
+		if me != nil && me.ContextWindow > 0 {
+			cfgField("    context_window", fmt.Sprintf("%d  (model override)", me.ContextWindow))
+		}
 		cfgField("    repetition_penalty", fmtParam(rp.RepetitionPenalty, me != nil && me.RepetitionPenalty != nil, "%.1f"))
 		cfgField("    temperature", fmtParam(rp.Temperature, me != nil && me.Temperature != nil, "%.1f"))
 		cfgField("    max_tokens", fmtParamInt(rp.MaxTokens, me != nil && me.MaxTokens != nil))
@@ -206,7 +209,7 @@ func cfgField(label, value string) {
 func fmtParam(effective float64, isOverride bool, verb string) string {
 	val := fmt.Sprintf(verb, effective)
 	if isOverride {
-		return val + "  (tier override)"
+		return val + "  (model override)"
 	}
 	return val
 }
@@ -215,7 +218,7 @@ func fmtParam(effective float64, isOverride bool, verb string) string {
 func fmtParamInt(effective int, isOverride bool) string {
 	val := fmt.Sprintf("%d", effective)
 	if isOverride {
-		return val + "  (tier override)"
+		return val + "  (model override)"
 	}
 	return val
 }
@@ -228,7 +231,7 @@ func fmtOptF(p *float64, isOverride bool, nilLabel, verb string) string {
 	}
 	val := fmt.Sprintf(verb, *p)
 	if isOverride {
-		return val + "  (tier override)"
+		return val + "  (model override)"
 	}
 	return val
 }
@@ -240,7 +243,7 @@ func fmtOptI(p *int, isOverride bool, nilLabel string) string {
 	}
 	val := fmt.Sprintf("%d", *p)
 	if isOverride {
-		return val + "  (tier override)"
+		return val + "  (model override)"
 	}
 	return val
 }
@@ -252,7 +255,7 @@ func fmtStop(stop []string, isOverride bool) string {
 	}
 	val := strings.Join(stop, ", ")
 	if isOverride {
-		return val + "  (tier override)"
+		return val + "  (model override)"
 	}
 	return val
 }
