@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -425,5 +426,67 @@ func TestAllModels(t *testing.T) {
 	empty := &Config{}
 	if ids := empty.AllModels(); len(ids) != 0 {
 		t.Errorf("empty AllModels = %v, want []", ids)
+	}
+}
+
+// ── DirFor / LoadAt / SaveAt tests ───────────────────────────────────────────
+
+func TestDirFor(t *testing.T) {
+	dir, err := DirFor("iq-test-dirfor")
+	if err != nil {
+		t.Fatalf("DirFor: %v", err)
+	}
+	if !strings.Contains(dir, "iq-test-dirfor") {
+		t.Errorf("DirFor returned %q, want path containing %q", dir, "iq-test-dirfor")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("DirFor did not create directory: %v", err)
+	}
+	// Cleanup.
+	os.RemoveAll(dir)
+}
+
+func TestLoadAtSaveAt_roundtrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := defaultConfig()
+	cfg.EmbedModel = "test-model"
+	mt := 1234
+	cfg.MaxTokens = &mt
+
+	if err := SaveAt(path, cfg); err != nil {
+		t.Fatalf("SaveAt: %v", err)
+	}
+
+	loaded, err := LoadAt(path, nil)
+	if err != nil {
+		t.Fatalf("LoadAt: %v", err)
+	}
+	if loaded.EmbedModel != "test-model" {
+		t.Errorf("EmbedModel = %q, want %q", loaded.EmbedModel, "test-model")
+	}
+	if loaded.MaxTokens == nil || *loaded.MaxTokens != 1234 {
+		t.Errorf("MaxTokens = %v, want 1234", loaded.MaxTokens)
+	}
+}
+
+func TestLoadAt_notExist_returnsDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "noexist.yaml")
+
+	cfg, err := LoadAt(path, nil)
+	if err != nil {
+		t.Fatalf("LoadAt on missing file: %v", err)
+	}
+	// Should return defaults and create the file.
+	if cfg == nil {
+		t.Fatal("LoadAt returned nil config")
+	}
+	if cfg.Version != ConfigVersion {
+		t.Errorf("Version = %d, want %d", cfg.Version, ConfigVersion)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("LoadAt did not create missing config file: %v", err)
 	}
 }

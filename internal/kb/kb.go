@@ -127,17 +127,157 @@ func Load() (*Index, error) {
 	return &idx, nil
 }
 
-// Save writes the knowledge base to disk.
+// Save writes the knowledge base to the default ~/.config/iq/kb.json path.
 func Save(idx *Index) error {
 	path, err := Path()
 	if err != nil {
 		return err
 	}
+	return SaveTo(path, idx)
+}
+
+// PathFor returns the kb.json path inside the given config directory.
+func PathFor(dir string) string {
+	return filepath.Join(dir, "kb.json")
+}
+
+// LoadFrom reads the knowledge base from the kb.json inside the given config directory.
+func LoadFrom(dir string) (*Index, error) {
+	path := PathFor(dir)
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return &Index{Version: 1}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var idx Index
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return nil, fmt.Errorf("failed to parse kb.json: %w", err)
+	}
+	return &idx, nil
+}
+
+// SaveTo writes the knowledge base to the given path.
+func SaveTo(path string, idx *Index) error {
 	data, err := json.Marshal(idx)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+// IngestInto ingests root into the kb.json at the given path.
+// It is identical to Ingest but writes to an explicit index path rather than
+// the default ~/.config/iq/kb.json.
+func IngestInto(root string, idxPath string) error {
+	if !embed.SidecarAlive() {
+		return fmt.Errorf("embed sidecar not running — run: kb start")
+	}
+
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return fmt.Errorf("%s: %w", abs, err)
+	}
+
+	dir := filepath.Dir(idxPath)
+	idx, err := LoadFrom(dir)
+	if err != nil {
+		return err
+	}
+
+	idx = RemoveSource(idx, abs)
+
+	var files []string
+	if info.IsDir() {
+		err = filepath.WalkDir(abs, func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				name := d.Name()
+				if strings.HasPrefix(name, ".") || name == "node_modules" ||
+					name == "vendor" || name == "__pycache__" || name == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if IsTextFile(p) {
+				files = append(files, p)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		if !IsTextFile(abs) {
+			return fmt.Errorf("%s does not appear to be a text file", abs)
+		}
+		files = []string{abs}
+	}
+
+	if len(files) == 0 {
+		return fmt.Errorf("no text files found in %s", abs)
+	}
+
+	var allChunks []Chunk
+	for _, f := range files {
+		chunks, cErr := ChunkFile(f)
+		if cErr != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra(fmt.Sprintf("  skip %s: %v", f, cErr)))
+			continue
+		}
+		allChunks = append(allChunks, chunks...)
+	}
+
+	if len(allChunks) == 0 {
+		return fmt.Errorf("no chunks produced from %s", abs)
+	}
+
+	fmt.Printf("  %d files  →  %d chunks  ", len(files), len(allChunks))
+
+	embedded := 0
+	for i := 0; i < len(allChunks); i += EmbedBatch {
+		end := min(i+EmbedBatch, len(allChunks))
+		batch := allChunks[i:end]
+		texts := make([]string, len(batch))
+		for j, c := range batch {
+			texts[j] = EmbedText(abs, c.Source, c.Label, c.Text)
+		}
+		vecs, vErr := embed.Texts(context.Background(), texts, "document")
+		if vErr != nil {
+			fmt.Println()
+			return fmt.Errorf("embed batch %d: %w", i/EmbedBatch, vErr)
+		}
+		for j := range batch {
+			if j < len(vecs) {
+				allChunks[i+j].Embedding = vecs[j]
+				embedded++
+			}
+		}
+		fmt.Print(".")
+	}
+	fmt.Println()
+
+	idx.Chunks = append(idx.Chunks, allChunks...)
+	idx.Sources = append(idx.Sources, Source{
+		Path:       abs,
+		IngestedAt: time.Now().UTC().Format(time.RFC3339),
+		FileCount:  len(files),
+		ChunkCount: embedded,
+	})
+
+	if err := SaveTo(idxPath, idx); err != nil {
+		return fmt.Errorf("failed to save kb.json: %w", err)
+	}
+	fmt.Printf("  %s  ingested %s  (%d chunks embedded)\n",
+		color.Grn("ok"), color.Whi(abs), embedded)
+	return nil
 }
 
 // ── Text file detection ──────────────────────────────────────────────────────

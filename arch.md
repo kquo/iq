@@ -2,31 +2,31 @@
 
 ## Overview
 
-IQ is a local generative AI system for Apple Silicon, capable of running LLMs entirely offline with no cloud dependency. The **`iq`** CLI binary orchestrates this system — managing model downloads, model pool management, cue definitions, knowledge base access, sidecar processes, and intelligent prompt routing — all from a unified command-line interface.
+IQ is a local generative AI system for Apple Silicon, capable of running LLMs entirely offline with no cloud dependency. The project ships three focused binaries from a shared monorepo: **`iq`** (coding assistant), **`lm`** (local model manager), and **`kb`** (private knowledge base). All three share the same `internal/` packages. The **`iq`** CLI orchestrates a full prompt pipeline — cue classification, tool detection, KB retrieval, inference, and session management — all from a unified command-line interface.
 
 ## System Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                               iq CLI (Go)                                    │
-│                                                                              │
-│ lm       iq start/stop  iq cue  iq kb   iq ask    iq pry   lm perf iq config │
-│ (models)  (service)     (cues)  (RAG)   (infer)   (raw)    (bench) (schema)  │
-└────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬───────────┘
-     │          │          │        │       │         │            │
-     ▼          ▼          ▼        ▼       ▼         ▼            ▼
-┌─────────┐ ┌──────┐ ┌────────┐ ┌──────────────────────┐ ┌──────────────────┐
-│ HF      │ │config│ │cues    │ │ infer_server.py      │ │ sessions/        │
-│ cache   │ │.yaml │ │.yaml   │ │ sidecars (pool)      │ │ <id>.yaml        │
-│         │ │      │ │        │ │                      │ │                  │
-│~/.cache/│ │models│ │name    │ │ pool      :27001+    │ │ kb.json          │
-│hugging  │ │- id  │ │category│ │                      │ │ (vector index)   │
-│face/hub/│ │      │ │desc    │ │                      │ │                  │
-│models-- │ │      │ │prompt  │ │ OpenAI-compatible    │ └──────────────────┘
-│org--repo│ │      │ │model   │ │ HTTP API             │ ┌──────────────────┐
-│/snapshot│ └──────┘ └────────┘ └──────────────────────┘ │ embed sidecar    │
-│  /hash/ │                                              │ :27000           │
-└─────────┘                                              └──────────────────┘
+┌─────────────────────────────┐  ┌──────────────────┐  ┌──────────────────────┐
+│         iq CLI (Go)         │  │    lm CLI (Go)   │  │      kb CLI (Go)     │
+│                             │  │                  │  │                      │
+│ start/stop  cue  kb  ask    │  │ get  list  show  │  │ start  ingest  ask   │
+│ pry  pool  embed  config    │  │ search  rm  perf │  │ list  search  config │
+└──────┬──────────────────────┘  └───────┬──────────┘  └───────┬──────────────┘
+       │                                 │                      │
+       ▼                                 ▼                      ▼
+┌─────────┐ ┌──────────────┐ ┌────────┐ ┌──────────────────────┐ ┌───────────┐
+│ HF      │ │~/.config/iq/ │ │cues    │ │ infer_server.py      │ │~/.config/ │
+│ cache   │ │config.yaml   │ │.yaml   │ │ sidecars (pool)      │ │kb/        │
+│         │ │models.json   │ │        │ │                      │ │config.yaml│
+│~/.cache/│ │kb.json       │ │name    │ │ pool      :27001+    │ │kb.json    │
+│hugging  │ │sessions/     │ │category│ │                      │ │           │
+│face/hub/│ │run/*.json    │ │desc    │ │ OpenAI-compatible    │ └───────────┘
+│         │ │              │ │prompt  │ │ HTTP API             │
+│         │ └──────────────┘ └────────┘ └──────────────────────┘
+│         │                             ┌──────────────────────┐
+│         │                             │ embed sidecar :27000 │
+└─────────┘                             └──────────────────────┘
 ```
 
 
@@ -403,6 +403,10 @@ A `Client` struct in `internal/search` carries configuration (Brave API key) and
     ├── <id>.yaml                # conversation history per session
     └── <id>.yaml.lock           # advisory flock file (created on first access)
 
+~/.config/kb/
+├── config.yaml                  # kb model pool + embed model + inference params
+└── kb.json                      # knowledge base: chunk text + 384-float vectors
+
 ~/.cache/huggingface/hub/
 └── models--org--repo/
     ├── blobs/                   # actual file content (deduplicated)
@@ -586,7 +590,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | File | Purpose |
 |------|---------|
-| `internal/config/config.go` | Config struct, Load/Save, model pool helpers, embed model, kb_min_score, context_window, legacy migrations |
+| `internal/config/config.go` | Config struct, Load/Save/LoadAt/SaveAt/DirFor, model pool helpers, embed model, kb_min_score, context_window, legacy migrations |
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 | `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
 | `internal/sidecar/transport.go` | OpenAI-compatible HTTP transport: ChatRequest, Call, Stream, RawCall, StripThinkBlocks |
@@ -599,7 +603,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/tools/tools.go` | Tool registry (8 tools), parser, executor, tool signals, embed-based detection |
 | `internal/tools/tools_test.go` | Tests for calcEval, extractCalcExpression, ParseCalls, ValidatePath, HasFilePath, routing, registry |
 | `internal/lm/lm.go` | HF API types/client, manifest CRUD, cache helpers, model param/quant parsing, formatting |
-| `internal/kb/kb.go` | KB index types, chunking strategies, hybrid search, ingest, persistence |
+| `internal/kb/kb.go` | KB index types, chunking strategies, hybrid search, ingest, persistence; PathFor/LoadFrom/SaveTo/IngestInto for path-parameterized access |
 
 ### CLI Package
 
@@ -618,18 +622,24 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `cmd/iq/cfg.go` | `iq config` — show effective config, validate config files |
 | `cmd/iq/probe.go` | `iq pry` — raw sidecar access |
 | `cmd/lm/bench_corpus.yaml` | Benchmark test data (embedded in lm binary) |
+| `cmd/kb/main.go` | kb binary entry point; root command dispatches bare `kb <query>` to ask pipeline |
+| `cmd/kb/ask.go` | `kb ask` RAG pipeline: embed → KB search → assemble → stream; config helpers for ~/.config/kb/ |
+| `cmd/kb/kb.go` | KB management commands (ingest, list, search, rm, clear) against ~/.config/kb/kb.json |
+| `cmd/kb/svc.go` | `kb start/stop/restart/status` — sidecar lifecycle for the kb binary |
+| `cmd/kb/cfg.go` | `kb config` — show ~/.config/kb/config.yaml and index summary |
 
 
 ## Version History
 
 | Version | Summary |
 |---------|---------|
-| 0.13.0  | Phase 1 — extract `cmd/lm/`: `lm.go`+`perf.go`+`bench_corpus.yaml` move to new `lm` binary (v0.1.0); `lm search/get/list/show/rm` and `lm perf bench/sweep/show/clear` are now top-level `lm` commands; `iq lm` and `iq perf` removed from `iq`; `lm` installed alongside `iq` by `build.sh` |
+| 0.14.0  | Phase 2 — new `kb` binary (v0.1.0): `kb ingest/list/search/rm/clear/ask/start/stop/restart/status/config`; `kb <query>` synonymous with `kb ask <query>`; KB index at `~/.config/kb/kb.json` (separate from iq's); `config.DirFor`/`LoadAt`/`SaveAt` added; `kb.PathFor`/`LoadFrom`/`SaveTo`/`IngestInto` added |
 <details>
-<summary>Older versions (v0.2.7 – v0.12.0)</summary>
+<summary>Older versions (v0.2.7 – v0.13.0)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.13.0  | Phase 1 — extract `cmd/lm/`: `lm.go`+`perf.go`+`bench_corpus.yaml` move to new `lm` binary (v0.1.0); `lm search/get/list/show/rm` and `lm perf bench/sweep/show/clear` are now top-level `lm` commands; `iq lm` and `iq perf` removed from `iq`; `lm` installed alongside `iq` by `build.sh` |
 | 0.12.0  | A3 — context budget management: `context_window` field on `ModelEntry`; chars/4 token estimation; trim KB chunks then session turns to fit `context_window − max_tokens` budget; gray warning on trim; Step 4 trace shows `est_tokens`/`budget`/`trimmed`; `iq cfg show` displays `context_window` per model |
 | 0.11.1  | A2 — drop routing grammar harness: remove `CallWithGrammar`, `RouteGrammar`, `RoutingGrammarProcessor`; rename `BuildRoutingPrompt`→`BuildToolPrompt`; remove `RegistryNames`; collapse grammar path into unified model-driven tool loop; fix root help stale `tier`/`--tier` references |
 | 0.11.0  | A1B — schema v2: flat `models:` list replaces `tiers:` map; `ModelEntry` with per-model param overrides; `ConfigVersion = 2`; `migrateV1` converts v1 tiers to flat list preserving param overrides; `iq pool list/add/rm` replaces `iq tier show/add/rm`; `iq lm get` prints `iq pool add`; `SuggestTier` → `SuggestSize` (returns "small"/"large"); `--tier` flag → `--model` flag on `iq ask`/`iq pry`; TIER column removed from `iq st`; sweep no longer needs `--tier` flag |

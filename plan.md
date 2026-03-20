@@ -22,7 +22,7 @@ Within that spirit, IQ is also a **framework for building domain-specific local 
 
 See [`docs/design-pivot-01.md`](docs/design-pivot-01.md) for the rationale behind the current roadmap structure.
 
-**Longer-term:** IQ is planned to split into three focused binaries (`iq`, `lm`, `kb`) sharing a common set of internal packages in a monorepo. This roadmap covers `iq` only. See [`docs/project-split-01.md`](docs/project-split-01.md) for the split design and extraction sequence.
+**Longer-term:** IQ splits into three focused binaries (`iq`, `lm`, `kb`) sharing a common set of internal packages in a monorepo. Phase 1 (lm) and Phase 2 (kb) are complete. Phase 3 — trimming `iq kb` commands from `iq` now that they live in `kb` — is pending. See [`docs/project-split-01.md`](docs/project-split-01.md) for the split design.
 
 
 ## Development Methodology

@@ -297,3 +297,60 @@ func TestExtractGoLabel(t *testing.T) {
 		}
 	}
 }
+
+// ── PathFor / LoadFrom / SaveTo tests ────────────────────────────────────────
+
+func TestPathFor(t *testing.T) {
+	dir := "/tmp/test-kb"
+	got := PathFor(dir)
+	want := "/tmp/test-kb/kb.json"
+	if got != want {
+		t.Errorf("PathFor(%q) = %q, want %q", dir, got, want)
+	}
+}
+
+func TestLoadFrom_notExist(t *testing.T) {
+	dir := t.TempDir()
+	idx, err := LoadFrom(dir)
+	if err != nil {
+		t.Fatalf("LoadFrom on empty dir: %v", err)
+	}
+	if idx == nil {
+		t.Fatal("LoadFrom returned nil index")
+	}
+	if len(idx.Chunks) != 0 {
+		t.Errorf("expected empty chunks, got %d", len(idx.Chunks))
+	}
+}
+
+func TestSaveToLoadFrom_roundtrip(t *testing.T) {
+	dir := t.TempDir()
+	path := PathFor(dir)
+
+	idx := &Index{
+		Version: 1,
+		Sources: []Source{{Path: "/foo", ChunkCount: 2}},
+		Chunks: []Chunk{
+			{ID: "c1", Source: "/foo/a.txt", Text: "hello"},
+			{ID: "c2", Source: "/foo/b.txt", Text: "world"},
+		},
+	}
+
+	if err := SaveTo(path, idx); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+
+	loaded, err := LoadFrom(dir)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if len(loaded.Chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(loaded.Chunks))
+	}
+	if loaded.Chunks[0].ID != "c1" || loaded.Chunks[1].ID != "c2" {
+		t.Errorf("unexpected chunk IDs: %v", loaded.Chunks)
+	}
+	if len(loaded.Sources) != 1 || loaded.Sources[0].Path != "/foo" {
+		t.Errorf("unexpected sources: %v", loaded.Sources)
+	}
+}

@@ -211,11 +211,16 @@ func ResolveInferParams(cfg *Config, modelID string) ResolvedParams {
 
 // Dir returns ~/.config/iq, creating it if needed.
 func Dir() (string, error) {
+	return DirFor("iq")
+}
+
+// DirFor returns ~/.config/<name>, creating it if needed.
+func DirFor(name string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".config", "iq")
+	dir := filepath.Join(home, ".config", name)
 	return dir, os.MkdirAll(dir, 0755)
 }
 
@@ -428,16 +433,22 @@ func migrateOldFourTier(old map[string]string, diskUsage DiskUsageFunc) *Config 
 // triggers migrateV1; version 2 (current) is loaded directly. On read-only
 // filesystems, returns in-memory defaults without error. diskUsage is optional
 // and only needed for migrating the old 4-tier format.
+// Load reads config from the default ~/.config/iq/config.yaml path.
 func Load(diskUsage DiskUsageFunc) (*Config, error) {
 	path, err := Path()
 	if err != nil {
 		// Cannot resolve config dir (e.g. read-only FS) — return defaults.
 		return defaultConfig(), nil
 	}
-	data, err := os.ReadFile(path)
+	return LoadAt(path, diskUsage)
+}
+
+// LoadAt reads config from an explicit file path, applying auto-migration.
+func LoadAt(cfgPath string, diskUsage DiskUsageFunc) (*Config, error) {
+	data, err := os.ReadFile(cfgPath)
 	if os.IsNotExist(err) {
 		cfg := defaultConfig()
-		_ = Save(cfg)
+		_ = SaveAt(cfgPath, cfg)
 		return cfg, nil
 	}
 	if err != nil {
@@ -459,18 +470,20 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 	switch vp.Version {
 	case 0:
 		// Pre-versioning format — run the migration chain and stamp the version.
-		if cfg, err = migrateV0(data, diskUsage); err != nil {
-			return nil, err
+		var merr error
+		if cfg, merr = migrateV0(data, diskUsage); merr != nil {
+			return nil, merr
 		}
 		cfg.Version = ConfigVersion
-		_ = Save(cfg) // best-effort; read-only FS is fine
+		_ = SaveAt(cfgPath, cfg) // best-effort; read-only FS is fine
 	case 1:
 		// v1 tier-based format — migrate to flat models list.
-		if cfg, err = migrateV1(data); err != nil {
-			return nil, err
+		var merr error
+		if cfg, merr = migrateV1(data); merr != nil {
+			return nil, merr
 		}
 		cfg.Version = ConfigVersion
-		_ = Save(cfg)
+		_ = SaveAt(cfgPath, cfg)
 	default:
 		// Current schema — unmarshal directly.
 		cfg = &Config{}
@@ -482,15 +495,20 @@ func Load(diskUsage DiskUsageFunc) (*Config, error) {
 	return cfg, nil
 }
 
-// Save writes the config to disk.
+// Save writes the config to the default ~/.config/iq/config.yaml path.
 func Save(cfg *Config) error {
 	path, err := Path()
 	if err != nil {
 		return err
 	}
+	return SaveAt(path, cfg)
+}
+
+// SaveAt writes the config to an explicit file path.
+func SaveAt(cfgPath string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(cfgPath, data, 0644)
 }
