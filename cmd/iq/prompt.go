@@ -654,7 +654,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 		messages = append(messages, sess.Messages...)
 		// If tools active, inject tool prompt into existing system message.
 		if useTools && len(messages) > 0 && messages[0].Role == "system" {
-			messages[0].Content += tools.BuildRoutingPrompt(reg)
+			messages[0].Content += tools.BuildToolPrompt(reg)
 		}
 		messages = append(messages, config.Message{Role: "user", Content: input})
 	} else if kbContext != "" {
@@ -667,7 +667,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 			sysprompt = "You are a helpful assistant."
 		}
 		if useTools {
-			sysprompt += tools.BuildRoutingPrompt(reg)
+			sysprompt += tools.BuildToolPrompt(reg)
 		}
 		userContent := kbContext + "\n\n" + input
 		messages = append(messages, config.Message{Role: "system", Content: sysprompt})
@@ -678,7 +678,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 			if sysprompt == "" {
 				sysprompt = "You are a helpful assistant."
 			}
-			sysprompt += tools.BuildRoutingPrompt(reg)
+			sysprompt += tools.BuildToolPrompt(reg)
 		}
 		if sysprompt != "" {
 			messages = append(messages, config.Message{Role: "system", Content: sysprompt})
@@ -754,7 +754,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 			if tt != nil && tt.Reason == "embed" {
 				var tPass time.Time
 				if trace {
-					traceField("mode", fmt.Sprintf("embed short-circuit: %s (skipping routing grammar)", tt.BestSignal))
+					traceField("mode", fmt.Sprintf("embed short-circuit: %s", tt.BestSignal))
 					tPass = time.Now()
 				}
 				if tt.BestSignal == "web_search" {
@@ -890,86 +890,25 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 				}
 			} else {
 
-				// ── Pass 1: routing-grammar-constrained inference ──
-				// The grammar forces the model to emit <tool:NAME> or <no_tool>
-				// as its very first tokens, then generates freely.
-				grammar := &sidecar.RouteGrammar{ToolNames: tools.RegistryNames(reg)}
+				// ── Pass 1: model-driven tool dispatch ──
+				// Send tool prompt; model emits <tool:NAME> or answers directly.
 				var tPass time.Time
 				if trace {
-					tracePass(1, "routing grammar")
+					tracePass(1, "model-driven tool dispatch")
 					traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
 					tPass = time.Now()
 				}
-				response, err = sidecar.CallWithGrammar(ctx, route.Port, messages, ip.MaxTokens, grammar, ip)
+				response, err = sidecar.Call(ctx, route.Port, messages, ip.MaxTokens, ip)
 				if err != nil {
 					return sess, err
 				}
 				if trace {
 					traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
+					traceField("latency 1", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
 				}
 
-				// Parse the routing prefix from the grammar-constrained response.
-				routedTool, routeRest := tools.ParseRoutingPrefix(response)
-
-				// If the grammar routed to a tool, construct a toolCall and execute it.
+				// ── Passes 2+: unified tool loop ──
 				toolDone := false
-				if routedTool != "" {
-					if trace {
-						traceField("route", fmt.Sprintf("<tool:%s>", routedTool))
-					}
-
-					// Try to parse JSON args from the text after the prefix.
-					args := tools.ParseRoutingArgs(routeRest)
-					call := tools.Call{Name: routedTool, Args: args}
-
-					if trace {
-						printToolCallTrace(call)
-					} else {
-						printToolStatus(call)
-					}
-					r := tools.Execute(call)
-					if trace {
-						printToolResultTrace(r)
-						traceField("latency 1", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
-					}
-
-					// If the tool succeeded, print output directly — don't ask the
-					// model to reproduce it (small models hallucinate on long output).
-					if r.Error == "" && r.Output != "" {
-						fmt.Println(r.Output)
-						response = r.Output
-						toolDone = true
-					} else {
-						// Tool failed or returned empty — let the model explain.
-						messages = append(messages, config.Message{Role: "assistant", Content: response})
-						messages = append(messages, config.Message{
-							Role:    "user",
-							Content: "Tool result below. Explain the result or error briefly.\n\n" + tools.FormatResult(r),
-						})
-						if trace {
-							tracePass(2, "explain tool result")
-							traceField("call", fmt.Sprintf("POST localhost:%d/v1/chat/completions", route.Port))
-							tPass = time.Now()
-						}
-						response, err = sidecar.Call(ctx, route.Port, messages, ip.MaxTokens, ip)
-						if err != nil {
-							return sess, err
-						}
-						if trace {
-							traceField("raw_resp", fmt.Sprintf("%q", truncate(response, 200)))
-							traceField("latency 2", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
-						}
-					}
-				} else {
-					// <no_tool> or no prefix.
-					if trace {
-						traceField("route", "<no_tool>")
-						traceField("latency 1", fmt.Sprintf("%dms", time.Since(tPass).Milliseconds()))
-					}
-					response = routeRest // strip the <no_tool> prefix
-				}
-				// ── Passes 2+: standard tool loop for multi-tool chains ──
-				// Skip if tool output was already printed directly.
 				const maxToolIter = 5
 				for iter := range maxToolIter {
 					if toolDone {

@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """IQ inference sidecar — serves POST /v1/chat/completions and GET /v1/models.
 
-Replaces mlx_lm.server with a custom server that supports constrained decoding
-via a routing grammar for tool-use prompts. When no routing_grammar is present
-in the request, behaves identically to stock mlx_lm.server.
-
 Launched by `iq start` with --model <hf_model_id> and --port <n>.
 Requires: pipx install mlx-lm
 """
@@ -16,7 +12,6 @@ import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Lock
 
-import mlx.core as mx
 from mlx_lm import load as mlx_load
 from mlx_lm import stream_generate
 from mlx_lm.sample_utils import make_logits_processors
@@ -35,82 +30,11 @@ def _apply_chat_template(messages):
     )
 
 
-# ── Routing grammar logits processor ─────────────────────────────────────────
-
-
-class RoutingGrammarProcessor:
-    """A logits processor that constrains the first few tokens to be a routing
-    prefix: either <tool:TOOL_NAME> or <no_tool>.
-
-    Once the prefix is complete, the processor becomes a no-op and generation
-    continues unconstrained.
-
-    Works by pre-encoding all valid route strings into token ID sequences.
-    State is derived from the `tokens` argument on each call (not tracked
-    separately) because generate_step speculatively prefetches the next token
-    before yielding — so __call__ may be invoked multiple times before the
-    caller can update external state.
-    """
-
-    DONE = -1
-
-    def __init__(self, tool_names, tokenizer):
-        self.tokenizer = tokenizer
-        self._prompt_len = None  # set on first __call__
-
-        # Pre-encode all valid routes into token ID sequences.
-        routes = [f"<tool:{name}>" for name in tool_names] + ["<no_tool>"]
-        self._route_seqs = []
-        for route in routes:
-            ids = tokenizer.encode(route, add_special_tokens=False)
-            self._route_seqs.append(ids)
-
-    def __call__(self, tokens, logits):
-        # On first call, tokens is the prompt tail — record its length.
-        # Subsequent calls append one generated token each time.
-        if self._prompt_len is None:
-            self._prompt_len = len(tokens)
-
-        # How many tokens have been generated so far (including the one
-        # about to be sampled from these logits).
-        gen_pos = len(tokens) - self._prompt_len
-
-        # Determine which routes are still valid given generated tokens.
-        gen_tokens = tokens[self._prompt_len :].tolist() if gen_pos > 0 else []
-        live_routes = self._route_seqs
-        for i, tid in enumerate(gen_tokens):
-            live_routes = [
-                seq for seq in live_routes if i < len(seq) and seq[i] == tid
-            ]
-
-        # Check if any route is already fully matched.
-        for seq in live_routes:
-            if gen_pos >= len(seq):
-                return logits  # done — unconstrained
-
-        # Collect allowed token IDs at this position.
-        allowed = set()
-        for seq in live_routes:
-            if gen_pos < len(seq):
-                allowed.add(seq[gen_pos])
-
-        if not allowed:
-            return logits  # no valid continuation — unconstrained
-
-        # Mask: set disallowed logits to -inf.
-        vocab_size = logits.shape[-1]
-        mask = mx.full(logits.shape, float("-inf"))
-        for tid in allowed:
-            if tid < vocab_size:
-                mask[0, tid] = 0.0
-        return logits + mask
-
-
 # ── Inference ─────────────────────────────────────────────────────────────────
 
 
 def _generate(messages, max_tokens, stream, repetition_penalty, temperature,
-              routing_grammar, top_p=None, min_p=None, top_k=None, stop=None, seed=None):
+              top_p=None, min_p=None, top_k=None, stop=None, seed=None):
     """Run inference and yield (text_chunk, finish_reason) tuples.
 
     Extended sampling params (top_p, min_p, top_k, seed) are forwarded to
@@ -127,14 +51,10 @@ def _generate(messages, max_tokens, stream, repetition_penalty, temperature,
     if top_k is not None:
         kwargs["top_k"] = top_k
 
-    # Build logits processors list: repetition penalty + optional routing grammar.
+    # Build logits processors list: repetition penalty only.
     processors = []
     if repetition_penalty and repetition_penalty != 1.0:
         processors.extend(make_logits_processors(repetition_penalty=repetition_penalty))
-    if routing_grammar and routing_grammar.get("tool_names"):
-        processors.append(
-            RoutingGrammarProcessor(routing_grammar["tool_names"], _tokenizer)
-        )
     if processors:
         kwargs["logits_processors"] = processors
 
@@ -236,7 +156,6 @@ class Handler(BaseHTTPRequestHandler):
                 stream = body.get("stream", False)
                 rep_penalty = body.get("repetition_penalty", 1.0)
                 temperature = body.get("temperature", 0.7)
-                routing_grammar = body.get("routing_grammar")
                 top_p = body.get("top_p")
                 min_p = body.get("min_p")
                 top_k = body.get("top_k")
@@ -249,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
                     for text, finish in _generate(
-                        messages, max_tokens, True, rep_penalty, temperature, routing_grammar,
+                        messages, max_tokens, True, rep_penalty, temperature,
                         top_p=top_p, min_p=min_p, top_k=top_k, stop=stop, seed=seed,
                     ):
                         chunk = _build_chat_response(
@@ -263,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     content = ""
                     for text, finish in _generate(
-                        messages, max_tokens, False, rep_penalty, temperature, routing_grammar,
+                        messages, max_tokens, False, rep_penalty, temperature,
                         top_p=top_p, min_p=min_p, top_k=top_k, stop=stop, seed=seed,
                     ):
                         content = text

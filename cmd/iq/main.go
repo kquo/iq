@@ -14,7 +14,7 @@ import (
 
 const (
 	programName    = "iq"
-	programVersion = "0.11.0"
+	programVersion = "0.11.1"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -45,12 +45,12 @@ func printRootHelp() {
 	fmt.Printf("  %s <command> [subcommand] [flags]\n", n)
 	fmt.Printf("  %s [flags] <message>\n\n", n)
 	fmt.Printf("%s\n", color.Whi2("SERVICE"))
-	fmt.Printf("  %-24s %s\n", "start [tier|model]", "Start sidecars")
-	fmt.Printf("  %-24s %s\n", "stop [tier|model]", "Stop sidecars")
-	fmt.Printf("  %-24s %s\n", "restart [tier|model]", "Restart sidecars (stop + start)")
+	fmt.Printf("  %-24s %s\n", "start [model]", "Start sidecars")
+	fmt.Printf("  %-24s %s\n", "stop [model]", "Stop sidecars")
+	fmt.Printf("  %-24s %s\n", "restart [model]", "Restart sidecars (stop + start)")
 	fmt.Printf("  %-24s %s\n", "st|status", "Show running sidecar status")
 	fmt.Printf("  %-24s %s\n", "doc", "Check runtime dependencies and model readiness")
-	fmt.Printf("  %-24s %s\n", "tier", "Manage model tier pool assignments")
+	fmt.Printf("  %-24s %s\n", "pool", "Manage model pool assignments")
 	fmt.Printf("  %-24s %s\n", "embed", "Manage embed sidecar model")
 	fmt.Printf("  %-24s %s\n\n", "cfg|config", "Inspect and validate IQ configuration")
 	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
@@ -64,7 +64,7 @@ func printRootHelp() {
 	fmt.Printf("%s\n", color.Whi2("FLAGS"))
 	fmt.Printf("  %-24s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-24s %s\n", "-c, --category <n>", "Classify within a category only")
-	fmt.Printf("  %-24s %s\n", "    --tier <n>", "Override tier directly, bypass cue system")
+	fmt.Printf("  %-24s %s\n", "    --model <id>", "Override model directly (must be running)")
 	fmt.Printf("  %-24s %s\n", "-s, --session <id>", "Load/continue a session by ID")
 	fmt.Printf("  %-24s %s\n", "-n, --dry-run", "Trace steps 1–4, skip inference")
 	fmt.Printf("  %-24s %s\n", "    --dump-prompt <f>", "Write assembled messages as JSON (- for stdout)")

@@ -38,9 +38,6 @@ Features are identified by group letter + sequence number: `A1`, `B2`, etc. Sort
 
 Finish the simplification that A1 started. Changes here reduce inference passes and remove routing complexity.
 
-**A2 — Model-driven tool dispatch (drop the grammar harness)**
-Tool detection is already handled by embed short-circuit. For cases that reach the grammar pass today, replace it with model-driven dispatch: send tool definitions in the system prompt and let the model emit `<tool_call>` blocks or plain text organically. Eliminates the last conditional inference pass for capable models. Smaller models that can't reliably emit structured calls get a lightweight fallback.
-
 **A3 — Context budget management**
 Before inference, estimate assembled context size against the target model's known context window. Trim in priority order: KB chunks first, then session history; system prompt and user input are never trimmed. Warn the user if anything was dropped. Pure Go work, no inference changes.
 

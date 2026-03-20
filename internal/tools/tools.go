@@ -81,15 +81,6 @@ func FindTool(name string) *Tool {
 	return nil
 }
 
-// RegistryNames returns the names of all tools in reg.
-func RegistryNames(reg []Tool) []string {
-	names := make([]string, len(reg))
-	for i, t := range reg {
-		names[i] = t.Name
-	}
-	return names
-}
-
 // ── Path security ────────────────────────────────────────────────────────────
 
 // AllowedPaths returns the set of allowed root paths: CWD + config tool_paths.
@@ -491,16 +482,14 @@ func BuildSystemPrompt() string {
 	return b.String()
 }
 
-// BuildRoutingPrompt returns a system prompt for routing-grammar-aware inference.
-func BuildRoutingPrompt(reg []Tool) string {
+// BuildToolPrompt returns a system prompt for model-driven tool dispatch.
+func BuildToolPrompt(reg []Tool) string {
 	var b strings.Builder
 	b.WriteString("\n[tools]\n")
-	b.WriteString("You have access to read-only tools. When a question can be answered by calling a tool, you MUST call the tool — never guess or fabricate the answer.\n\n")
-	b.WriteString("Your first output MUST be one of:\n")
-	b.WriteString("  <tool:TOOL_NAME>  — to call a tool, followed by JSON arguments\n")
-	b.WriteString("  <no_tool>         — to respond without using a tool, followed by your answer\n\n")
-	b.WriteString("Use <no_tool> ONLY for questions that no tool can answer (general knowledge, explanations, etc.).\n")
-	b.WriteString("Do not produce any text before the routing prefix.\n\n")
+	b.WriteString("You have access to read-only tools. When a question can be answered by calling a tool, call it — never guess or fabricate the answer.\n\n")
+	b.WriteString("When a question can be answered by a tool, call it using:\n")
+	b.WriteString("  <tool:TOOL_NAME>  followed by JSON arguments\n\n")
+	b.WriteString("If no tool is needed, answer directly or emit <no_tool> followed by your answer.\n\n")
 	b.WriteString("Available tools:\n")
 	for _, t := range reg {
 		fmt.Fprintf(&b, "\n- %s: %s\n", t.Name, t.Description)

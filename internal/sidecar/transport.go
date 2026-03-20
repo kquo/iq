@@ -36,12 +36,6 @@ type ChatRequest struct {
 	TopK              *int             `json:"top_k,omitempty"`
 	Stop              []string         `json:"stop,omitempty"`
 	Seed              *int             `json:"seed,omitempty"`
-	RoutingGrammar    *RouteGrammar    `json:"routing_grammar,omitempty"`
-}
-
-// RouteGrammar constrains the first tokens of inference to a tool name.
-type RouteGrammar struct {
-	ToolNames []string `json:"tool_names"`
 }
 
 type chatStreamChunk struct {
@@ -133,24 +127,6 @@ func Call(ctx context.Context, port int, messages []config.Message, maxTokens in
 		TopK:              ip.TopK,
 		Stop:              ip.Stop,
 		Seed:              ip.Seed,
-	}
-	return RawCall(ctx, port, req)
-}
-
-// CallWithGrammar sends a non-streaming inference request with a routing grammar.
-func CallWithGrammar(ctx context.Context, port int, messages []config.Message, maxTokens int, grammar *RouteGrammar, ip config.ResolvedParams) (string, error) {
-	req := ChatRequest{
-		Messages:          messages,
-		Stream:            false,
-		MaxTokens:         maxTokens,
-		RepetitionPenalty: ip.RepetitionPenalty,
-		Temperature:       ip.Temperature,
-		TopP:              ip.TopP,
-		MinP:              ip.MinP,
-		TopK:              ip.TopK,
-		Stop:              ip.Stop,
-		Seed:              ip.Seed,
-		RoutingGrammar:    grammar,
 	}
 	return RawCall(ctx, port, req)
 }

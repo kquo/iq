@@ -2,7 +2,6 @@ package sidecar
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -143,57 +142,6 @@ func TestStreamContextCancel(t *testing.T) {
 	// Should return (possibly with a context error) without hanging.
 	if err != nil && err.Error() == "" {
 		// empty error string is silentErr — acceptable
-	}
-}
-
-// ── CallWithGrammar tests ────────────────────────────────────────────────────
-
-func TestCallWithGrammarHappyPath(t *testing.T) {
-	const want = "tool_response"
-	// Verify that the grammar field is serialised in the request.
-	var receivedGrammar *RouteGrammar
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req ChatRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		receivedGrammar = req.RoutingGrammar
-		resp := fmt.Sprintf(`{"choices":[{"message":{"content":%q}}]}`, want)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(resp))
-	}))
-	defer srv.Close()
-
-	grammar := &RouteGrammar{ToolNames: []string{"file_read", "web_search"}}
-	msgs := []config.Message{{Role: "user", Content: "use a tool"}}
-	got, err := CallWithGrammar(context.Background(), httpTestPort(t, srv), msgs, 50, grammar, config.ResolvedParams{})
-	if err != nil {
-		t.Fatalf("CallWithGrammar error: %v", err)
-	}
-	if got != want {
-		t.Errorf("CallWithGrammar = %q, want %q", got, want)
-	}
-	if receivedGrammar == nil {
-		t.Fatal("server did not receive a routing_grammar field")
-	}
-	if len(receivedGrammar.ToolNames) != 2 || receivedGrammar.ToolNames[0] != "file_read" {
-		t.Errorf("routing_grammar = %+v, want {file_read, web_search}", receivedGrammar)
-	}
-}
-
-func TestCallWithGrammarNilGrammar(t *testing.T) {
-	const want = "plain response"
-	srv := mockChatServer(t, want)
-	defer srv.Close()
-
-	msgs := []config.Message{{Role: "user", Content: "hello"}}
-	got, err := CallWithGrammar(context.Background(), httpTestPort(t, srv), msgs, 50, nil, config.ResolvedParams{})
-	if err != nil {
-		t.Fatalf("CallWithGrammar(nil grammar) error: %v", err)
-	}
-	if got != want {
-		t.Errorf("CallWithGrammar(nil grammar) = %q, want %q", got, want)
 	}
 }
 

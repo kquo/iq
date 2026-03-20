@@ -429,19 +429,6 @@ func TestParseRoutingArgs(t *testing.T) {
 	}
 }
 
-func TestToolRegistryNames(t *testing.T) {
-	reg := NewRegistry()
-	names := RegistryNames(reg)
-	if len(names) != len(reg) {
-		t.Fatalf("RegistryNames returned %d names, want %d", len(names), len(Registry))
-	}
-	for i, name := range names {
-		if name != reg[i].Name {
-			t.Errorf("RegistryNames()[%d] = %q, want %q", i, name, reg[i].Name)
-		}
-	}
-}
-
 // ── ParseCallsStrict tests ────────────────────────────────────────────────────
 
 func TestParseCallsStrict(t *testing.T) {

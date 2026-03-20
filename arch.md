@@ -253,12 +253,11 @@ Tool signal embeddings are cached in `~/.config/iq/tool_embeddings.json` and ver
 
 When tools are enabled, inference takes one of two paths based on how tools were detected:
 
-**Embed short-circuit path** (`tt.Reason == "embed"`): When Step 1b identifies a tool signal via embedding, IQ skips the routing grammar pass entirely and executes the identified tool directly. `GuardArgs` builds the argument map from the user input (e.g., for `calc`, `extractCalcExpression` converts natural language to a valid math expression). If the tool succeeds, output is printed directly. If it fails (or `GuardArgs` returns nil for unextractable args), IQ falls back to direct inference with the cue's plain system prompt (tool instructions stripped to prevent re-invocation). This path covers all embed-detected tool signals: `time_date`, `file_access`, `file_search`, `calculation`, and `web_search`.
+**Embed short-circuit path** (`tt.Reason == "embed"`): When Step 1b identifies a tool signal via embedding, IQ executes the identified tool directly without an inference pass. `GuardArgs` builds the argument map from the user input (e.g., for `calc`, `extractCalcExpression` converts natural language to a valid math expression). If the tool succeeds, output is printed directly. If it fails (or `GuardArgs` returns nil for unextractable args), IQ falls back to direct inference with the cue's plain system prompt (tool instructions stripped to prevent re-invocation). This path covers all embed-detected tool signals: `time_date`, `file_access`, `file_search`, `calculation`, and `web_search`.
 
-**Routing grammar path** (`tt.Reason == "file path"` or `"forced"`): Used when file-path heuristics or `--tools` flag triggered tool mode rather than embed signal. Runs in a non-streaming loop:
-1. **Pass 1 — routing grammar.** The request includes a `routing_grammar` field listing available tool names. The custom `infer_server.py` sidecar uses a `RoutingGrammarProcessor` (logits processor) to constrain the model's first tokens to one of `<tool:NAME>` or `<no_tool>`, then generates freely. This forces a structural routing decision before the model can fabricate an answer.
-2. **Route parse.** IQ parses the routing prefix with `parseRoutingPrefix()`. If `<tool:NAME>`, arguments are extracted by `parseRoutingArgs()` which handles valid JSON, broken JSON (unquoted keys, `=` separators), and CLI flag formats (`--key=value`). IQ executes the tool; if it succeeds, output is printed directly to the user (no pass 2). If it fails, the error is injected and the model is called again (pass 2) to explain.
-3. **Passes 2+ — standard tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks — handles correct JSON, broken JSON (regex fallback), wrong tag names (`<get_time>` instead of `<tool_call>`), `<tool:NAME>` routing prefix format on follow-up passes, unclosed tags, and markdown-fenced JSON. Successful tool output is printed directly; errors trigger another inference pass. Loop ends when no tool calls remain, or after 5 iterations.
+**Model-driven path** (`tt.Reason == "file path"` or `"forced"`): Used when file-path heuristics or `--tools` flag triggered tool mode rather than embed signal. Runs a unified non-streaming tool loop:
+1. **Pass 1 — model-driven dispatch.** IQ calls the model normally with `BuildToolPrompt` injected into the system message. The model emits `<tool:TOOL_NAME>` followed by JSON arguments, or answers directly.
+2. **Passes 2+ — unified tool loop** (up to 5 iterations). IQ's parser extracts `<tool_call>` blocks first, then falls back to `ParseRoutingPrefix` for `<tool:NAME>` format — handles correct JSON, broken JSON (regex fallback), wrong tag names, unclosed tags, and markdown-fenced JSON. Successful tool output is printed directly; errors trigger another inference pass. Loop ends when no tool calls remain, or after 5 iterations.
 
 **Thinking model support** — models like DeepSeek-R1 that emit `<think>...</think>` reasoning blocks are handled transparently: during streaming, think-block tokens are buffered in memory (not echoed to the user); the clean result is printed after stripping. Any tokens streamed before `<think>` is detected are tracked so they are not re-printed when the final result is shown. Non-streaming mode strips think blocks from the full response.
 
@@ -305,7 +304,7 @@ In **ask mode** (via `iq "<prompt>"` or `iq ask "<prompt>"`), eight read-only to
 | `count_lines` | `path` (required) | Count lines in a file |
 | `web_search` | `query` (required), `count` | Search the web via DuckDuckGo with Brave fallback (default 3 results, max 20) |
 
-The tool system prompt (`buildRoutingToolPrompt`) is appended to the system message when tools are active. It lists all available tools with their parameter schemas, the current working directory, and instructs the model to emit `<tool:TOOL_NAME>` (followed by JSON arguments) or `<no_tool>` (followed by a direct answer) as its first output. The routing grammar logits processor enforces this structurally.
+The tool system prompt (`BuildToolPrompt`) is appended to the system message when tools are active. It lists all available tools with their parameter schemas, the current working directory, and instructs the model to emit `<tool:TOOL_NAME>` (followed by JSON arguments) or `<no_tool>` (followed by a direct answer) when a tool is needed.
 
 ### Raw Sidecar Access
 
@@ -330,7 +329,7 @@ The **`iq perf`** command evaluates model performance using an embedded benchmar
 Benchmark types:
 - **KB retrieval** — measures search quality (MRR = Mean Reciprocal Rank)
 - **Cue classification** — measures accuracy and average similarity score against the embedded benchmark corpus
-- **Tool use** — sends 14 prompts (2 per tool) through the routing grammar pipeline; measures routing accuracy (did the model pick the correct tool?) and execution success rate. Use `-v` for per-prompt debug detail.
+- **Tool use** — sends 14 prompts (2 per tool) through the model-driven dispatch pipeline; measures routing accuracy (did the model pick the correct tool?) and execution success rate. Use `-v` for per-prompt debug detail.
 - **Inference latency** — measures P50/P95 latency and throughput
 
 **Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, `bench` auto-starts the sidecar if not running and stops it after the run.
@@ -476,9 +475,8 @@ STEP 5  INFERENCE LOOP  (skipped on cache hit)
        embed short-circuit (reason=embed): execute tool directly, skip grammar pass
          ├── tool succeeds: print output directly
          └── tool fails / no args: fall back to direct inference (plain system prompt)
-       routing grammar path (reason=file path|forced):
-         pass 1: routing grammar → model emits <tool:NAME> or <no_tool>
-         if <tool:NAME>: execute tool → print output directly (pass 2 only on error)
+       model-driven path (reason=file path|forced):
+         pass 1: plain Call with BuildToolPrompt → model emits <tool:NAME> or answers directly
          passes 2+: parse <tool_call>/<tool:NAME> blocks → execute → print or re-infer
          loop until no tool calls remain (up to 5 iterations)
     │
@@ -540,16 +538,15 @@ STEP 4b CACHE CHECK
 
 STEP 5  INFERENCE LOOP
   task          Send assembled messages to model sidecar for generation
-  mode          embed short-circuit: time_date (skipping routing grammar)
+  mode          embed short-circuit: time_date
   tool_call     get_time(null)
   tool_result   2026-03-08 14:57:17 EDT (Sunday)
   elapsed       2ms
 
-  # Routing grammar path (reason=file path or forced):
-  # PASS 1        routing grammar
+  # Model-driven path (reason=file path or forced):
+  # PASS 1        model-driven tool dispatch
   # call          POST localhost:27001/v1/chat/completions
   # raw_resp      "<tool:read_file>"
-  # route         <tool:read_file>
   # tool_call     read_file({"path":"go.mod"})
   # tool_result   module github.com/...
   # latency 1     320ms
@@ -587,8 +584,8 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `internal/config/config.go` | Config struct, Load/Save, model pool helpers, embed model, kb_min_score, legacy migrations |
 | `internal/search/search.go` | DuckDuckGo HTML search client, retry logic, result parsing |
 | `internal/sidecar/sidecar.go` | Sidecar state, lifecycle (start/stop), port allocation, pool dispatch, process helpers |
-| `internal/sidecar/transport.go` | OpenAI-compatible HTTP transport: ChatRequest, Call, CallWithGrammar, Stream, RawCall, StripThinkBlocks |
-| `internal/sidecar/infer_server.py` | Custom MLX inference sidecar with routing grammar support (embedded in binary) |
+| `internal/sidecar/transport.go` | OpenAI-compatible HTTP transport: ChatRequest, Call, Stream, RawCall, StripThinkBlocks |
+| `internal/sidecar/infer_server.py` | Custom MLX inference sidecar (embedded in binary) |
 | `internal/cue/cue.go` | Cue struct, Load/Save, Find, ForModel, embedded default YAML |
 | `internal/cue/cues_default.yaml` | 17 default cues across 8 categories (embedded in binary) |
 | `internal/embed/embed.go` | Embed sidecar lifecycle, HTTP embedding calls, cosine similarity, cue classifier |
@@ -621,12 +618,13 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 
 | Version | Summary |
 |---------|---------|
-| 0.11.0  | A1B — schema v2: flat `models:` list replaces `tiers:` map; `ModelEntry` with per-model param overrides; `ConfigVersion = 2`; `migrateV1` converts v1 tiers to flat list preserving param overrides; `iq pool list/add/rm` replaces `iq tier show/add/rm`; `iq lm get` prints `iq pool add`; `SuggestTier` → `SuggestSize` (returns "small"/"large"); `--tier` flag → `--model` flag on `iq ask`/`iq pry`; TIER column removed from `iq st`; sweep no longer needs `--tier` flag |
+| 0.11.1  | A2 — drop routing grammar harness: remove `CallWithGrammar`, `RouteGrammar`, `RoutingGrammarProcessor`; rename `BuildRoutingPrompt`→`BuildToolPrompt`; remove `RegistryNames`; collapse grammar path into unified model-driven tool loop; fix root help stale `tier`/`--tier` references |
 <details>
-<summary>Older versions (v0.2.7 – v0.10.0)</summary>
+<summary>Older versions (v0.2.7 – v0.11.0)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.11.0  | A1B — schema v2: flat `models:` list replaces `tiers:` map; `ModelEntry` with per-model param overrides; `ConfigVersion = 2`; `migrateV1` converts v1 tiers to flat list preserving param overrides; `iq pool list/add/rm` replaces `iq tier show/add/rm`; `iq lm get` prints `iq pool add`; `SuggestTier` → `SuggestSize` (returns "small"/"large"); `--tier` flag → `--model` flag on `iq ask`/`iq pry`; TIER column removed from `iq st`; sweep no longer needs `--tier` flag |
 | 0.10.0  | Design pivot (A1): retire `pipeline:` config field and two_tier/single_pool routing modes; flat model pool is now the only inference path; `resolveRoute` replaces `resolveSinglePool`+`resolveRoute`; `TierSource` = "pool"; `iq restart` command added; `iq stop` works with no models assigned; `pipeline:` silently ignored on load; `docs/design-pivot-01.md` added |
 |---------|---------|
 | 0.9.4   | `internal/color`: all funcs accept `any` via fmt.Sprint; add GrnR (reverse-video green), Blu, Cya; color test coverage 77→81% |

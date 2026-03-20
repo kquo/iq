@@ -705,7 +705,7 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 	fmt.Fprintf(os.Stderr, "  max_tokens  512\n")
 
 	perfCfg, _ := config.Load(nil)
-	perfIP := config.ResolveInferParams(perfCfg, state.Tier)
+	perfIP := config.ResolveInferParams(perfCfg, state.Model)
 
 	var latenciesMs []float64
 	var tokenCounts []float64
@@ -765,7 +765,7 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 
 // ── Tool Benchmark ────────────────────────────────────────────────────────
 
-// runToolBench sends each tool_prompt through the routing grammar pipeline
+// runToolBench sends each tool_prompt through the model-driven tool dispatch pipeline
 // and checks that the model routes to the expected tool and that execution succeeds.
 func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResult, error) {
 	state, err := sidecar.ReadState(modelID)
@@ -779,11 +779,10 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 
 	// Build the system prompt with tool instructions.
 	reg := tools.NewRegistry()
-	sysprompt := "You are a helpful assistant.\n" + tools.BuildRoutingPrompt(reg)
-	grammar := &sidecar.RouteGrammar{ToolNames: tools.RegistryNames(reg)}
+	sysprompt := "You are a helpful assistant.\n" + tools.BuildToolPrompt(reg)
 
 	toolCfg, _ := config.Load(nil)
-	toolIP := config.ResolveInferParams(toolCfg, state.Tier)
+	toolIP := config.ResolveInferParams(toolCfg, state.Model)
 
 	var latenciesMs []float64
 	routeCorrect := 0
@@ -800,7 +799,7 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 			pi+1, len(corpus.ToolPrompts), tp.ID, tp.ExpectedTool)
 
 		t1 := time.Now()
-		response, err := sidecar.CallWithGrammar(context.Background(), state.Port, messages, toolIP.MaxTokens, grammar, toolIP)
+		response, err := sidecar.Call(context.Background(), state.Port, messages, toolIP.MaxTokens, toolIP)
 		elapsed := time.Since(t1)
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 
@@ -814,8 +813,15 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 			fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra("raw_resp"), color.Gra(fmt.Sprintf("%q", truncate(response, 200))))
 		}
 
-		// Parse routing prefix.
-		routedTool, routeRest := tools.ParseRoutingPrefix(response)
+		// Detect called tool: try <tool_call> blocks first, then <tool:NAME> prefix.
+		var routedTool string
+		var routeRest string
+		if calls, _ := tools.ParseCalls(response, reg); len(calls) > 0 {
+			routedTool = calls[0].Name
+		} else if t, rest := tools.ParseRoutingPrefix(response); t != "" {
+			routedTool = t
+			routeRest = rest
+		}
 		routeMatch := routedTool == tp.ExpectedTool
 		if routeMatch {
 			routeCorrect++
@@ -824,11 +830,16 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 		// Try to execute the tool.
 		var execResult string
 		if routedTool != "" {
-			args := tools.ParseRoutingArgs(routeRest)
-			call := tools.Call{Name: routedTool, Args: args}
+			var call tools.Call
+			if calls, _ := tools.ParseCalls(response, reg); len(calls) > 0 {
+				call = calls[0]
+			} else {
+				args := tools.ParseRoutingArgs(routeRest)
+				call = tools.Call{Name: routedTool, Args: args}
+			}
 
 			if verbose {
-				argsJSON, _ := json.Marshal(args)
+				argsJSON, _ := json.Marshal(call.Args)
 				fmt.Fprintf(os.Stderr, "      %s  %s(%s)\n", color.Gra("tool_call"), call.Name, string(argsJSON))
 			}
 
