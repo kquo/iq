@@ -1,5 +1,8 @@
 # IQ Architecture
 
+> **Project status: frozen (2026-03-20).**
+> Development halted. The `iq` and `lm` binaries are kept as learning artifacts. The `kb` binary has been superseded by more mature open source alternatives ([AnythingLLM](https://github.com/Mintplex-Labs/anything-llm), [PrivateGPT](https://github.com/zylon-ai/private-gpt), [Khoj](https://github.com/khoj-ai/khoj?tab=readme-ov-file), [Open WebUI](https://github.com/open-webui/open-webui)). For active AI-assisted development, we have moved to [OpenCode](https://github.com/anomalyco/opencode/) with externally-hosted LLMs. This document is preserved for reference.
+
 ## Overview
 
 IQ is a local generative AI system for Apple Silicon, capable of running LLMs entirely offline with no cloud dependency. The project ships three focused binaries from a shared monorepo: **`iq`** (coding assistant), **`lm`** (local model manager), and **`kb`** (private knowledge base). All three share the same `internal/` packages. The **`iq`** CLI orchestrates a full prompt pipeline — cue classification, tool detection, KB retrieval, inference, and session management — all from a unified command-line interface.

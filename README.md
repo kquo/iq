@@ -1,8 +1,64 @@
 # IQ
 
+> **Project status: frozen (2026-03-20).**
+> Development halted. `iq` and `lm` are kept as learning artifacts — a hands-on study in LLM orchestration, embedding pipelines, and local inference on Apple Silicon. For active development we have moved to [OpenCode](https://github.com/anomalyco/opencode/) with externally-hosted LLMs. The `kb` binary has been superseded by more capable open source alternatives ([AnythingLLM](https://github.com/Mintplex-Labs/anything-llm), [PrivateGPT](https://github.com/zylon-ai/private-gpt), [Khoj](https://github.com/khoj-ai/khoj?tab=readme-ov-file), [Open WebUI](https://github.com/open-webui/open-webui)). See [arch.md](arch.md) for the full technical record.
+
+---
+
+## Development Methodology
+
+This is the workflow used throughout this project. It's worth keeping for reuse in other projects.
+
+### Ground rules
+
+- Every change goes through a single canonical build script (`./build.sh`) that runs `go mod tidy`, `go fmt`, `go fix`, `go vet`, `staticcheck`, all tests, and then builds the binaries. Never run individual toolchain commands directly.
+- Versioning follows semver. Decision test: *"Would a user notice this in the CLI help, config show, or start command?"* → yes = MINOR, no = PATCH. MAJOR not until stable public API.
+- Each feature has an ID: group letter + sequence number (`A1`, `B2`, etc.), sorted easiest → hardest within each group.
+
+### The cycle
+
+**Step 0 — Repo audit.**
+Before starting a new session of work, run a full consistency audit: check all documentation against the code for drift. Grep thresholds, constants, command names, file paths. Fix anything stale before writing new code. This prevents compounding doc debt.
+
+**Step 1 — Roadmap.**
+Maintain a `plan.md` (or equivalent) that groups planned features by area and complexity. It's a living document — completed features are removed, not archived. The roadmap also captures project philosophy and constraints (hardware limits, design principles) so decisions have context.
+
+**Step 2 — Development cycle per feature:**
+
+**a. Review.** Read the next feature from the roadmap. Understand what it touches before writing anything.
+
+**b. AC-first (or skip for trivial changes).** Write an acceptance criteria document (`docs/ac_<id>.md`) before any code:
+- *Codebase scan* — what does the current code actually do in this area? Quote the relevant functions, files, and line ranges. This prevents building on wrong assumptions.
+- *In scope / out of scope* — explicit blast radius. What this change does and deliberately does not do.
+- *Design decisions* — record any non-obvious choices and why. Future readers (including you) will thank you.
+- *Acceptance tests* — the exact conditions that must be true for the feature to be complete. Written before implementation, verified after.
+
+For small or obvious changes, skip the AC and go straight to implementation.
+
+**c. Implement.** Code against the AC. When editing Go files with deep tab indentation (≥ 3 leading tabs), use Python `str.replace()` via Bash rather than editor exact-match tools — exact-match fails on deep indentation.
+
+**d. Verify.** Run `./build.sh` (no tag). Read the output — fix any vet issues, staticcheck warnings, or test failures before proceeding. Then manually verify each acceptance test from step b.
+
+**e. Pre-release checklist:**
+0. Run `./build.sh` clean — fix all failures before touching docs
+1. Audit architecture doc against code — grep constants, thresholds, command names, field orders; fix any drift
+2. Add version row to architecture doc version history (one visible row, rest in `<details>`)
+3. Bump `programVersion` in `cmd/<binary>/main.go`
+4. Remove completed features from the roadmap
+5. Delete any ephemeral AC memory copies
+6. Run `./build.sh <tag> "<short message>"` — the message is a phrase, not a changelog
+
+---
+
+## Legacy
+
+The rest of this file is the original README, preserved for reference.
+
+---
+
 IQ is a command-line tool for managing **offline generative AI systems** on Apple Silicon. It handles local LLM downloads, runs inference sidecars via `mlx_lm`, and routes prompts through a classification layer that selects the right model and cue for each task. The underlying AI models run entirely **on-device**, while IQ provides the CLI interface, workflow management, and task orchestration — all with no cloud dependency and no data leaving your machine.
 
-For a detailed technical overview, see [arch.md](arch.md). For the feature roadmap and project philosophy, see [plan.md](plan.md).
+For a detailed technical overview, see [arch.md](arch.md).
 
 ## Why
 
@@ -16,13 +72,11 @@ A personal tool for experimenting with LLM orchestration directly from the Mac t
 - `hf` CLI (`pipx install huggingface_hub`)
 - `mlx-embedding-models` in the mlx-lm venv (`pipx inject mlx-lm mlx-embedding-models`) — used for embeddings (classification + RAG)
 
-IQ uses [Hugging Face](https://huggingface.co) as the official model registry. All model downloads (`iq lm get`, `iq lm search`) pull from HF. For access to gated models and to avoid rate limits, set a Hugging Face token:
+IQ uses [Hugging Face](https://huggingface.co) as the official model registry. All model downloads (`lm get`, `lm search`) pull from HF. For access to gated models and to avoid rate limits, set a Hugging Face token:
 
 ```bash
-export HF_TOKEN=hf_k7mX2pQ9nRvL4wD8fYcJ3tBsH6eA1gNuZ5iW   # replace with your token
+export HF_TOKEN=hf_...   # replace with your token
 ```
-
-You can create a token at <https://huggingface.co/settings/tokens>.
 
 ## Getting Started
 
@@ -34,77 +88,34 @@ cd iq
 ./build.sh
 ```
 
+Builds three binaries into `$GOPATH/bin`: `iq`, `lm`, `kb`.
+
 ## Quick Start
 
 ```bash
-# Download recommended models (or substitute your own)
-iq lm get mlx-community/bge-small-en-v1.5-bf16
-iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit
-iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit
+# Download models
+lm get mlx-community/bge-small-en-v1.5-bf16
+lm get mlx-community/Llama-3.2-3B-Instruct-4bit
+lm get mlx-community/Qwen2.5-7B-Instruct-4bit
 
-# Configure embed model and tier assignments
+# Configure
 iq embed set mlx-community/bge-small-en-v1.5-bf16
-iq tier add fast mlx-community/Llama-3.2-3B-Instruct-4bit
-iq tier add slow mlx-community/Qwen2.5-7B-Instruct-4bit
+iq pool add mlx-community/Llama-3.2-3B-Instruct-4bit
+iq pool add mlx-community/Qwen2.5-7B-Instruct-4bit
 
 # Start sidecars
 iq start
 
-# Run a prompt — auto-classifies and routes to the right model
+# Run a prompt
 iq "explain how transformers work"
 ```
 
-Any MLX-compatible embedding model works for `embed`, and any MLX-compatible generative model works for `fast` / `slow` tiers. Use `iq lm search` to browse available models.
-
-## Find Your Best Models
-
-Every Apple Silicon Mac has different memory and thermal characteristics. Use `iq perf sweep` to benchmark candidate models on your hardware and pick the best fit:
-
-```bash
-# Download a few candidates to compare (smaller models are faster, larger ones more capable)
-iq lm get mlx-community/Llama-3.2-3B-Instruct-4bit     # 3B — lightweight, fast
-iq lm get mlx-community/gemma-3-4b-it-4bit             # 4B — balanced
-iq lm get mlx-community/Qwen2.5-7B-Instruct-4bit       # 7B — more capable, uses more memory
-
-# Sweep benchmarks each model: temporarily assigns → starts sidecar → benches → stops → restores config
-iq perf sweep --tier fast \
-  --models mlx-community/Llama-3.2-3B-Instruct-4bit,mlx-community/gemma-3-4b-it-4bit,mlx-community/Qwen2.5-7B-Instruct-4bit
-
-# Review the comparison table any time
-iq perf show
-```
-
-The sweep prints a comparison table at the end showing throughput, latency, and quality metrics for each model. Assign the winner to a tier:
-
-```bash
-iq tier add fast mlx-community/gemma-3-4b-it-4bit   # or whichever model scored best
-```
-
-By default sweep runs inference benchmarks (`--type infer`). Add `--type tool` or `--type cue` to compare tool-routing or classification accuracy as well.
-
-The `fast` and `slow` tiers serve different roles and benefit from different inference parameters (temperature, repetition penalty, max tokens). See the **Recommended per-tier tuning** table in [arch.md](arch.md) for starting values.
-
-```bash
-# Debug: see classification and routing without inferring
-iq -n "explain how transformers work"
-
-# Full trace including inference
-iq -d "explain how transformers work"
-
-# Interactive REPL
-iq ask
-
-# Raw access to a specific sidecar, bypassing the IQ framework
-iq pry fast "hello"
-iq pry slow "explain attention" -s "You are a terse assistant."
-```
-
 ## Commands
-Run `iq` without arguments to see the **usage**.
 
-```bash
-$ iq
-iq v0.7.9
-Work with IQ from the command line.
-...
 ```
+iq      — prompt pipeline, cue classification, session management
+lm      — model downloads, benchmarks (lm get/search/list/show/rm, lm perf)
+kb      — private knowledge base (kb ingest/list/search/ask)
+```
+
+Run any binary without arguments for full usage.
