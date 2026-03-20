@@ -99,8 +99,8 @@ The root `RunE` joins args and delegates to the same pipeline as `kb ask`. Same 
 **Sidecar management — independent from `iq`.**
 `kb` starts its own sidecars. Port assignment via `sidecar.NextAvailablePort` avoids conflicts. An embed sidecar started by `kb` is a separate process from the one started by `iq`, even if they load the same model. The cost (~15MB per sidecar) is acceptable per the decision recorded in `docs/project-split-01.md`.
 
-**Version: `kb v0.1.0`.**
-New binary, first release. `iq` bumps to `v0.14.0` (new user-visible commands removed from `iq kb` → `kb`... wait: `iq kb` stays in this phase). Correction: `iq` does not change in Phase 2 — the `iq kb` commands stay. Therefore `iq` version does not bump in Phase 2. Only `kb` ships as a new binary at `v0.1.0`.
+**Version: `iq v0.14.0 / kb v0.1.0`.**
+`kb` is a new binary at v0.1.0. `iq` bumps to v0.14.0 (MINOR): shipping a new peer binary alongside internal package additions (`config.DirFor`/`LoadAt`/`SaveAt`, `kb.PathFor`/`LoadFrom`/`SaveTo`/`IngestInto`) is user-visible at the toolchain level even though `iq --help` itself is unchanged. The `iq kb` commands remain in `iq` and are not removed in this phase (Phase 3).
 
 ---
 
