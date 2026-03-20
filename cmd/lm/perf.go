@@ -902,9 +902,9 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 // ── Cobra Commands ────────────────────────────────────────────────────────
 
 func printPerfHelp() {
-	fmt.Printf("Benchmark IQ model performance\n\n")
+	fmt.Printf("Benchmark model performance\n\n")
 	fmt.Printf("%s\n", color.Whi2("USAGE"))
-	fmt.Printf("  iq perf <subcommand> [flags]\n\n")
+	fmt.Printf("  lm perf <subcommand> [flags]\n\n")
 	fmt.Printf("%s\n", color.Whi2("SUBCOMMANDS"))
 	fmt.Printf("  %-15s %s\n", "bench", "Run benchmark for a model")
 	fmt.Printf("  %-15s %s\n", "sweep", "Auto-assign, start, bench, stop across N models")
@@ -916,15 +916,15 @@ func printPerfHelp() {
 	fmt.Printf("  --models <id,id,...>       Comma-separated model IDs for comparison benchmarks\n")
 	fmt.Printf("  -v, --verbose             Show debug detail for each prompt (tool bench)\n\n")
 	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
-	fmt.Printf("  iq perf bench --type kb\n")
-	fmt.Printf("  iq perf bench --type cue\n")
-	fmt.Printf("  iq perf bench --type infer --model mlx-community/gemma-3-1b-it-4bit\n")
-	fmt.Printf("  iq perf bench --type tool --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit\n")
-	fmt.Printf("  iq perf bench --type cue --models model-a,model-b,model-c\n")
-	fmt.Printf("  iq perf sweep --tier fast --models model-a,model-b --type infer\n")
-	fmt.Printf("  iq perf show\n")
-	fmt.Printf("  iq perf show --type kb\n")
-	fmt.Printf("  iq perf clear --model <id>\n")
+	fmt.Printf("  lm perf bench --type kb\n")
+	fmt.Printf("  lm perf bench --type cue\n")
+	fmt.Printf("  lm perf bench --type infer --model mlx-community/gemma-3-1b-it-4bit\n")
+	fmt.Printf("  lm perf bench --type tool --model mlx-community/Meta-Llama-3.1-8B-Instruct-4bit\n")
+	fmt.Printf("  lm perf bench --type cue --models model-a,model-b,model-c\n")
+	fmt.Printf("  lm perf sweep --models model-a,model-b --type infer\n")
+	fmt.Printf("  lm perf show\n")
+	fmt.Printf("  lm perf show --type kb\n")
+	fmt.Printf("  lm perf clear --model <id>\n")
 }
 
 func newPerfCmd() *cobra.Command {

@@ -10,7 +10,7 @@ IQ is a local generative AI system for Apple Silicon, capable of running LLMs en
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                               iq CLI (Go)                                    │
 │                                                                              │
-│ iq lm    iq start/stop  iq cue  iq kb   iq ask    iq pry   iq perf iq config │
+│ lm       iq start/stop  iq cue  iq kb   iq ask    iq pry   lm perf iq config │
 │ (models)  (service)     (cues)  (RAG)   (infer)   (raw)    (bench) (schema)  │
 └────┬──────────┬──────────┬────────┬───────┬─────────┬────────────┬───────────┘
      │          │          │        │       │         │            │
@@ -52,21 +52,21 @@ The `cmd/iq` package is the CLI entry point — it wires commands (cobra), flags
 
 ### Model Management
 
-The **`iq lm`** command handles the full model lifecycle. Models are downloaded from [mlx-community](https://huggingface.co/models?filter=mlx) via the `hf` CLI and stored in the standard HuggingFace cache at `~/.cache/huggingface/hub/`. A manifest at `~/.config/iq/models.json` tracks what IQ knows about.
+The **`lm`** binary handles the full model lifecycle (extracted from `iq` in Phase 1). Models are downloaded from [mlx-community](https://huggingface.co/models?filter=mlx) via the `hf` CLI and stored in the standard HuggingFace cache at `~/.cache/huggingface/hub/`. A manifest at `~/.config/iq/models.json` tracks what IQ knows about.
 
 Key operations: `search`, `get`, `list`, `show`, `rm`.
 
-`iq lm search` queries the HF API, enriches results in parallel (one goroutine per model) to populate DISK and EST MEM, and displays TASK / DISK / PARAMS / EST MEM / DOWNLOADS. The TASK column shows the HuggingFace `pipeline_tag` — green for `text-generation` and `feature-extraction` (displayed as `embedding`), red for unsupported types (e.g. `image-text-to-text`). Accepts an optional query string or a numeric count (e.g. `iq lm search 100`).
+`lm search` queries the HF API, enriches results in parallel (one goroutine per model) to populate DISK and EST MEM, and displays TASK / DISK / PARAMS / EST MEM / DOWNLOADS. The TASK column shows the HuggingFace `pipeline_tag` — green for `text-generation` and `feature-extraction` (displayed as `embedding`), red for unsupported types (e.g. `image-text-to-text`). Accepts an optional query string or a numeric count (e.g. `lm search 100`).
 
-`iq lm get` checks the model's task type before downloading; if it is not `text-generation`, a yellow warning is printed (download proceeds anyway). After download, the `pipeline_tag` is cached in the manifest for offline display. Infers a suggested size (`small` for < 2GB, `large` otherwise) and prints the `iq pool add` command to assign it.
+`lm get` checks the model's task type before downloading; if it is not `text-generation`, a yellow warning is printed (download proceeds anyway). After download, the `pipeline_tag` is cached in the manifest for offline display. Infers a suggested size (`small` for < 2GB, `large` otherwise) and prints the `iq pool add` command to assign it.
 
-`iq lm list` displays TASK alongside DISK / PULLED / PARAMS / EST MEM / TIER. On first display, missing task tags are backfilled from the HF API in parallel (with local `config.json` inference as fallback) and persisted to the manifest.
+`lm list` displays TASK alongside DISK / PULLED / PARAMS / EST MEM / TIER. On first display, missing task tags are backfilled from the HF API in parallel (with local `config.json` inference as fallback) and persisted to the manifest.
 
-`iq lm show` displays the TASK field (backfilled from HF API or local `config.json` inference if not cached).
+`lm show` displays the TASK field (backfilled from HF API or local `config.json` inference if not cached).
 
 **Local task inference** (`inferTaskFromConfig`) — when the HF API returns no `pipeline_tag`, IQ reads the model's local `config.json` and infers the task: vision indicator keys (`vision_config`, `visual`, `vision_tower`, `image_size`) or known VLM `model_type` values → `image-text-to-text`; known text-generation `model_type` values (only after confirming no vision indicators) → `text-generation`.
 
-`iq lm rm` auto-removes the model from the pool and stops running sidecars (including the embed sidecar) with yellow warnings before prompting for confirmation. The confirmation prompt is printed in yellow with `[y/N]` in default color.
+`lm rm` auto-removes the model from the pool and stops running sidecars (including the embed sidecar) with yellow warnings before prompting for confirmation. The confirmation prompt is printed in yellow with `[y/N]` in default color.
 
 ### Configuration
 
@@ -103,7 +103,7 @@ models:
 embed_model: mlx-community/bge-small-en-v1.5-bf16
 ```
 
-Use `iq perf sweep` to validate model and parameter choices on your hardware.
+Use `lm perf sweep` to validate model and parameter choices on your hardware.
 
 Pool commands: `iq pool list`, `iq pool add <model>`, `iq pool rm <model>`.
 
@@ -142,7 +142,7 @@ Start sequence:
 6. Poll `GET /v1/models` until 200 OK or 120s timeout. A background goroutine calls `cmd.Wait()` to detect early crashes reliably (avoids zombie-pid false positives from signal-0 checks).
 7. On failure: print last 10 log lines + path
 
-`iq start/stop` accepts a model ID (acts on one) or no argument (all assigned models). On first run with no models in the pool, `iq start` prints a recommended setup with example `iq lm get` and `iq pool add` commands.
+`iq start/stop` accepts a model ID (acts on one) or no argument (all assigned models). On first run with no models in the pool, `iq start` prints a recommended setup with example `lm get` and `iq pool add` commands.
 
 **Pool dispatcher (`pickAnySidecar`)** — scans live state files and returns the first live inference sidecar (excluding the embed sidecar).
 
@@ -324,7 +324,7 @@ iq pry <model> [flags] <message>
 
 ### Benchmarking
 
-The **`iq perf`** command evaluates model performance using an embedded benchmark corpus. Results are stored in `~/.config/iq/benchmarks.json`.
+The **`lm perf`** command evaluates model performance using an embedded benchmark corpus. Results are stored in `~/.config/iq/benchmarks.json`.
 
 Benchmark types:
 - **KB retrieval** — measures search quality (MRR = Mean Reciprocal Rank)
@@ -334,17 +334,17 @@ Benchmark types:
 
 **Multi-model comparison** — `--models m1,m2,m3` runs the same benchmark across multiple models and prints a comparison table at the end. For embed-type benchmarks (kb, cue), temporary sidecars are spun up as needed. For infer/tool, `bench` auto-starts the sidecar if not running and stops it after the run.
 
-**Automated sweep** — `iq perf sweep --models m1,m2 --type infer` automates the pool-add/start/bench/stop cycle: for each model it temporarily adds to the pool, starts the sidecar, runs benchmarks, stops the sidecar, and restores the original pool. Produces a comparison table at the end.
+**Automated sweep** — `lm perf sweep --models m1,m2 --type infer` automates the pool-add/start/bench/stop cycle: for each model it temporarily adds to the pool, starts the sidecar, runs benchmarks, stops the sidecar, and restores the original pool. Produces a comparison table at the end.
 
-**Model not downloaded** — if a model's HuggingFace snapshot is missing, both `bench` and `sweep` print a red hint: `model not downloaded — run: iq lm get <model>`.
+**Model not downloaded** — if a model's HuggingFace snapshot is missing, both `bench` and `sweep` print a red hint: `model not downloaded — run: lm get <model>`.
 
 Commands:
 ```
-iq perf bench [--type <type>] [--model <id>] [-v]             # run benchmarks
-iq perf bench --type cue --models model-a,model-b,model-c     # compare models
-iq perf sweep --models m1,m2 --type infer                     # automated sweep
-iq perf show [model] [type]                                   # display stored results
-iq perf clear                                                 # wipe benchmark history
+lm perf bench [--type <type>] [--model <id>] [-v]             # run benchmarks
+lm perf bench --type cue --models model-a,model-b,model-c     # compare models
+lm perf sweep --models m1,m2 --type infer                     # automated sweep
+lm perf show [model] [type]                                   # display stored results
+lm perf clear                                                 # wipe benchmark history
 ```
 
 ### Embed Sidecar
@@ -613,23 +613,24 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 | `cmd/iq/prompt_test.go` | End-to-end orchestration tests with mock sidecar (httptest) |
 | `cmd/iq/tools.go` | Tool trace helpers (printToolCallTrace, printToolResultTrace, printToolStatus) |
 | `cmd/iq/kb.go` | KB CLI commands (ingest, list, search, rm, clear) |
-| `cmd/iq/lm.go` | Cobra commands for lm search/get/list/show/rm (thin shim over internal/lm) |
-| `cmd/iq/perf.go` | Benchmark corpus, bench/show/clear commands, metrics |
+| `cmd/lm/lm.go` | Cobra commands for lm search/get/list/show/rm (thin shim over internal/lm) |
+| `cmd/lm/perf.go` | Benchmark corpus, bench/sweep/show/clear commands, metrics |
 | `cmd/iq/cfg.go` | `iq config` — show effective config, validate config files |
 | `cmd/iq/probe.go` | `iq pry` — raw sidecar access |
-| `cmd/iq/bench_corpus.yaml` | Benchmark test data (embedded in binary) |
+| `cmd/lm/bench_corpus.yaml` | Benchmark test data (embedded in lm binary) |
 
 
 ## Version History
 
 | Version | Summary |
 |---------|---------|
-| 0.12.0  | A3 — context budget management: `context_window` field on `ModelEntry`; chars/4 token estimation; trim KB chunks then session turns to fit `context_window − max_tokens` budget; gray warning on trim; Step 4 trace shows `est_tokens`/`budget`/`trimmed`; `iq cfg show` displays `context_window` per model |
+| 0.13.0  | Phase 1 — extract `cmd/lm/`: `lm.go`+`perf.go`+`bench_corpus.yaml` move to new `lm` binary (v0.1.0); `lm search/get/list/show/rm` and `lm perf bench/sweep/show/clear` are now top-level `lm` commands; `iq lm` and `iq perf` removed from `iq`; `lm` installed alongside `iq` by `build.sh` |
 <details>
-<summary>Older versions (v0.2.7 – v0.11.1)</summary>
+<summary>Older versions (v0.2.7 – v0.12.0)</summary>
 
 | Version | Summary |
 |---------|---------|
+| 0.12.0  | A3 — context budget management: `context_window` field on `ModelEntry`; chars/4 token estimation; trim KB chunks then session turns to fit `context_window − max_tokens` budget; gray warning on trim; Step 4 trace shows `est_tokens`/`budget`/`trimmed`; `iq cfg show` displays `context_window` per model |
 | 0.11.1  | A2 — drop routing grammar harness: remove `CallWithGrammar`, `RouteGrammar`, `RoutingGrammarProcessor`; rename `BuildRoutingPrompt`→`BuildToolPrompt`; remove `RegistryNames`; collapse grammar path into unified model-driven tool loop; fix root help stale `tier`/`--tier` references |
 | 0.11.0  | A1B — schema v2: flat `models:` list replaces `tiers:` map; `ModelEntry` with per-model param overrides; `ConfigVersion = 2`; `migrateV1` converts v1 tiers to flat list preserving param overrides; `iq pool list/add/rm` replaces `iq tier show/add/rm`; `iq lm get` prints `iq pool add`; `SuggestTier` → `SuggestSize` (returns "small"/"large"); `--tier` flag → `--model` flag on `iq ask`/`iq pry`; TIER column removed from `iq st`; sweep no longer needs `--tier` flag |
 | 0.10.0  | Design pivot (A1): retire `pipeline:` config field and two_tier/single_pool routing modes; flat model pool is now the only inference path; `resolveRoute` replaces `resolveSinglePool`+`resolveRoute`; `TierSource` = "pool"; `iq restart` command added; `iq stop` works with no models assigned; `pipeline:` silently ignored on load; `docs/design-pivot-01.md` added |

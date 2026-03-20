@@ -19,58 +19,6 @@ import (
 	"iq/internal/sidecar"
 )
 
-// ── Help ──────────────────────────────────────────────────────────────────────
-
-func printLmHelp() {
-	n := programName
-	fmt.Printf("Work with IQ language models.\n\n")
-	fmt.Printf("%s\n", color.Whi2("USAGE"))
-	fmt.Printf("  %s lm <command> [flags]\n\n", n)
-	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
-	fmt.Printf("  %-10s %s\n", "search [query|count]", "Search MLX model registry; numeric arg sets result count")
-	fmt.Printf("  %-10s %s\n", "get", "Download a model from the registry")
-	fmt.Printf("  %-10s %s\n", "ls|list", "List locally available models")
-	fmt.Printf("  %-10s %s\n", "show", "Show details for a model")
-	fmt.Printf("  %-10s %s\n\n", "rm", "Remove a model")
-	fmt.Printf("%s\n", color.Whi2("INHERITED FLAGS"))
-	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
-	fmt.Printf("%s\n", color.Whi2("ARGUMENTS"))
-	fmt.Printf("  A model name can be supplied as an argument.\n\n")
-	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
-	fmt.Printf("  $ %s lm search\n", n)
-	fmt.Printf("  $ %s lm search gemma\n", n)
-	fmt.Printf("  $ %s lm get mlx-community/gemma-3-1b-it-4bit\n", n)
-	fmt.Printf("  $ %s lm list\n", n)
-	fmt.Printf("  $ %s lm show mlx-community/gemma-3-1b-it-4bit\n", n)
-	fmt.Printf("  $ %s lm rm mlx-community/gemma-3-1b-it-4bit\n", n)
-}
-
-// ── Root lm command ───────────────────────────────────────────────────────────
-
-func newLmCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:          "lm",
-		Short:        "Work with IQ language models",
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			printLmHelp()
-			return nil
-		},
-	}
-	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		printLmHelp()
-	})
-
-	cmd.AddCommand(
-		newLmSearchCmd(),
-		newLmGetCmd(),
-		newLmListCmd(),
-		newLmShowCmd(),
-		newLmRmCmd(),
-	)
-	return cmd
-}
-
 // ── search ────────────────────────────────────────────────────────────────────
 
 func newLmSearchCmd() *cobra.Command {
@@ -216,7 +164,7 @@ func newLmListCmd() *cobra.Command {
 				return err
 			}
 			if len(entries) == 0 {
-				fmt.Println("No models. Use 'iq lm get <model>' to download one.")
+				fmt.Println("No models. Use 'lm get <model>' to download one.")
 				return nil
 			}
 

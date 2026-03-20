@@ -1,7 +1,7 @@
 # Project Split 01 — Three-Binary Monorepo
 
 **Date:** 2026-03-18
-**Status:** Planned — no implementation started
+**Status:** Phase 1 complete (iq v0.13.0 / lm v0.1.0) — Phase 2 pending
 
 ## Why
 

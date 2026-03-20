@@ -14,7 +14,7 @@ import (
 
 const (
 	programName    = "iq"
-	programVersion = "0.12.0"
+	programVersion = "0.13.0"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -54,13 +54,13 @@ func printRootHelp() {
 	fmt.Printf("  %-24s %s\n", "embed", "Manage embed sidecar model")
 	fmt.Printf("  %-24s %s\n\n", "cfg|config", "Inspect and validate IQ configuration")
 	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
-	fmt.Printf("  %-24s %s\n", "lm", "Work with IQ language models")
 	fmt.Printf("  %-24s %s\n", "ask", "Interactive REPL and prompt aliases")
 	fmt.Printf("  %-24s %s\n", "cue", "Work with IQ cues")
 	fmt.Printf("  %-24s %s\n", "kb", "Work with IQ knowledge base")
-	fmt.Printf("  %-24s %s\n", "perf", "Benchmark IQ model performance")
 	fmt.Printf("  %-24s %s\n", "pry", "Send a raw message directly to a model sidecar")
 	fmt.Printf("  %-24s %s\n\n", "version", "Show the current IQ version")
+	fmt.Printf("%s\n", color.Whi2("MODEL MANAGEMENT"))
+	fmt.Printf("  %-24s %s\n\n", "lm <command>", "Download, list, show, rm models; run benchmarks (separate binary)")
 	fmt.Printf("%s\n", color.Whi2("FLAGS"))
 	fmt.Printf("  %-24s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-24s %s\n", "-c, --category <n>", "Classify within a category only")
@@ -175,11 +175,9 @@ func runCLI() {
 		newDocCmd(),
 		newPoolCmd(),
 		newEmbedCmd(),
-		newLmCmd(),
 		newPromptCmd(),
 		newCueCmd(),
 		newKbCmd(),
-		newPerfCmd(),
 		newConfigCmd(),
 		newProbeCmd(),
 		newSvcCmd(), // hidden backward-compat alias
@@ -192,6 +190,11 @@ func runCLI() {
 		}
 		os.Exit(1)
 	}
+}
+
+// shellescape single-quotes a string for safe shell interpolation.
+func shellescape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func main() {
