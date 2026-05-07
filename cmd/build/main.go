@@ -5,7 +5,7 @@
 // Kept in-tree (not extracted to the library's cmd/) because build.sh invokes
 // via `go run ./cmd/build` — extraction would move version pinning into
 // build.sh + build.sh.tmpl, a worse propagation surface than this ~20 lines
-// of inert boilerplate. See AC102 reasoning.
+// of inert boilerplate.
 package main
 
 import (

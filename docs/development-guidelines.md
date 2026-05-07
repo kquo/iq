@@ -3,6 +3,7 @@
 Engineering guidance for any agent or contributor working in this repo.
 These are durable coding practices, not workflow or process rules.
 For workflow, see `development-cycle.md`. For validation, see `build-release.md`.
+Sections above ## Project Practices are governa-maintained canon and update via canon syncs; repo-specific practices in ## Project Practices.
 
 ## Identifier Strategy
 
@@ -68,3 +69,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 - Docs ship with the code change that introduces the behavior
 - If a doc references a function, flag, or file path, verify it still exists before publishing
 - Architecture docs (`arch.md`) reflect what is built, not what is planned
+
+## Project Practices
+
+- Follow existing repo patterns unless an approved improvement says otherwise.

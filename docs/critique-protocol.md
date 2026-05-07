@@ -42,7 +42,7 @@ The final round of a critique cycle writes `### Round N Summary` with exactly th
 The Operator maintains two sections that pair with the `## Critique` section:
 
 - **`### Disposition Log`** (H3 subsection under `## Implementation Notes`) — cross-references each finding by label and names the resulting AC change. Required for ACs with extensive critique rounds; optional otherwise (`git log` on the AC file carries the same info for short cycles).
-- **`## Director Review`** (top-level, between `## Documentation Updates` and `## Status`) — lists every viable-options trade-off chosen during the cycle (not just ones the Operator feels uncertain about).
+- **`## Director Review`** (top-level, between `## Documentation Updates` and `## Status`) — lists trade-offs the Director still needs to decide. Decisions already made (whether in conversation or by repo precedent) live inline in the relevant AC section with `Director-set` attribution, not here. See `docs/ac-template.md` for the full convention.
 
 ## Lifecycle
 

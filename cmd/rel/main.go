@@ -1,8 +1,8 @@
-// Thin wrapper. Logic lives in github.com/queone/governa-reltool.
-// Kept in-tree (not extracted to the library's cmd/) because build.sh invokes
-// via `go run ./cmd/rel` — extraction would move version pinning into build.sh
-// + build.sh.tmpl, a worse propagation surface than this ~20 lines of inert
-// boilerplate. See AC102 reasoning.
+// CODE-flavor library wrapper. CODE consumers are Go projects with `go.mod`;
+// the library import (`github.com/queone/governa-reltool`) has zero friction.
+// DOC overlay uses an inline stdlib-only form because content repos shouldn't
+// be required to be Go modules. See `docs/build-release.md` for the divergence
+// rationale.
 package main
 
 import (

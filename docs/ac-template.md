@@ -18,10 +18,9 @@ Describe the change in one short paragraph.
 
 ## Objective Fit
 
-1. **Which part of the primary objective?** Tie the work to a concrete part of the product or platform objective. If you cannot answer this in one sentence, the AC is probably not ready.
-2. **Why not advance a higher-priority task instead?** Either name the higher-priority blocker that this unblocks, or label the work as an intentional pivot and explain the trade-off.
-3. **What existing decision does it depend on or risk contradicting?** Reference the prior AC, architectural decision, or shipped feature that this builds on. If it contradicts a prior decision, say so explicitly and explain why the contradiction is intentional.
-4. **Intentional pivot?** If yes, state that here and reaffirm point 2.
+1. **Outcome.** What this delivers, in one sentence.
+2. **Priority.** Why this over higher-priority work. If it's an intentional pivot, name the trade-off.
+3. **Dependencies.** Prior ACs or decisions this builds on or contradicts. State explicit contradictions and why they're intentional.
 
 ## In Scope
 
@@ -62,6 +61,8 @@ Every AT must be labeled `[Automated]` or `[Manual]`:
 
 Default to Automated whenever the result is verifiable without a live external service. Manual ATs add friction to the release flow, so reserve them for behaviors that genuinely cannot be checked any other way.
 
+Source axis (`[Automated]` / `[Manual]`) names who verifies. Timing axis (`[Pre-release gate]` / `[Post-release verification]`) names when verification happens. `[Pre-release gate]` is the default and may be omitted; `[Post-release verification]` is explicit. Use `[Post-release verification]` only when automated regression coverage already gates pre-release on the underlying class. The label communicates that the AT is a confidence check, not a gate, so future Operators do not promote it back into a gate.
+
 **AT1** [Automated] — One-line description of what is verified, with the exact check (file existence, grep pattern, SQL query, or CLI output).
 
 **AT2** [Automated] — ...
@@ -78,11 +79,11 @@ List the docs that must be updated as part of this AC. If a change touches code 
 
 ## Director Review
 
-List every scope or wording trade-off chosen between two or more viable options during the Operator/Director cycle. Each entry names the option taken and a one-line why. Empty is allowed — write `None` when the AC has no judgment calls worth surfacing.
+This section lists trade-offs the Director still needs to decide. **Each entry must be numbered (`1.`, `2.`, …) and lead with a literal question ending in `?`** so the Director can reference entries inline ("Regarding #1, …"). If you cannot phrase the entry as an open question awaiting the Director's answer, it does not belong here. Send mechanical computations and showing-work notes to Implementation Notes; settled decisions go inline with `Director-set` attribution; choices covered by repo precedent are not surfaced at all. After the question, state the Operator's lean and a one-line why. Once the Director decides (in conversation or by editing the AC), move the item out of this section and attribute it inline (Summary, In Scope/Out of Scope, Implementation Notes) with a `Director-set` parenthetical. Write `None` when nothing is open.
 
-The Director validates this list during critique rounds.
+The Director resolves these during critique rounds — in conversation or by editing the AC directly.
 
-- Decision X: option taken (alternatives considered: A, B). Why: <one-line>.
+1. Should we do X or Y? Operator leans X (alternative: Y). Why: <one-line>.
 
 ## Status
 
