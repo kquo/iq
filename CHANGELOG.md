@@ -1,8 +1,9 @@
 # Changelog
 
 | Version | Summary |
-|---|---|
+|---------|---------|
 | Unreleased | |
+| 0.16.1 | sync CHANGELOG separator with canon |
 | 0.16.0 | AC2: adopt governa v0.120.1 governance template |
 | 0.15.0 | AC1: adopt governa v0.97.2 governance template |
 | 0.14.0 | Phase 2 — new `kb` binary (v0.1.0): `kb ingest/list/search/rm/clear/ask/start/stop/restart/status/config`; `kb <query>` synonymous with `kb ask <query>`; KB index at `~/.config/kb/kb.json` (separate from iq's); `config.DirFor`/`LoadAt`/`SaveAt` added; `kb.PathFor`/`LoadFrom`/`SaveTo`/`IngestInto` added |

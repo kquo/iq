@@ -14,7 +14,7 @@ import (
 
 const (
 	programName    = "iq"
-	programVersion = "0.16.0"
+	programVersion = "0.16.1"
 )
 
 // errSilent is returned when the error has already been printed.
