@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
-	"iq/internal/color"
 	"iq/internal/config"
 	iembed "iq/internal/embed"
 	"iq/internal/lm"
@@ -134,9 +134,9 @@ func printStatus() error {
 
 	for _, r := range rows {
 		runRaw := fmt.Sprintf("%-7s", "no")
-		runDisplay := color.Gra(runRaw)
+		runDisplay := color.Gra5(runRaw)
 		if r.running {
-			runDisplay = color.Grn(fmt.Sprintf("%-7s", "yes"))
+			runDisplay = color.Grn5(fmt.Sprintf("%-7s", "yes"))
 		}
 		if !r.running {
 			fmt.Printf("%-*s  %-28s  %-7s  %-8s  %s  %8s\n",
@@ -179,7 +179,7 @@ func newStartCmd() *cobra.Command {
 			state, _ := sidecar.ReadState(modelID)
 			if state != nil && sidecar.PidAlive(state.PID) {
 				fmt.Printf("  pid %-7d  %s  %s\n",
-					state.PID, sidecar.Endpoint(state.Port), color.Gra("already running"))
+					state.PID, sidecar.Endpoint(state.Port), color.Gra5("already running"))
 				return nil
 			}
 			return startSidecar(modelID)

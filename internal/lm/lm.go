@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"iq/internal/color"
+	"github.com/queone/governa-color"
 
 	"iq/internal/config"
 )
@@ -442,15 +442,15 @@ func ParseParamsM(id string) string {
 // FormatTask returns a colored task label for single-line display.
 func FormatTask(tag string) string {
 	if tag == "" {
-		return color.Gra("-")
+		return color.Gra5("-")
 	}
 	if tag == "text-generation" {
-		return color.Grn(tag)
+		return color.Grn5(tag)
 	}
 	if tag == "feature-extraction" {
-		return color.Grn("embedding")
+		return color.Grn5("embedding")
 	}
-	return color.Red(tag)
+	return color.Red5(tag)
 }
 
 // FormatTaskCol returns a fixed-width (24-char), colored task string for table columns.
@@ -468,12 +468,12 @@ func FormatTaskCol(tag string) string {
 	}
 	padded := fmt.Sprintf("%-24s", display)
 	if raw == "text-generation" || raw == "feature-extraction" {
-		return color.Grn(padded)
+		return color.Grn5(padded)
 	}
 	if raw != "-" {
-		return color.Red(padded)
+		return color.Red5(padded)
 	}
-	return color.Gra(padded)
+	return color.Gra5(padded)
 }
 
 // InferTaskFromConfig reads a local model's config.json and infers the

@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/queone/governa-color"
 	"gopkg.in/yaml.v3"
-	"iq/internal/color"
 )
 
 // ── Shared types ────────────────────────────────────────────────────────────
@@ -307,7 +307,7 @@ func legacyToConfig(leg *legacyConfig) *Config {
 		cfg.CueModel = ""
 		cfg.KbModel = ""
 		fmt.Fprintf(os.Stderr, "%s\n",
-			color.Gra("config.yaml migrated: cue_model/kb_model → embed_model"))
+			color.Gra5("config.yaml migrated: cue_model/kb_model → embed_model"))
 	}
 	return cfg
 }
@@ -320,7 +320,7 @@ func migrateV1(data []byte) (*Config, error) {
 	}
 	cfg := legacyToConfig(&leg)
 	fmt.Fprintf(os.Stderr, "%s\n",
-		color.Gra("config.yaml migrated: tiers → flat models list (v2)"))
+		color.Gra5("config.yaml migrated: tiers → flat models list (v2)"))
 	return cfg, nil
 }
 
@@ -338,7 +338,7 @@ func migrateV0(data []byte, diskUsage DiskUsageFunc) (*Config, error) {
 			if _, isList := v.([]any); isList {
 				cfg := migrateFlatTiers(data, diskUsage)
 				fmt.Fprintf(os.Stderr, "%s\n",
-					color.Gra("config.yaml migrated: legacy tier format → flat models list (v2)"))
+					color.Gra5("config.yaml migrated: legacy tier format → flat models list (v2)"))
 				return cfg, nil
 			}
 			break // only need to check one

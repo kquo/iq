@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
-	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
@@ -21,16 +21,16 @@ import (
 func printProbeHelp() {
 	n := programName
 	fmt.Printf("Send a raw message directly to a model sidecar, bypassing the IQ framework.\n\n")
-	fmt.Printf("%s\n", color.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi9("USAGE"))
 	fmt.Printf("  %s pry <model> [flags] <message>\n\n", n)
-	fmt.Printf("%s\n", color.Whi2("FLAGS"))
+	fmt.Printf("%s\n", color.Whi9("FLAGS"))
 	fmt.Printf("  %-30s %s\n", "-c, --cue <name>", "Use a cue's system prompt")
 	fmt.Printf("  %-30s %s\n", "-s, --system <text>", "Use a literal system prompt")
 	fmt.Printf("  %-30s %s\n", "-S, --no-stream", "Collect full response before printing")
 	fmt.Printf("  %-30s %s\n\n", "-k, --kb", "Retrieve knowledge base context for this probe")
-	fmt.Printf("%s\n", color.Whi2("INHERITED FLAGS"))
+	fmt.Printf("%s\n", color.Whi9("INHERITED FLAGS"))
 	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
-	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi9("EXAMPLES"))
 	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"hello\"\n", n)
 	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"respond in pirate speak\" -s \"You are a pirate.\"\n", n)
 	fmt.Printf("  $ %s pry mlx-community/SmolLM2-135M-Instruct-8bit \"solve x^2 + 3x - 4\" -c math\n", n)
@@ -75,13 +75,13 @@ func newProbeCmd() *cobra.Command {
 			// KB retrieval — prepend context to system prompt.
 			if useKB {
 				if !kb.Exists() {
-					fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb: knowledge base is empty — run: iq kb ingest <path>"))
+					fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("kb: knowledge base is empty — run: iq kb ingest <path>"))
 				} else if !embed.SidecarAlive() {
-					fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb: embed sidecar not running — run: iq start"))
+					fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("kb: embed sidecar not running — run: iq start"))
 				} else {
 					results, kbErr := kb.Search(context.Background(), message, kb.DefaultK, config.DefaultKbMinScore)
 					if kbErr != nil {
-						fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb search error: "+kbErr.Error()))
+						fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("kb search error: "+kbErr.Error()))
 					} else if len(results) > 0 {
 						ctx := kb.Context(results)
 						if systemPrompt != "" {
@@ -89,7 +89,7 @@ func newProbeCmd() *cobra.Command {
 						} else {
 							systemPrompt = ctx
 						}
-						fmt.Fprintf(os.Stderr, "%s\n", color.Gra(fmt.Sprintf("[kb: %d chunks retrieved]", len(results))))
+						fmt.Fprintf(os.Stderr, "%s\n", color.Gra5(fmt.Sprintf("[kb: %d chunks retrieved]", len(results))))
 					}
 				}
 			}
@@ -129,7 +129,7 @@ func newProbeCmd() *cobra.Command {
 				cueTag = "  cue:" + cueName
 			}
 			fmt.Fprintf(os.Stderr, "%s\n",
-				color.Gra(fmt.Sprintf("[%s  :%d%s]",
+				color.Gra5(fmt.Sprintf("[%s  :%d%s]",
 					sc.Model, sc.Port, cueTag)))
 
 			// Build messages.
@@ -159,7 +159,7 @@ func newProbeCmd() *cobra.Command {
 			}
 
 			fmt.Fprintf(os.Stderr, "%s\n",
-				color.Gra(fmt.Sprintf("[%dms]", time.Since(t0).Milliseconds())))
+				color.Gra5(fmt.Sprintf("[%dms]", time.Since(t0).Milliseconds())))
 			return nil
 		},
 	}

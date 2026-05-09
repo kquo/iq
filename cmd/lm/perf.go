@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
-	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/cue"
 	iembed "iq/internal/embed"
@@ -280,7 +280,7 @@ func formatBenchRow(r BenchResult) string {
 // printPerfTable prints the full comparison table for iq perf show.
 func printPerfTable(results []BenchResult, _ string) {
 	if len(results) == 0 {
-		fmt.Println(color.Gra("no benchmark results"))
+		fmt.Println(color.Gra5("no benchmark results"))
 		return
 	}
 
@@ -398,7 +398,7 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				fmt.Fprintf(os.Stderr, " %s\n", color.Grn("ready"))
+				fmt.Fprintf(os.Stderr, " %s\n", color.Grn5("ready"))
 				return &benchSidecar{
 					ModelID: modelID,
 					Port:    port,
@@ -408,7 +408,7 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 			}
 		}
 		if !sidecar.PidAlive(pid) {
-			fmt.Fprintf(os.Stderr, " %s\n", color.Gra("failed"))
+			fmt.Fprintf(os.Stderr, " %s\n", color.Gra5("failed"))
 			sidecar.PrintLastLogLines(benchLogPath, 15)
 			return nil, fmt.Errorf("bench sidecar process exited unexpectedly (see log above)")
 		}
@@ -420,7 +420,7 @@ func acquireEmbedSidecar(modelID string) (*benchSidecar, error) {
 	if proc, err := os.FindProcess(pid); err == nil {
 		_ = proc.Kill()
 	}
-	fmt.Fprintf(os.Stderr, " %s\n", color.Gra("timeout"))
+	fmt.Fprintf(os.Stderr, " %s\n", color.Gra5("timeout"))
 	sidecar.PrintLastLogLines(benchLogPath, 15)
 	return nil, fmt.Errorf("bench sidecar did not become ready within %s (see log above)", iembed.ReadyTimeout)
 }
@@ -536,7 +536,7 @@ func runKBBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		topHit := ranked[0].id
 		fmt.Fprintf(os.Stderr, "    query %2d/%d  RR:%.2f  top:%s  %s\n",
 			qi+1, len(corpus.KBQueries), rr, topHit,
-			color.Gra(q.Query))
+			color.Gra5(q.Query))
 	}
 
 	var mrr float64
@@ -619,8 +619,8 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "    %2d/%d  %4dms  %-5s  expect:%-25s %s\n",
 				ci+1, len(corpus.CueInputs), elapsed.Milliseconds(),
-				color.Gra("ERR"), input.ExpectedCue,
-				color.Gra(input.Text[:min(60, len(input.Text))]))
+				color.Gra5("ERR"), input.ExpectedCue,
+				color.Gra5(input.Text[:min(60, len(input.Text))]))
 			continue
 		}
 
@@ -648,14 +648,14 @@ func runCueBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 		if resolved == input.ExpectedCue {
 			correct++
 			scoreSum += float64(bestScore)
-			match = color.Grn("OK")
+			match = color.Grn5("OK")
 		} else {
 			match = "MISS"
 		}
 		fmt.Fprintf(os.Stderr, "    %2d/%d  %4dms  %.2f  %-4s  top:%-28s expect:%-25s %s\n",
 			ci+1, len(corpus.CueInputs), elapsed.Milliseconds(),
 			bestScore, match, rawTop, input.ExpectedCue,
-			color.Gra(input.Text[:min(60, len(input.Text))]))
+			color.Gra5(input.Text[:min(60, len(input.Text))]))
 	}
 	totalSec := time.Since(t0).Seconds()
 
@@ -729,7 +729,7 @@ func runInferBench(modelID string, corpus *benchCorpus) (BenchResult, error) {
 			fmt.Fprintf(os.Stderr, " %dms  ~%.0f words  %.1f tok/s\n",
 				elapsed.Milliseconds(), tokens, tps)
 		} else {
-			fmt.Fprintf(os.Stderr, " %dms  %s\n", elapsed.Milliseconds(), color.Gra("error"))
+			fmt.Fprintf(os.Stderr, " %dms  %s\n", elapsed.Milliseconds(), color.Gra5("error"))
 		}
 	}
 	totalSec := time.Since(t0).Seconds()
@@ -804,13 +804,13 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 		latenciesMs = append(latenciesMs, float64(elapsed.Milliseconds()))
 
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  %4dms  %s\n", elapsed.Milliseconds(), color.Gra("sidecar error"))
+			fmt.Fprintf(os.Stderr, "  %4dms  %s\n", elapsed.Milliseconds(), color.Gra5("sidecar error"))
 			continue
 		}
 
 		if verbose {
-			fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra("prompt"), color.Gra(tp.Text))
-			fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra("raw_resp"), color.Gra(fmt.Sprintf("%q", truncate(response, 200))))
+			fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra5("prompt"), color.Gra5(tp.Text))
+			fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra5("raw_resp"), color.Gra5(fmt.Sprintf("%q", truncate(response, 200))))
 		}
 
 		// Detect called tool: try <tool_call> blocks first, then <tool:NAME> prefix.
@@ -840,27 +840,27 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 
 			if verbose {
 				argsJSON, _ := json.Marshal(call.Args)
-				fmt.Fprintf(os.Stderr, "      %s  %s(%s)\n", color.Gra("tool_call"), call.Name, string(argsJSON))
+				fmt.Fprintf(os.Stderr, "      %s  %s(%s)\n", color.Gra5("tool_call"), call.Name, string(argsJSON))
 			}
 
 			r := tools.Execute(call)
 			if r.Error == "" {
 				execOK++
-				execResult = color.Grn("OK")
+				execResult = color.Grn5("OK")
 				if verbose {
-					fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra("tool_result"), color.Gra(truncate(r.Output, 120)))
+					fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra5("tool_result"), color.Gra5(truncate(r.Output, 120)))
 				}
 			} else {
-				execResult = color.Yel("err: " + truncate(r.Error, 40))
+				execResult = color.Yel5("err: " + truncate(r.Error, 40))
 				if verbose {
-					fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra("tool_error"), color.Yel(r.Error))
+					fmt.Fprintf(os.Stderr, "      %s  %s\n", color.Gra5("tool_error"), color.Yel5(r.Error))
 				}
 			}
 		} else {
-			execResult = color.Gra("<no_tool>")
+			execResult = color.Gra5("<no_tool>")
 		}
 
-		routeLabel := color.Grn("OK")
+		routeLabel := color.Grn5("OK")
 		if !routeMatch {
 			routeLabel = fmt.Sprintf("MISS→%s", routedTool)
 		}
@@ -903,19 +903,19 @@ func runToolBench(modelID string, corpus *benchCorpus, verbose bool) (BenchResul
 
 func printPerfHelp() {
 	fmt.Printf("Benchmark model performance\n\n")
-	fmt.Printf("%s\n", color.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi9("USAGE"))
 	fmt.Printf("  lm perf <subcommand> [flags]\n\n")
-	fmt.Printf("%s\n", color.Whi2("SUBCOMMANDS"))
+	fmt.Printf("%s\n", color.Whi9("SUBCOMMANDS"))
 	fmt.Printf("  %-15s %s\n", "bench", "Run benchmark for a model")
 	fmt.Printf("  %-15s %s\n", "sweep", "Auto-assign, start, bench, stop across N models")
 	fmt.Printf("  %-15s %s\n", "show", "Show benchmark comparison table")
 	fmt.Printf("  %-15s %s\n\n", "clear", "Remove benchmark results")
-	fmt.Printf("%s\n", color.Whi2("FLAGS"))
+	fmt.Printf("%s\n", color.Whi9("FLAGS"))
 	fmt.Printf("  --type kb|cue|tool|infer  Benchmark type (default: all applicable)\n")
 	fmt.Printf("  --model <id>              Model ID to benchmark (required for infer/tool)\n")
 	fmt.Printf("  --models <id,id,...>       Comma-separated model IDs for comparison benchmarks\n")
 	fmt.Printf("  -v, --verbose             Show debug detail for each prompt (tool bench)\n\n")
-	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi9("EXAMPLES"))
 	fmt.Printf("  lm perf bench --type kb\n")
 	fmt.Printf("  lm perf bench --type cue\n")
 	fmt.Printf("  lm perf bench --type infer --model mlx-community/gemma-3-1b-it-4bit\n")
@@ -1010,7 +1010,7 @@ func newPerfBenchCmd() *cobra.Command {
 						fmt.Fprintf(os.Stderr, "  starting    sidecar for %s ...\n", mid)
 						if err := startSidecar(mid); err != nil {
 							if lm.IsModelNotDownloaded(err) {
-								fmt.Fprintf(os.Stderr, "  %s\n", color.Red(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
+								fmt.Fprintf(os.Stderr, "  %s\n", color.Red5(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
 							} else {
 								fmt.Fprintf(os.Stderr, "  error: %s — skipping\n", err)
 							}
@@ -1086,7 +1086,7 @@ func newPerfBenchCmd() *cobra.Command {
 			// In multi-model mode, print comparison table.
 			if len(models) > 1 {
 				fmt.Println()
-				fmt.Println(color.Whi2("COMPARISON"))
+				fmt.Println(color.Whi9("COMPARISON"))
 				printPerfTable(resultsFor(bs, "", benchType), benchType)
 			}
 
@@ -1156,7 +1156,7 @@ func newPerfSweepCmd() *cobra.Command {
 			// Sweep each model.
 			for mi, mid := range models {
 				fmt.Fprintf(os.Stderr, "\n%s  %s (%d/%d)\n",
-					color.Whi2("SWEEP"), mid, mi+1, len(models))
+					color.Whi9("SWEEP"), mid, mi+1, len(models))
 
 				// Temporarily add model to pool if needed.
 				cfg, err := config.Load(nil)
@@ -1179,7 +1179,7 @@ func newPerfSweepCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "  starting    sidecar for %s ...\n", mid)
 				if err := startSidecar(mid); err != nil {
 					if lm.IsModelNotDownloaded(err) {
-						fmt.Fprintf(os.Stderr, "  %s\n", color.Red(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
+						fmt.Fprintf(os.Stderr, "  %s\n", color.Red5(fmt.Sprintf("model not downloaded — run: iq lm get %s", mid)))
 					} else {
 						fmt.Fprintf(os.Stderr, "  error: %s — skipping\n", err)
 					}
@@ -1228,7 +1228,7 @@ func newPerfSweepCmd() *cobra.Command {
 
 			// Print comparison table.
 			fmt.Println()
-			fmt.Println(color.Whi2("COMPARISON"))
+			fmt.Println(color.Whi9("COMPARISON"))
 			printPerfTable(resultsFor(bs, "", benchType), benchType)
 			return nil
 		},
@@ -1274,7 +1274,7 @@ func newPerfShowCmd() *cobra.Command {
 			}
 			results := resultsFor(bs, modelID, benchType)
 			if len(results) == 0 {
-				fmt.Println(color.Gra("no benchmark results — run: iq perf bench"))
+				fmt.Println(color.Gra5("no benchmark results — run: iq perf bench"))
 				return nil
 			}
 			printPerfTable(results, benchType)
@@ -1319,9 +1319,9 @@ func newPerfClearCmd() *cobra.Command {
 			}
 
 			if modelID == "" {
-				fmt.Println(color.Gra("cleared all benchmark results"))
+				fmt.Println(color.Gra5("cleared all benchmark results"))
 			} else {
-				fmt.Printf(color.Gra("cleared benchmark results for %s\n"), modelID)
+				fmt.Printf(color.Gra5("cleared benchmark results for %s\n"), modelID)
 			}
 			return nil
 		},

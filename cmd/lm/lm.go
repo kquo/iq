@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
-	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
@@ -90,7 +90,7 @@ func newLmGetCmd() *cobra.Command {
 			// Check task type before downloading.
 			if m, err := lm.HFFetchModel(context.Background(), model); err == nil && m.PipelineTag != "" && m.PipelineTag != "text-generation" {
 				fmt.Fprintf(os.Stderr, "%s\n",
-					color.Yel(fmt.Sprintf("Warning: model task is %q — IQ only supports text-generation", m.PipelineTag)))
+					color.Yel5(fmt.Sprintf("Warning: model task is %q — IQ only supports text-generation", m.PipelineTag)))
 			}
 
 			// Run via shell so it inherits the user's full PATH
@@ -118,7 +118,7 @@ func newLmGetCmd() *cobra.Command {
 			}
 
 			if err := lm.AddToManifest(model); err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: failed to update manifest: "+err.Error()))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("warning: failed to update manifest: "+err.Error()))
 			}
 
 			// Cache the pipeline_tag in the manifest.
@@ -141,8 +141,8 @@ func newLmGetCmd() *cobra.Command {
 			}
 
 			size := lm.SuggestSize(model)
-			fmt.Printf("\nSuggested size: %s\n", color.Grn(size))
-			fmt.Printf("%s\n", color.Gra(
+			fmt.Printf("\nSuggested size: %s\n", color.Grn5(size))
+			fmt.Printf("%s\n", color.Gra5(
 				fmt.Sprintf("  iq pool add %s", model)))
 
 			return nil
@@ -185,11 +185,11 @@ func newLmListCmd() *cobra.Command {
 				}
 				var tierDisplay string
 				if e.ID == emM {
-					tierDisplay = color.Grn(fmt.Sprintf("%-6s", "embed"))
+					tierDisplay = color.Grn5(fmt.Sprintf("%-6s", "embed"))
 				} else if cfg != nil && cfg.HasModel(e.ID) {
-					tierDisplay = color.Grn(fmt.Sprintf("%-6s", "pool"))
+					tierDisplay = color.Grn5(fmt.Sprintf("%-6s", "pool"))
 				} else {
-					tierDisplay = color.Gra(fmt.Sprintf("%-6s", "<unset>"))
+					tierDisplay = color.Gra5(fmt.Sprintf("%-6s", "<unset>"))
 				}
 				fmt.Printf("%-55s  %s  %8s  %-10s  %8s  %10s  %s\n",
 					e.ID,
@@ -269,7 +269,7 @@ func newLmShowCmd() *cobra.Command {
 				results := resultsFor(bs, entry.ID, "")
 				if len(results) == 0 {
 					fmt.Printf("%-12s %s\n", "PERFORMANCE",
-						color.Gra("<not benchmarked>"))
+						color.Gra5("<not benchmarked>"))
 				} else {
 					first := true
 					for _, r := range results {
@@ -293,12 +293,12 @@ func newLmShowCmd() *cobra.Command {
 			fmt.Printf("%-12s %s\n", "CUE", cue.ForModel(entry.ID))
 
 			if cfg != nil && cfg.HasModel(entry.ID) {
-				fmt.Printf("%-12s %s\n", "POOL", color.Grn("yes"))
+				fmt.Printf("%-12s %s\n", "POOL", color.Grn5("yes"))
 			} else {
 				size := lm.SuggestSize(entry.ID)
-				fmt.Printf("%-12s %s\n", "POOL", color.Gra("<unset>"))
+				fmt.Printf("%-12s %s\n", "POOL", color.Gra5("<unset>"))
 				fmt.Printf("%-12s %s\n", "",
-					color.Gra(fmt.Sprintf("iq pool add %s  (size hint: %s)", entry.ID, size)))
+					color.Gra5(fmt.Sprintf("iq pool add %s  (size hint: %s)", entry.ID, size)))
 			}
 
 			files, ferr := lm.SnapshotFiles(cacheDir)
@@ -332,12 +332,12 @@ func newLmRmCmd() *cobra.Command {
 			if cfg != nil && model == config.EmbedModel(cfg) {
 				s, _ := sidecar.ReadState(embed.SlugConst)
 				if s != nil && sidecar.PidAlive(s.PID) {
-					fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: stopping embed sidecar"))
+					fmt.Fprintf(os.Stderr, "%s\n", color.Yel5("warning: stopping embed sidecar"))
 					if err := sidecar.Stop(embed.SlugConst); err != nil {
 						return fmt.Errorf("failed to stop embed sidecar: %w", err)
 					}
 				}
-				fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: clearing embed_model assignment"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Yel5("warning: clearing embed_model assignment"))
 				cfg.EmbedModel = ""
 				if err := config.Save(cfg); err != nil {
 					return fmt.Errorf("failed to update config: %w", err)
@@ -348,12 +348,12 @@ func newLmRmCmd() *cobra.Command {
 			if cfg != nil && cfg.HasModel(model) {
 				state, _ := sidecar.ReadState(model)
 				if state != nil && sidecar.PidAlive(state.PID) {
-					fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: stopping "+model+" sidecar"))
+					fmt.Fprintf(os.Stderr, "%s\n", color.Yel5("warning: stopping "+model+" sidecar"))
 					if err := sidecar.Stop(model); err != nil {
 						return fmt.Errorf("failed to stop sidecar: %w", err)
 					}
 				}
-				fmt.Fprintf(os.Stderr, "%s\n", color.Yel("warning: removing "+model+" from pool"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Yel5("warning: removing "+model+" from pool"))
 				// Reload config in case it was modified above.
 				cfg, _ = config.Load(nil)
 				if cfg != nil {
@@ -371,7 +371,7 @@ func newLmRmCmd() *cobra.Command {
 
 			if !force {
 				disk := lm.DiskUsage(cacheDir)
-				fmt.Printf("%s [y/N] ", color.Yel(fmt.Sprintf("Remove %s (%s)?", model, lm.FormatMB(disk))))
+				fmt.Printf("%s [y/N] ", color.Yel5(fmt.Sprintf("Remove %s (%s)?", model, lm.FormatMB(disk))))
 				var resp string
 				fmt.Scanln(&resp)
 				if strings.ToLower(strings.TrimSpace(resp)) != "y" {
@@ -385,7 +385,7 @@ func newLmRmCmd() *cobra.Command {
 				return fmt.Errorf("failed to update manifest: %w", err)
 			}
 			if !found {
-				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: model not found in manifest"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("warning: model not found in manifest"))
 			}
 
 			// Use entry's recorded cache path if available, fall back to derived path.
@@ -395,7 +395,7 @@ func newLmRmCmd() *cobra.Command {
 			}
 
 			if _, err := os.Stat(dir); os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: cache directory not found: "+dir))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("warning: cache directory not found: "+dir))
 				return nil
 			}
 

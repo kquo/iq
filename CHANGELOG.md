@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.17.0 | AC3: adopt governa-color v1.0.1; retire internal/color |
 | 0.16.1 | sync CHANGELOG separator with canon |
 | 0.16.0 | AC2: adopt governa v0.120.1 governance template |
 | 0.15.0 | AC1: adopt governa v0.97.2 governance template |

@@ -8,13 +8,13 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
-	"iq/internal/color"
 )
 
 const (
 	programName    = "iq"
-	programVersion = "0.16.1"
+	programVersion = "0.17.0"
 )
 
 // errSilent is returned when the error has already been printed.
@@ -29,7 +29,7 @@ var errSilent error = silentErr{}
 func argsUsage(v cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := v(cmd, args); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n\n", color.Yel(err.Error()))
+			fmt.Fprintf(os.Stderr, "%s\n\n", color.Yel5(err.Error()))
 			cmd.Help()
 			return errSilent
 		}
@@ -41,10 +41,10 @@ func printRootHelp() {
 	n := programName
 	fmt.Printf("%s v%s\n", n, programVersion)
 	fmt.Printf("Work with IQ from the command line.\n\n")
-	fmt.Printf("%s\n", color.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi9("USAGE"))
 	fmt.Printf("  %s <command> [subcommand] [flags]\n", n)
 	fmt.Printf("  %s [flags] <message>\n\n", n)
-	fmt.Printf("%s\n", color.Whi2("SERVICE"))
+	fmt.Printf("%s\n", color.Whi9("SERVICE"))
 	fmt.Printf("  %-24s %s\n", "start [model]", "Start sidecars")
 	fmt.Printf("  %-24s %s\n", "stop [model]", "Stop sidecars")
 	fmt.Printf("  %-24s %s\n", "restart [model]", "Restart sidecars (stop + start)")
@@ -53,15 +53,15 @@ func printRootHelp() {
 	fmt.Printf("  %-24s %s\n", "pool", "Manage model pool assignments")
 	fmt.Printf("  %-24s %s\n", "embed", "Manage embed sidecar model")
 	fmt.Printf("  %-24s %s\n\n", "cfg|config", "Inspect and validate IQ configuration")
-	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi9("COMMANDS"))
 	fmt.Printf("  %-24s %s\n", "ask", "Interactive REPL and prompt aliases")
 	fmt.Printf("  %-24s %s\n", "cue", "Work with IQ cues")
 	fmt.Printf("  %-24s %s\n", "kb", "Work with IQ knowledge base")
 	fmt.Printf("  %-24s %s\n", "pry", "Send a raw message directly to a model sidecar")
 	fmt.Printf("  %-24s %s\n\n", "version", "Show the current IQ version")
-	fmt.Printf("%s\n", color.Whi2("MODEL MANAGEMENT"))
+	fmt.Printf("%s\n", color.Whi9("MODEL MANAGEMENT"))
 	fmt.Printf("  %-24s %s\n\n", "lm <command>", "Download, list, show, rm models; run benchmarks (separate binary)")
-	fmt.Printf("%s\n", color.Whi2("FLAGS"))
+	fmt.Printf("%s\n", color.Whi9("FLAGS"))
 	fmt.Printf("  %-24s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-24s %s\n", "-c, --category <n>", "Classify within a category only")
 	fmt.Printf("  %-24s %s\n", "    --model <id>", "Override model directly (must be running)")
@@ -76,7 +76,7 @@ func printRootHelp() {
 	fmt.Printf("  %-24s %s\n", "    --no-stream", "Collect full response before printing")
 	fmt.Printf("  %-24s %s\n", "-h, -?, --help", "Show this help output or the help for a specified subcommand.")
 	fmt.Printf("  %-24s %s\n\n", "-v, --version", "An alias for the \"version\" subcommand.")
-	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi9("EXAMPLES"))
 	fmt.Printf("  $ %s \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s -d \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s ask\n", n)

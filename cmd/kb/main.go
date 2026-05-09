@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
-	"iq/internal/color"
 )
 
 const (
@@ -28,7 +28,7 @@ var errSilent error = silentErr{}
 func argsUsage(v cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := v(cmd, args); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n\n", color.Yel(err.Error()))
+			fmt.Fprintf(os.Stderr, "%s\n\n", color.Yel5(err.Error()))
 			cmd.Help()
 			return errSilent
 		}
@@ -40,30 +40,30 @@ func printRootHelp() {
 	n := programName
 	fmt.Printf("%s v%s\n", n, programVersion)
 	fmt.Printf("Private knowledge base — ingest, search, ask.\n\n")
-	fmt.Printf("%s\n", color.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi9("USAGE"))
 	fmt.Printf("  %s <command> [flags]\n", n)
 	fmt.Printf("  %s [flags] <query>\n\n", n)
-	fmt.Printf("%s\n", color.Whi2("SERVICE"))
+	fmt.Printf("%s\n", color.Whi9("SERVICE"))
 	fmt.Printf("  %-24s %s\n", "start [model]", "Start sidecars")
 	fmt.Printf("  %-24s %s\n", "stop [model]", "Stop sidecars")
 	fmt.Printf("  %-24s %s\n", "restart [model]", "Restart sidecars (stop + start)")
 	fmt.Printf("  %-24s %s\n\n", "st|status", "Show running sidecar status")
-	fmt.Printf("%s\n", color.Whi2("KNOWLEDGE BASE"))
+	fmt.Printf("%s\n", color.Whi9("KNOWLEDGE BASE"))
 	fmt.Printf("  %-24s %s\n", "ingest, in <path>", "Ingest a file or directory tree")
 	fmt.Printf("  %-24s %s\n", "list", "Show indexed sources")
 	fmt.Printf("  %-24s %s\n", "search <query>", "Raw similarity search (no inference)")
 	fmt.Printf("  %-24s %s\n", "rm <path>", "Remove a source from the index")
 	fmt.Printf("  %-24s %s\n\n", "clear", "Wipe the knowledge base")
-	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi9("COMMANDS"))
 	fmt.Printf("  %-24s %s\n", "ask <query>", "Ask using KB-grounded inference")
 	fmt.Printf("  %-24s %s\n", "cfg|config", "Inspect KB configuration")
 	fmt.Printf("  %-24s %s\n\n", "version", "Show the current KB version")
-	fmt.Printf("%s\n", color.Whi2("FLAGS"))
+	fmt.Printf("%s\n", color.Whi9("FLAGS"))
 	fmt.Printf("  %-24s %s\n", "    --model <id>", "Override inference model (must be running)")
 	fmt.Printf("  %-24s %s\n", "-K, --no-kb", "Skip KB retrieval, run pure inference")
 	fmt.Printf("  %-24s %s\n", "-k, --top-k <n>", "Number of KB chunks to retrieve")
 	fmt.Printf("  %-24s %s\n\n", "-h, -?, --help", "Show this help or help for a subcommand")
-	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi9("EXAMPLES"))
 	fmt.Printf("  $ %s ingest ~/projects/notes\n", n)
 	fmt.Printf("  $ %s list\n", n)
 	fmt.Printf("  $ %s \"how does auth work\"\n", n)

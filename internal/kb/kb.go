@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"iq/internal/color"
+	"github.com/queone/governa-color"
 
 	"iq/internal/config"
 	"iq/internal/embed"
@@ -229,7 +229,7 @@ func IngestInto(root string, idxPath string) error {
 	for _, f := range files {
 		chunks, cErr := ChunkFile(f)
 		if cErr != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra(fmt.Sprintf("  skip %s: %v", f, cErr)))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5(fmt.Sprintf("  skip %s: %v", f, cErr)))
 			continue
 		}
 		allChunks = append(allChunks, chunks...)
@@ -276,7 +276,7 @@ func IngestInto(root string, idxPath string) error {
 		return fmt.Errorf("failed to save kb.json: %w", err)
 	}
 	fmt.Printf("  %s  ingested %s  (%d chunks embedded)\n",
-		color.Grn("ok"), color.Whi(abs), embedded)
+		color.Grn5("ok"), color.Whi5(abs), embedded)
 	return nil
 }
 
@@ -834,7 +834,7 @@ func Ingest(root string) error {
 	for _, f := range files {
 		chunks, err := ChunkFile(f)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra(fmt.Sprintf("  skip %s: %v", f, err)))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5(fmt.Sprintf("  skip %s: %v", f, err)))
 			continue
 		}
 		allChunks = append(allChunks, chunks...)
@@ -881,6 +881,6 @@ func Ingest(root string) error {
 		return fmt.Errorf("failed to save kb.json: %w", err)
 	}
 	fmt.Printf("  %s  ingested %s  (%d chunks embedded)\n",
-		color.Grn("ok"), color.Whi(abs), embedded)
+		color.Grn5("ok"), color.Whi5(abs), embedded)
 	return nil
 }

@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
-	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/embed"
 	"iq/internal/kb"
@@ -121,7 +121,7 @@ func runAsk(ctx context.Context, opts askOpts) error {
 		}
 		kbCtx, kbErr := searchKB(ctx, cfg, opts.query, opts.topK)
 		if kbErr != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb search error: "+kbErr.Error()))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("kb search error: "+kbErr.Error()))
 		}
 		if kbCtx != "" {
 			messages = append(messages,

@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"iq/internal/color"
+	"github.com/queone/governa-color"
 
 	"iq/internal/config"
 	"iq/internal/cue"
@@ -94,7 +94,7 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 	existing, _ := sidecar.ReadState(slug)
 	if existing != nil && sidecar.PidAlive(existing.PID) {
 		fmt.Printf("  %-9s  pid %-7d  %s  %s\n",
-			slug, existing.PID, sidecar.Endpoint(existing.Port), color.Gra("already running"))
+			slug, existing.PID, sidecar.Endpoint(existing.Port), color.Gra5("already running"))
 		return nil
 	}
 
@@ -112,7 +112,7 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 		}
 	} else {
 		fi, _ := os.Stat(scriptPath)
-		fmt.Fprintf(os.Stderr, "  %s\n", color.Yel(fmt.Sprintf("using %s (%s)", scriptPath, fi.ModTime().Format("2006-01-02 15:04"))))
+		fmt.Fprintf(os.Stderr, "  %s\n", color.Yel5(fmt.Sprintf("using %s (%s)", scriptPath, fi.ModTime().Format("2006-01-02 15:04"))))
 	}
 
 	logP, err := sidecar.LogPath(slug)
@@ -157,7 +157,7 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 
 	if onReady != nil {
 		if err := onReady(modelID); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: post-start callback failed: "+err.Error()))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("warning: post-start callback failed: "+err.Error()))
 		}
 	}
 
@@ -171,12 +171,12 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				fmt.Printf("%s\n", color.Grn("ready"))
+				fmt.Printf("%s\n", color.Grn5("ready"))
 				return nil
 			}
 		}
 		if !sidecar.PidAlive(cmd.Process.Pid) {
-			fmt.Printf("%s\n", color.Gra("failed"))
+			fmt.Printf("%s\n", color.Gra5("failed"))
 			sidecar.PrintLastLogLines(logP, 10)
 			sidecar.RemoveState(slug)
 			return fmt.Errorf("embed sidecar process exited unexpectedly")
@@ -184,7 +184,7 @@ func StartSidecar(modelID string, onReady func(string) error) error {
 		fmt.Print(".")
 		time.Sleep(sidecar.PollInterval)
 	}
-	fmt.Printf("%s\n", color.Gra("timeout"))
+	fmt.Printf("%s\n", color.Gra5("timeout"))
 	sidecar.PrintLastLogLines(logP, 10)
 	cmd.Process.Kill() //nolint:errcheck // best-effort cleanup
 	sidecar.RemoveState(slug)

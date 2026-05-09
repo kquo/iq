@@ -15,11 +15,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 	"iq/internal/cache"
-	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
@@ -192,14 +192,14 @@ func resolveRoute(cueName string, cues []cue.Cue) (*routeResult, error) {
 // traceStep prints a step header.
 func traceStep(step, label string) {
 	fmt.Fprintf(os.Stderr, "%s\n",
-		color.Gra(fmt.Sprintf("STEP %s %s", step, label)))
+		color.Gra5(fmt.Sprintf("STEP %s %s", step, label)))
 }
 
 // tracePass prints a pass sub-header within a step: "  PASS N  description".
 func tracePass(n int, desc string) {
 	fmt.Fprintf(os.Stderr, "  %s  %s\n",
-		color.Gra(fmt.Sprintf("%-12s", fmt.Sprintf("PASS %d", n))),
-		color.Grn(desc))
+		color.Gra5(fmt.Sprintf("%-12s", fmt.Sprintf("PASS %d", n))),
+		color.Grn5(desc))
 }
 
 // traceField prints "  label  value" with continuation lines indented to match.
@@ -207,9 +207,9 @@ func traceField(label, value string) {
 	prefix := fmt.Sprintf("  %-12s  ", label)
 	indent := strings.Repeat(" ", len(prefix))
 	lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
-	fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(prefix), color.Gra(lines[0]))
+	fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(prefix), color.Gra5(lines[0]))
 	for _, l := range lines[1:] {
-		fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(indent), color.Gra(l))
+		fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(indent), color.Gra5(l))
 	}
 }
 
@@ -218,15 +218,15 @@ func traceField(label, value string) {
 // highlighted green; KB chunk text and headers stay gray.
 func traceBlock(role, content string, highlightUser bool) {
 	const blockIndent = "    "
-	fmt.Fprintf(os.Stderr, "%s\n", color.Gra(fmt.Sprintf("  [%s]", role)))
+	fmt.Fprintf(os.Stderr, "%s\n", color.Gra5(fmt.Sprintf("  [%s]", role)))
 	lines := strings.Split(content, "\n")
 
 	if role == "system" {
 		for _, l := range lines {
 			if l == "[tools]" {
-				fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(blockIndent), color.Grn(l))
+				fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(blockIndent), color.Grn5(l))
 			} else {
-				fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(blockIndent), color.Gra(l))
+				fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(blockIndent), color.Gra5(l))
 			}
 		}
 		return
@@ -234,7 +234,7 @@ func traceBlock(role, content string, highlightUser bool) {
 
 	if role != "user" || !highlightUser {
 		for _, l := range lines {
-			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(blockIndent), color.Gra(l))
+			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(blockIndent), color.Gra5(l))
 		}
 		return
 	}
@@ -276,8 +276,8 @@ func traceBlock(role, content string, highlightUser bool) {
 	skipped := 0
 	flushSkipped := func() {
 		if skipped > 0 {
-			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(blockIndent),
-				color.Gra(fmt.Sprintf("... %d more lines", skipped)))
+			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(blockIndent),
+				color.Gra5(fmt.Sprintf("... %d more lines", skipped)))
 			skipped = 0
 		}
 	}
@@ -287,11 +287,11 @@ func traceBlock(role, content string, highlightUser bool) {
 			inChunk = true
 			chunkLines = 0
 			// KB chunk header → green
-			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(blockIndent), color.Grn(l))
+			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(blockIndent), color.Grn5(l))
 		} else if i >= userStart {
 			flushSkipped()
 			// User input → green
-			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(blockIndent), color.Grn(l))
+			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(blockIndent), color.Grn5(l))
 		} else if inChunk && chunkLines >= kbChunkPreviewLines {
 			chunkLines++
 			skipped++
@@ -300,7 +300,7 @@ func traceBlock(role, content string, highlightUser bool) {
 				chunkLines++
 			}
 			// KB preamble or chunk preview → gray
-			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra(blockIndent), color.Gra(l))
+			fmt.Fprintf(os.Stderr, "%s%s\n", color.Gra5(blockIndent), color.Gra5(l))
 		}
 	}
 	flushSkipped()
@@ -544,13 +544,13 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 			}
 		}
 		if !embed.SidecarAlive() {
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra("embed sidecar not running — falling back to initial cue (run: iq start)"))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("embed sidecar not running — falling back to initial cue (run: iq start)"))
 			cueName = "initial"
 		} else {
 			em := config.EmbedModel(cfg)
 			cueName, et, err = embed.Classify(ctx, input, candidates, em)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("classification error: "+err.Error()+", falling back to initial"))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("classification error: "+err.Error()+", falling back to initial"))
 				cueName = "initial"
 			}
 		}
@@ -650,10 +650,10 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 					printStep3KB(kr.results, config.EmbedModel(cfg), kbMinScore, time.Since(t3))
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb search error: "+kr.err.Error()))
+				fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("kb search error: "+kr.err.Error()))
 			}
 		case <-time.After(kbTimeout):
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra("kb search timed out — skipping context"))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("kb search timed out — skipping context"))
 			if trace {
 				traceStep("3 ", "KB RETRIEVE")
 				traceField("result", fmt.Sprintf("timeout after %s", kbTimeout))
@@ -712,7 +712,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 		printStep4Assemble(messages, ip.ContextWindow, ip.MaxTokens, ctrim)
 	}
 	if w := trimWarning(ctrim, ip.ContextWindow); w != "" && !trace {
-		fmt.Fprintf(os.Stderr, "%s\n", color.Gra(w))
+		fmt.Fprintf(os.Stderr, "%s\n", color.Gra5(w))
 	}
 
 	// ── Dump prompt ──
@@ -1084,7 +1084,7 @@ func executePrompt(ctx context.Context, input string, opts promptOpts, sess *ses
 			config.Message{Role: "assistant", Content: response},
 		)
 		if err := saveSession(sess); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra("warning: failed to save session: "+err.Error()))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("warning: failed to save session: "+err.Error()))
 		}
 		if trace {
 			t6 := time.Now()
@@ -1124,11 +1124,11 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 
 	dryRun := opts.dryRun
 	debug := opts.debug
-	fmt.Fprintf(os.Stderr, "%s  %s\n", color.Whi2("IQ"), color.Gra("type /help for commands, /quit to exit"))
+	fmt.Fprintf(os.Stderr, "%s  %s\n", color.Whi9("IQ"), color.Gra5("type /help for commands, /quit to exit"))
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print(color.Grn("> "))
+		fmt.Print(color.Grn5("> "))
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println()
@@ -1149,7 +1149,7 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 			continue
 		case "/session":
 			if sess == nil {
-				fmt.Println(color.Gra("no active session"))
+				fmt.Println(color.Gra5("no active session"))
 			} else {
 				fmt.Printf("id:          %s\n", sess.ID)
 				fmt.Printf("name:        %s\n", sess.Name)
@@ -1165,7 +1165,7 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 				sess = newSession(opts.cueName, opts.model)
 				sess.ID = opts.sessionID
 			}
-			fmt.Println(color.Gra("session cleared"))
+			fmt.Println(color.Gra5("session cleared"))
 			continue
 		case "/dry-run":
 			dryRun = !dryRun
@@ -1174,7 +1174,7 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 			if dryRun {
 				state = "on"
 			}
-			fmt.Printf("%s %s\n", color.Gra("dry-run:"), state)
+			fmt.Printf("%s %s\n", color.Gra5("dry-run:"), state)
 			continue
 		case "/debug":
 			debug = !debug
@@ -1183,7 +1183,7 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 			if debug {
 				state = "on"
 			}
-			fmt.Printf("%s %s\n", color.Gra("debug:"), state)
+			fmt.Printf("%s %s\n", color.Gra5("debug:"), state)
 			continue
 		case "/tools":
 			switch opts.toolMode {
@@ -1198,17 +1198,17 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 			if opts.toolMode != "" {
 				label = opts.toolMode
 			}
-			fmt.Printf("%s %s\n", color.Gra("tools:"), label)
+			fmt.Printf("%s %s\n", color.Gra5("tools:"), label)
 			continue
 		}
 
 		if strings.HasPrefix(input, "/cue") {
 			parts := strings.Fields(input)
 			if len(parts) == 1 {
-				fmt.Printf("current cue:  %s\n", color.Grn(opts.cueName))
+				fmt.Printf("current cue:  %s\n", color.Grn5(opts.cueName))
 			} else {
 				opts.cueName = parts[1]
-				fmt.Printf("cue set to:  %s\n", color.Grn(opts.cueName))
+				fmt.Printf("cue set to:  %s\n", color.Grn5(opts.cueName))
 			}
 			continue
 		}
@@ -1218,7 +1218,7 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 		turnOpts.debug = debug
 		sess, err = executePrompt(ctx, input, turnOpts, sess)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", color.Gra("error: "+err.Error()))
+			fmt.Fprintf(os.Stderr, "%s\n", color.Gra5("error: "+err.Error()))
 		}
 	}
 	return nil
@@ -1229,9 +1229,9 @@ func runREPL(ctx context.Context, opts promptOpts) error {
 func printPromptHelp() {
 	n := programName
 	fmt.Printf("Start the interactive REPL or send a prompt. For one-shot prompts, '%s <message>' works too.\n\n", n)
-	fmt.Printf("%s\n", color.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi9("USAGE"))
 	fmt.Printf("  %s ask [flags] [message]\n\n", n)
-	fmt.Printf("%s\n", color.Whi2("FLAGS"))
+	fmt.Printf("%s\n", color.Whi9("FLAGS"))
 	fmt.Printf("  %-32s %s\n", "-r, --cue <n>", "Skip classification, use this cue")
 	fmt.Printf("  %-32s %s\n", "-c, --category <n>", "Classify within a category only")
 	fmt.Printf("  %-32s %s\n", "    --model <id>", "Override model directly (must be running)")
@@ -1244,9 +1244,9 @@ func printPromptHelp() {
 	fmt.Printf("  %-32s %s\n", "-T, --tools", "Force enable read-only tool use")
 	fmt.Printf("  %-32s %s\n", "    --no-tools", "Disable tool use")
 	fmt.Printf("  %-32s %s\n\n", "    --no-stream", "Collect full response before printing")
-	fmt.Printf("%s\n", color.Whi2("INHERITED FLAGS"))
+	fmt.Printf("%s\n", color.Whi9("INHERITED FLAGS"))
 	fmt.Printf("  %-32s %s\n\n", "-h, -?, --help", "Show help for command")
-	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi9("EXAMPLES"))
 	fmt.Printf("  $ %s ask \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s ask -n \"explain transformers\"\n", n)
 	fmt.Printf("  $ %s ask -d \"explain transformers\"\n", n)

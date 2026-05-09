@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
-	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/kb"
 )
@@ -42,11 +42,11 @@ func newConfigShowCmd() *cobra.Command {
 func printConfigHelp() {
 	n := programName
 	fmt.Printf("Inspect KB configuration.\n\n")
-	fmt.Printf("%s\n", color.Whi2("USAGE"))
+	fmt.Printf("%s\n", color.Whi9("USAGE"))
 	fmt.Printf("  %s config [command]\n\n", n)
-	fmt.Printf("%s\n", color.Whi2("COMMANDS"))
+	fmt.Printf("%s\n", color.Whi9("COMMANDS"))
 	fmt.Printf("  %-16s %s\n\n", "show", "Show effective configuration (default)")
-	fmt.Printf("%s\n", color.Whi2("EXAMPLES"))
+	fmt.Printf("%s\n", color.Whi9("EXAMPLES"))
 	fmt.Printf("  $ %s config\n", n)
 	fmt.Printf("  $ %s config show\n", n)
 }
@@ -68,7 +68,7 @@ func runConfigShow() error {
 		return err
 	}
 
-	fmt.Printf("%s\n", color.Whi2("KB CONFIG"))
+	fmt.Printf("%s\n", color.Whi9("KB CONFIG"))
 	cfgField("path", cfgPath)
 	cfgField("embed_model", config.EmbedModel(cfg))
 
@@ -87,7 +87,7 @@ func runConfigShow() error {
 		}
 	}
 	if any {
-		fmt.Printf("\n%s\n", color.Whi2("INFERENCE PARAMS"))
+		fmt.Printf("\n%s\n", color.Whi9("INFERENCE PARAMS"))
 		for _, f := range paramFields {
 			if v, ok := flat[f]; ok {
 				cfgField(f, fmt.Sprintf("%v", v))
@@ -97,9 +97,9 @@ func runConfigShow() error {
 
 	// Pool models (if any configured in kb config).
 	if len(cfg.Models) > 0 {
-		fmt.Printf("\n%s\n", color.Whi2("MODELS"))
+		fmt.Printf("\n%s\n", color.Whi9("MODELS"))
 		for _, me := range cfg.Models {
-			cfgField("  id", color.Grn(me.ID))
+			cfgField("  id", color.Grn5(me.ID))
 			if me.ContextWindow > 0 {
 				cfgField("  context_window", fmt.Sprintf("%d  (model override)", me.ContextWindow))
 			}
@@ -107,7 +107,7 @@ func runConfigShow() error {
 	}
 
 	// KB index summary.
-	fmt.Printf("\n%s\n", color.Whi2("KNOWLEDGE BASE"))
+	fmt.Printf("\n%s\n", color.Whi9("KNOWLEDGE BASE"))
 	idxPath, _ := kbIndexPath()
 	cfgField("index", idxPath)
 	if kbIndexExists() {
@@ -121,7 +121,7 @@ func runConfigShow() error {
 			cfgField("chunks", fmt.Sprintf("%d", total))
 		}
 	} else {
-		cfgField("sources", color.Gra("<empty>"))
+		cfgField("sources", color.Gra5("<empty>"))
 	}
 
 	return nil
