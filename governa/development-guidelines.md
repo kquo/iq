@@ -28,13 +28,13 @@ Sections above ## Project Practices are governa-maintained canon and update via 
 - When source-of-truth code is duplicated into templates or rendered examples, fixes must propagate to all copies in the same change
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
-- Exported functions in shared packages (`internal/preptool`) carry godoc single-line comments to keep the public surface self-documenting.
+- Keep `build.sh` self-contained; do not add sourced production helper modules.
+- Add single-line godoc comments to exported functions in shared Go packages.
 
 ## Program Version Declaration
 
 - Every installable `cmd/<name>/main.go` must declare a non-empty `const programVersion` string literal
-- Script-only helper entrypoints (`build`, `rel`) are exempt
-- The build tool validates this before compiling installable binaries; missing or empty declarations fail the build
+- Let `build.sh` validate this before compiling installable binaries; fail on missing or empty declarations.
 
 ## Error Handling And Validation
 

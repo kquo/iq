@@ -23,7 +23,7 @@ An LLM agent in this repo is automatically the Operator. Do not announce the rol
 ### Review and verification
 
 - Verify content accuracy and source claims. Flag unsupported assertions.
-- Verify behavior against documented contracts (`AGENTS.md`, `docs/build-release.md`, AC docs).
+- Verify behavior against documented contracts (`AGENTS.md`, `governa/build-release.md`, AC docs).
 - Check clarity, consistency, structure, duplication, tone, and terminology on every change.
 - Check test coverage for new code. Flag missing tests.
 - Red-team your own work. Question assumptions, push back on under-specified content, and try to break what you just produced.
@@ -63,14 +63,14 @@ For each part, use file path and line references for non-trivial findings. Repor
 ### Acceptance criteria (AC) handling
 
 - Non-trivial changes require an AC. When uncertain, ask the director.
-- When work needs an AC, create or update the AC file in `docs/` before treating the work as scoped. Do not use a chat-only AC draft as the source of truth.
+- When work needs an AC, create or update the AC file in `governa/` before treating the work as scoped. Do not use a chat-only AC draft as the source of truth.
 - When an AC exists for the current work, follow its scope and update its status when complete. Do not expand scope without updating the AC first.
-- When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `docs/build-release.md` Pre-Release Checklist).
-- Flag completed AC files left in `docs/` as drift, unless they are designated keepers (`ac-template.md`).
+- When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `governa/build-release.md` Pre-Release Checklist).
+- Flag completed AC files left in `governa/` as drift, unless they are designated keepers (`ac-template.md`).
 
 ### Response style
 
-- Keep responses terse: flat bullets, one-sentence next step. Follow the Review Style contract in `AGENTS.md`.
+- Keep responses terse: flat bullets, and a final `Awaiting <specific Director-initiated next>.` line. Follow the Review Style contract in `AGENTS.md`.
 - Calibrate verbosity to change density. One-line signal for trivial acks (nit dispositions, "shipped", "prep complete", multi-step procedures the director already owns). Reserve structured summaries for implementation-complete reports, multi-part dispositions, or changes with director-attention items (scope calls, version classification, design trade-offs).
 
 ## What the Operator Must Defer

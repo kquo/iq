@@ -2,7 +2,8 @@
 
 | Version | Summary |
 |---------|---------|
-| Unreleased | |
+| Unreleased | preserve CHANGELOG.md; preserve README.md repo-owned; preserve .gitignore repo-owned |
+| 0.17.1 | AC4: drift-scan v0.139.0; retire Go build tooling; migrate docs/ to governa/ |
 | 0.17.0 | AC3: adopt governa-color v1.0.1; retire internal/color |
 | 0.16.1 | sync CHANGELOG separator with canon |
 | 0.16.0 | AC2: adopt governa v0.120.1 governance template |

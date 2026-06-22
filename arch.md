@@ -68,12 +68,11 @@ The `cmd/iq` package is the CLI entry point — it wires commands (cobra), flags
 - `arch.md`: this document — system structure and durable decisions
 - `plan.md`: forward-looking roadmap and Ideas To Explore
 - `CHANGELOG.md`: per-release version history
-- `build.sh`: convenience wrapper; delegates to `cmd/build` (or `cmd/rel` for tagged releases)
+- `build.sh`: self-contained build, release-prep, and release tooling
 - `cmd/iq/main.go`, `cmd/lm/main.go`, `cmd/kb/main.go`: the three installable binaries
-- `cmd/build/main.go`, `cmd/prep/main.go`, `cmd/rel/main.go`: governa Go entrypoints (script-only, run via `go run`)
 - `internal/`: domain packages shared by all three binaries (config, search, sidecar, cue, embed, cache, tools, lm, kb)
-- `internal/preptool/`: release-prep machinery used by `cmd/prep`
-- `docs/`: governance documentation (development cycle, build/release, AC template, roles, critique protocol)
+- `governa/`: governance documentation (development cycle, build/release, AC template, roles, drift-scan)
+- `docs/critique-protocol.md`: critique protocol (repo-specific; not a governa doc)
 
 ## Major Components
 
@@ -666,7 +665,7 @@ Dry-run mode (`-n`) prints Steps 1–4 only, skipping inference.
 - **RAG is plain-text injection.** KB chunks are scored by hybrid cosine + keyword boost and inserted as user-message context. The model only ever sees text — embeddings never enter the model.
 - **Schema versioning.** `~/.config/iq/config.yaml` carries an integer `version:` field. Migrations chain forward; an unknown future version returns a hard error rather than dropping fields.
 - **Response cache is FNV64a-keyed** with 1h TTL, disabled in session mode and when tools are active. Cache key includes both the assembled message array and the model ID.
-- **Per-binary versioning.** Each of the three installable binaries (`iq`, `lm`, `kb`) carries its own `programVersion`. Releases are per-binary and manual; `cmd/prep` deliberately refuses auto-bump on multi-utility repos.
+- **Per-binary versioning.** Each of the three installable binaries (`iq`, `lm`, `kb`) carries its own `programVersion`. `./build.sh prep` treats `cmd/iq` as the primary binary (module basename match) and bumps only its `programVersion`; `cmd/kb` and `cmd/lm` are secondary and skipped with a note. Releases for `kb` and `lm` bump their own `programVersion` manually in their respective ACs.
 
 ## Conventions
 
