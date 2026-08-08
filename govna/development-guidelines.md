@@ -2,8 +2,9 @@
 
 Engineering guidance for any agent or contributor working in this repo.
 These are durable coding practices, not workflow or process rules.
-For workflow, see `development-cycle.md`. For validation, see `build-release.md`.
-Sections above ## Project Practices are governa-maintained canon and update via canon syncs; repo-specific practices in ## Project Practices.
+For AC workflow, see `AGENTS.md` and `development-cycle.md`. For validation
+and Package release preparation, see `build-release.md`.
+Sections above ## Project Practices are govna-maintained canon and update via canon syncs; repo-specific practices in ## Project Practices.
 
 ## Identifier Strategy
 
@@ -29,18 +30,13 @@ Sections above ## Project Practices are governa-maintained canon and update via 
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
 - Keep `build.sh` self-contained; do not add sourced production helper modules.
-- Add single-line godoc comments to exported functions in shared Go packages.
-
-## Program Version Declaration
-
-- Every installable `cmd/<name>/main.go` must declare a non-empty `const programVersion` string literal
-- Let `build.sh` validate this before compiling installable binaries; fail on missing or empty declarations.
 
 ## Error Handling And Validation
 
 - Validate at system boundaries (user input, external APIs, file I/O); trust internal code
 - Fail explicitly rather than silently degrading — a clear error is better than wrong output
 - Static analysis and linting errors are build failures, not warnings
+- Validate installable-target declarations before compiling or installing them.
 
 ## Testing Expectations
 
@@ -53,7 +49,7 @@ Sections above ## Project Practices are governa-maintained canon and update via 
 
 - Prefer standard library over external dependencies when the capability is equivalent
 - When adding a dependency, justify it — convenience alone is not sufficient
-- Keep import paths consistent after renames or reorganizations; grep for stale references
+- Keep import paths consistent after renames or reorganizations
 
 ## CLI Usage Formatting
 
@@ -69,6 +65,15 @@ Sections above ## Project Practices are governa-maintained canon and update via 
 - Docs ship with the code change that introduces the behavior
 - If a doc references a function, flag, or file path, verify it still exists before publishing
 - Architecture docs (`arch.md`) reflect what is built, not what is planned
+
+## Go Practices
+
+- Add single-line godoc comments to exported functions in shared Go packages.
+- Declare a non-empty `const programVersion` string literal in every installable `cmd/<name>/main.go`.
+- Validate every `programVersion` declaration through `build.sh` before compiling installable binaries.
+- Pin `staticcheck` to the repository-governed version and invoke the pinned installation path directly.
+- Treat `go vet` and `staticcheck` findings as build failures.
+- Scan all `.go` and `.go.tmpl` files for stale import paths after a module rename.
 
 ## Project Practices
 

@@ -23,7 +23,7 @@ An LLM agent in this repo is automatically the Operator. Do not announce the rol
 ### Review and verification
 
 - Verify content accuracy and source claims. Flag unsupported assertions.
-- Verify behavior against documented contracts (`AGENTS.md`, `governa/build-release.md`, AC docs).
+- Verify behavior against documented contracts (`AGENTS.md`, `govna/build-release.md`, AC docs).
 - Check clarity, consistency, structure, duplication, tone, and terminology on every change.
 - Check test coverage for new code. Flag missing tests.
 - Red-team your own work. Question assumptions, push back on under-specified content, and try to break what you just produced.
@@ -63,10 +63,18 @@ For each part, use file path and line references for non-trivial findings. Repor
 ### Acceptance criteria (AC) handling
 
 - Non-trivial changes require an AC. When uncertain, ask the director.
-- When work needs an AC, create or update the AC file in `governa/` before treating the work as scoped. Do not use a chat-only AC draft as the source of truth.
+- When work needs an AC, create or update the AC file in `govna/` before treating the work as scoped. Do not use a chat-only AC draft as the source of truth.
 - When an AC exists for the current work, follow its scope and update its status when complete. Do not expand scope without updating the AC first.
-- When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `governa/build-release.md` Pre-Release Checklist).
-- Flag completed AC files left in `governa/` as drift, unless they are designated keepers (`ac-template.md`).
+- When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `govna/build-release.md` Pre-Release Checklist).
+- Treat Ratify as the director's acceptance of delivered AC work; do not begin Package without a separate explicit request.
+- Treat Package as release preparation only; follow the existing pre-release checklist and approval boundaries.
+- Start every Package completion report with the plain, unbulleted, unindented
+  line `Package complete.`.
+- Insert exactly one blank line after `Package complete.` before `Verified:`.
+- Keep `Verified:`, `Red-teamed:`, `Not checked:`, and `Run below to release:`
+  in the Package completion report; state `No commit or release command
+  executed.` and present the exact drafted release command.
+- Flag completed AC files left in `govna/` as drift, unless they are designated keepers (`ac-template.md`).
 
 ### Response style
 

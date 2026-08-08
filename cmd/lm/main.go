@@ -48,7 +48,8 @@ func printRootHelp() {
 	fmt.Printf("%s\n", color.Whi9("BENCHMARKING"))
 	fmt.Printf("  %-30s %s\n\n", "perf [bench|sweep|show|clear]", "Benchmark model performance")
 	fmt.Printf("%s\n", color.Whi9("FLAGS"))
-	fmt.Printf("  %-30s %s\n\n", "-h, --help", "Show help for command")
+	fmt.Printf("  %-30s %s\n", "-h, --help", "Show help for command")
+	fmt.Printf("  %-30s %s\n\n", "-v, --version", "An alias for the \"version\" subcommand")
 	fmt.Printf("%s\n", color.Whi9("EXAMPLES"))
 	fmt.Printf("  $ %s search gemma\n", n)
 	fmt.Printf("  $ %s get mlx-community/gemma-3-1b-it-4bit\n", n)
@@ -78,6 +79,10 @@ func runCLI() {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if v, _ := cmd.Flags().GetBool("version"); v {
+				fmt.Printf("%s v%s\n", programName, programVersion)
+				return nil
+			}
 			printRootHelp()
 			return nil
 		},
@@ -86,6 +91,7 @@ func runCLI() {
 		printRootHelp()
 	})
 	root.CompletionOptions.DisableDefaultCmd = true
+	root.Flags().BoolP("version", "v", false, "An alias for the \"version\" subcommand.")
 
 	root.AddCommand(
 		newVersionCmd(),

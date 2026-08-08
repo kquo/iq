@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | preserve CHANGELOG.md; preserve README.md repo-owned; preserve .gitignore repo-owned |
+| 0.18.0 | AC5: adopt govna v0.13.0; add lm version aliases |
 | 0.17.1 | AC4: drift-scan v0.139.0; retire Go build tooling; migrate docs/ to governa/ |
 | 0.17.0 | AC3: adopt governa-color v1.0.1; retire internal/color |
 | 0.16.1 | sync CHANGELOG separator with canon |

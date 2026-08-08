@@ -71,7 +71,7 @@ The `cmd/iq` package is the CLI entry point — it wires commands (cobra), flags
 - `build.sh`: self-contained build, release-prep, and release tooling
 - `cmd/iq/main.go`, `cmd/lm/main.go`, `cmd/kb/main.go`: the three installable binaries
 - `internal/`: domain packages shared by all three binaries (config, search, sidecar, cue, embed, cache, tools, lm, kb)
-- `governa/`: governance documentation (development cycle, build/release, AC template, roles, drift-scan)
+- `govna/`: governance documentation (development cycle, build/release, AC template, roles, audit)
 - `docs/critique-protocol.md`: critique protocol (repo-specific; not a governa doc)
 
 ## Major Components
