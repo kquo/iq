@@ -1,6 +1,8 @@
-Copy this file to `govna/ac<N>-<slug>.md`, where `slug` is a kebab-case identifier and `N` follows the monotonic-numbering rule below. Set the file's heading to `# AC<N> Title`.
+Copy this file to `govna/ac<N>-<slug>.md`.
+Use a kebab-case slug and `# AC<N> Title` heading.
 
-AC numbering is monotonic across release-prep deletions. Determine `N` by taking the maximum of (a) AC numbers currently in `govna/` and (b) AC numbers anywhere in `git log --all --pretty=%B` output (which covers commit subject + body — count every AC reference on every line, even when a single commit names multiple, e.g., `AC<m>+AC<n>`). Prior ACs removed during release prep still count. `N` is that maximum plus one.
+Set `N` to one above the highest AC number in `govna/` or `git log --all --pretty=%B`.
+Count every reference because release-prep deletions do not reset numbering.
 
 The AC is the implementation contract for one approved roadmap item. The full development cycle that wraps around this template lives in `govna/development-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
 
@@ -8,11 +10,13 @@ The AC is the implementation contract for one approved roadmap item. The full de
 
 ## Summary
 
-Describe the change in one short paragraph. State the nature (feature, refactor, infrastructure, doc) and note whether the work is code or doc-only. For multi-part ACs, name the parts (e.g. "Part A rewrites X; Part B amends Y; Part C propagates to overlays.").
+Describe the change, its nature, code or doc impact, and any named parts in one short paragraph.
 
 ## In Scope
 
-List the concrete changes this AC will make. Use sub-headings for grouping (e.g. "Files to create", "Files to modify", "Schema changes"). Be specific — file paths, function names, table columns. The In Scope list is the authoritative scope contract; the agent only edits files listed here even after the Director authorizes implementation. Apply the emitted-scope exception when a Director resolves an audit Routing Decision or an `rm`-emitted Routing Decision; leave the emitted stub/AC unchanged.
+List concrete changes and exact paths under useful groupings.
+Treat this list as authoritative.
+Apply only the effective-scope and emitted-routing exceptions defined in `AGENTS.md`.
 
 ### Files to create
 
@@ -30,7 +34,7 @@ List the concrete changes this AC will make. Use sub-headings for grouping (e.g.
 
 ## Out Of Scope
 
-List things the AC explicitly does **not** do. This is as important as the In Scope list — it bounds the change and prevents scope creep during implementation.
+List tempting or adjacent work that remains excluded.
 
 - Things deferred to a later AC (link the deferral)
 - Adjacent improvements that would be tempting but are not required
@@ -44,10 +48,9 @@ List things the AC explicitly does **not** do. This is as important as the In Sc
 
 ## Acceptance Tests
 
-Every AT carries a source axis and a timing axis.
-
-- **Source axis** — `[Automated]` or `[Manual]`. Default to `[Automated]` whenever the result is verifiable without a live external service; reserve `[Manual]` for behaviors that genuinely cannot be checked any other way.
-- **Timing axis** — `[Pre-release gate]` or `[Post-release verification]`; always write the selected label explicitly. Use `[Post-release verification]` only when automated regression coverage already gates pre-release on the underlying class.
+Label every AT `[Automated]` or `[Manual]` and `[Pre-release gate]` or `[Post-release verification]`.
+Prefer automated pre-release coverage.
+Use post-release only when automated regression coverage already gates the behavior class.
 
 **AT1** [Automated] [Pre-release gate] — One-line description of what is verified, with the exact check (file existence, grep pattern, SQL query, or CLI output).
 

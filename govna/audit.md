@@ -1,8 +1,6 @@
 # Audit
 
-`govna audit` compares an adopted repo's governance artifacts against what `govna render` would produce for it now, and emits a `govna/ac<N>-audit-<canon-version>.md` stub listing the divergences for the Director to resolve.
-
-Run it from the consumer repo root (no positional arguments) after `govna render` or `govna apply`.
+Run `govna audit` without positional arguments from an adopted consumer root to compare governance with current render output and emit a Director-routed divergence AC when needed.
 
 ## Usage
 
@@ -19,7 +17,7 @@ Flags:
 - `-n, --repo-name <name>` — override repo name (default: basename of the target directory).
 - `-h, --help` — show this help.
 
-Preconditions: the target must be a govna-adopted repo (`AGENTS.md` present, plus a govna adoption signal — one of `govna/ac-template.md`, `govna/release.md`, `govna/build-release.md`, or a `CHANGELOG.md` row referencing `govna apply` or `govna render`) and a git worktree (`.git/` present, `git` on `PATH`).
+Require `AGENTS.md`, Git worktree support, and an adoption signal: an AC/release/build-release canon file or a CHANGELOG reference to `govna apply` or `govna render`.
 
 ## Classification
 
@@ -121,6 +119,29 @@ The stub carries an edit-detection marker (SHA-256 body hash). Re-running audit 
 A non-actionable audit exits successfully, prints the classification tally followed by `no AC emitted`, and performs no AC-number allocation, stub inspection, directory creation, or file write. It never deletes, overwrites, or validates an existing audit stub. With `--json`, the complete report remains available and `emitted` is `null`; no additional prose is written.
 
 Every Director-resolved routing target becomes effective implementation scope while the emitted stub remains unchanged. Explicitly named migration destinations join that scope. `govna/preserve.txt` joins that scope only when a resolved outcome requires creating or changing it, without a second Director authorization.
+
+### Emitted AC instruction and phase shape
+
+- Start the count paragraph with `This adoption covers`.
+- Start the Summary sentences with `This audit adoption synchronizes`, `Audit surfaced`, and `Per-file inspection uses` in that order.
+- Keep the count and Summary paragraphs descriptive.
+- Place routing procedure and the CODE reachability check under `### Adoption Instructions`.
+- Emit each adoption instruction as one imperative bullet.
+- Format every numbered routing entry as one Director decision question.
+- End every numbered routing entry with `?`.
+- Keep shared implementation procedure out of routing questions.
+- End every emitted adoption AC with exact status `` `PENDING` — audit emission; awaiting explicit Director Audit.``
+
+### Mixed-content sync verification
+
+- Capture the SHA-256 digest of each existing mixed-content target from the first byte of its exact registered boundary-heading line through end of file.
+- Include the boundary line, its line ending, the complete repository-owned tail, and the final-newline state in the protected region.
+- Emit the expected digest and boundary in the file-specific automated acceptance test for every direct sync.
+- Emit the same conditional verification for every review item whose Director resolution is sync.
+- Recompute the protected-region digest after adoption and require it to match the emitted digest.
+- Keep rendered-canon comparison scoped to the canon zone above the boundary.
+- Avoid comparing the repository-owned tail with rendered defaults.
+- Keep the protected-region digest out of classification, baseline scope, and JSON output.
 
 When baseline migration is present, audit infers validation only from bounded target governance evidence. Positive declarations come only from exactly one AGENTS.md rule shaped ``Run `<command>` as the first validation command ...`` and exactly one rule shaped ``Use `<command>` for repository-wide ... validation ...``; CODE infers `./build.sh` only when both name that command and root `build.sh` is a regular file. DOC infers `Not applicable` only when `govna/release.md` contains the exact canon no-automated-content-validation declaration and AGENTS.md contains no recognized positive declaration. Missing, duplicate, incomplete, mismatched, positive-plus-negative, non-`./build.sh`, or non-regular-file evidence stays unresolved for a Director decision. Audit ignores other prose, governance documents, executables, manifests, CI files, and flavor defaults.
 
