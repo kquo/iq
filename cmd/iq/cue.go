@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+	"iq/internal/color"
 	"iq/internal/cue"
 	"iq/internal/embed"
 )

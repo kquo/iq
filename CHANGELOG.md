@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.18.2 | AC7: internalize terminal color; adopt Go 1.27 |
 | 0.18.1 | AC6: migrate preserve decisions to govna registry |
 | 0.18.0 | AC5: adopt govna v0.13.0; add lm version aliases |
 | 0.17.1 | AC4: drift-scan v0.139.0; retire Go build tooling; migrate docs/ to governa/ |

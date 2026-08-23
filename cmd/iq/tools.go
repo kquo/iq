@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/queone/governa-color"
+	"iq/internal/color"
 	"iq/internal/tools"
 )
 

@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
+	"iq/internal/color"
 )
 
 const (

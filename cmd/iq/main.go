@@ -8,13 +8,13 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
+	"iq/internal/color"
 )
 
 const (
 	programName    = "iq"
-	programVersion = "0.18.1"
+	programVersion = "0.18.2"
 )
 
 // errSilent is returned when the error has already been printed.

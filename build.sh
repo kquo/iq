@@ -467,7 +467,7 @@ _ensure_staticcheck() { # $1=bin_dir $2=ext -> sets _staticcheck_path; stdout ms
   # match buildtool's step output; the result path is returned via a global so
   # this function is not run inside a command substitution.
   local bin_dir="$1" ext="$2"
-  local pinned='honnef.co/go/tools/cmd/staticcheck@v0.7.0'
+  local pinned='honnef.co/go/tools/cmd/staticcheck@v0.8.1'
   printf '    installing: %s\n' "$(grn3 "$pinned")"
   run_streaming grn3 go install "$pinned"
   _staticcheck_path="$bin_dir/staticcheck$ext"

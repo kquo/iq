@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/queone/governa-color"
+	"iq/internal/color"
 
 	"iq/internal/config"
 )

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/queone/governa-color"
+	"iq/internal/color"
 
 	"iq/internal/config"
 	"iq/internal/embed"

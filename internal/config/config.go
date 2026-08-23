@@ -5,8 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/queone/governa-color"
 	"gopkg.in/yaml.v3"
+
+	"iq/internal/color"
 )
 
 // ── Shared types ────────────────────────────────────────────────────────────
@@ -242,13 +243,11 @@ func defaultConfig() *Config {
 	temp := float64(DefaultTemperature)
 	mt := DefaultMaxTokens
 	return &Config{
-		Version: ConfigVersion,
-		InferParams: InferParams{
-			RepetitionPenalty: &rp,
-			Temperature:       &temp,
-			MaxTokens:         &mt,
-		},
-		EmbedModel: DefaultEmbedModel,
+		Version:           ConfigVersion,
+		RepetitionPenalty: &rp,
+		Temperature:       &temp,
+		MaxTokens:         &mt,
+		EmbedModel:        DefaultEmbedModel,
 	}
 }
 

@@ -154,13 +154,11 @@ func TestResolveInferParams(t *testing.T) {
 
 	t.Run("global extended params applied", func(t *testing.T) {
 		cfg := &Config{
-			InferParams: InferParams{
-				TopP: new(0.9),
-				MinP: new(0.05),
-				TopK: new(40),
-				Stop: []string{"</s>", "\n\n"},
-				Seed: new(42),
-			},
+			TopP: new(0.9),
+			MinP: new(0.05),
+			TopK: new(40),
+			Stop: []string{"</s>", "\n\n"},
+			Seed: new(42),
 		}
 		p := ResolveInferParams(cfg, "")
 		if p.TopP == nil || *p.TopP != 0.9 {
@@ -184,17 +182,13 @@ func TestResolveInferParams(t *testing.T) {
 		cfg := &Config{
 			Models: []ModelEntry{
 				{
-					ID: "some-model",
-					InferParams: InferParams{
-						TopP: new(0.8),
-						Seed: new(99),
-					},
+					ID:   "some-model",
+					TopP: new(0.8),
+					Seed: new(99),
 				},
 			},
-			InferParams: InferParams{
-				TopP: new(0.95),
-				Seed: new(1),
-			},
+			TopP: new(0.95),
+			Seed: new(1),
 		}
 		p := ResolveInferParams(cfg, "some-model")
 		if p.TopP == nil || *p.TopP != 0.8 {
@@ -207,9 +201,7 @@ func TestResolveInferParams(t *testing.T) {
 
 	t.Run("unknown model uses global only", func(t *testing.T) {
 		cfg := &Config{
-			InferParams: InferParams{
-				TopP: new(0.95),
-			},
+			TopP: new(0.95),
 		}
 		p := ResolveInferParams(cfg, "not-in-pool")
 		if p.TopP == nil || *p.TopP != 0.95 {
@@ -221,11 +213,11 @@ func TestResolveInferParams(t *testing.T) {
 		cfg := &Config{
 			Models: []ModelEntry{
 				{
-					ID:          "some-model",
-					InferParams: InferParams{Stop: []string{"STOP"}},
+					ID:   "some-model",
+					Stop: []string{"STOP"},
 				},
 			},
-			InferParams: InferParams{Stop: []string{"</s>"}},
+			Stop: []string{"</s>"},
 		}
 		p := ResolveInferParams(cfg, "some-model")
 		if len(p.Stop) != 1 || p.Stop[0] != "STOP" {

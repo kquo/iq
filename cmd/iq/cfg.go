@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/queone/governa-color"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 	"iq/internal/cache"
+	"iq/internal/color"
 	"iq/internal/config"
 	"iq/internal/cue"
 	"iq/internal/embed"
