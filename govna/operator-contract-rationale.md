@@ -2,6 +2,12 @@
 
 This explanatory document records why the Operator contract exists. `AGENTS.md` alone defines operational rules and wins every conflict.
 
+## Contract Purpose
+
+Govna exists to make programming and publishing ceremonies—the recurring CODE and DOC checkpoints around intent, authorization, scope, review, implementation or editing, verification, and release—more effective and efficient. Reusable context reduces process reconstruction, ambiguity, duplicated decisions, and avoidable rework across phases and sessions.
+
+Efficiency does not weaken authorization, review, verification, or release gates. Govna keeps decision-bearing choices with the Director and makes only settled, deterministic mechanics reusable.
+
 ## Session-Entry Purpose
 
 Session Entry tells a general-purpose agent that constrained repository rules apply before substantive work. It initializes contract identity, substantive-action scope, gates, precedence, and an observable checkpoint without restating the full contract. Audit catches residual drift.
@@ -9,6 +15,10 @@ Session Entry tells a general-purpose agent that constrained repository rules ap
 ## LLM-Agent Behavior Assumptions
 
 The design assumes similarity-weighted retrieval, stronger compliance with imperative wording, and a modest primacy benefit for role framing. `AGENTS.md` therefore stays imperative and near the action; this document serves human onboarding without diluting that signal.
+
+## Why Plain Language Matters
+
+Concrete wording helps both people and agents identify the required result before interpreting a workflow label. Govna keeps exact labels when they carry contract meaning, but explains each one at first use so the label does not hide the problem, effect, or decision.
 
 ## The `Govna contract loaded.` Checkpoint
 
@@ -20,19 +30,19 @@ The design assumes similarity-weighted retrieval, stronger compliance with imper
 
 ## Why Effective Implementation Scope Is Bounded
 
-Effective implementation scope avoids repeating settled Director decisions for directly broken, deterministic fallout. It preserves behavior and intent, requires one valid outcome, records every use, and returns to Refine wherever product, scope, security, destructive, publication, release, dependency, migration, architecture, or competing-outcome judgment begins.
+Effective implementation scope permits one directly broken supporting file with only one valid correction to be fixed without repeating a decision the Director already settled. It preserves behavior and intent, records every use, and returns to Refine wherever product, scope, security, destructive, publication, release, dependency, migration, architecture, or competing-outcome judgment begins.
 
 ## Why Contract Integrity Reporting Is Evidence-Triggered
 
-Evidence-triggered reporting distinguishes contract defects from implementation defects without inviting ambient opinion. Classification routes consumer-local, canon, or unclear findings but never grants editing authority. Blocking findings stop unsafe or decision-bearing work; unchanged acknowledged findings stay silent; authorized corrections land only in their owning governance document.
+A contract-integrity finding reports a proven governance-rule problem rather than an implementation bug. Evidence keeps this process from turning wording preferences into findings. Classification routes repository-specific, shared Govna, or unclear findings but never grants editing authority. Blocking findings stop unsafe or decision-bearing work; unchanged acknowledged findings stay silent; authorized corrections land only in their owning governance document.
 
 ## Why Contract Growth Is Reviewed
 
-Contract-growth review applies only to proposed or authorized governance changes. Measurements trigger inspection, not findings. Atomicity reduces dropped qualifiers; hierarchy and shared invariants reduce whole-contract dilution. Consumer evidence routes shared defects upstream without granting editing authority.
+A contract-growth review checks whether new rules duplicate, hide, misplace, or crowd out existing rules. It applies only to proposed or authorized governance changes. Measurements trigger inspection, not findings. Repository evidence routes shared defects upstream without granting editing authority.
 
 ## Why Implement Can Close Bounded Completeness Gaps
 
-Implement and its closure audit can expose a missed path inside an already settled outcome. Requiring a new Director phase instruction for that deterministic omission adds ceremony without adding a decision. The bounded exception therefore continues the original Implement authority only when repository evidence identifies the gap, an active acceptance test already requires the correction class, the artifact family is already named, and only one materially valid outcome exists. Pre-Implementation Verification protects the corrected AC, reporting keeps the transition visible, and the three-round limit returns repeated or decision-bearing churn to the Director.
+Implement and its final read-only closure audit can expose a missed path inside an already settled outcome. Requiring another Director instruction for that omission adds a step without adding a decision. A bounded completeness correction continues the original Implement authority only when repository evidence identifies the gap, an active acceptance test already requires the correction, the artifact family is already named, and only one materially valid outcome exists. The Operator may correct at most three missed paths or instructions before asking the Director again. The final AC wording and scope check called Pre-Implementation Verification protects each corrected AC, and visible reporting records every transition.
 
 ## Canon Versus Local Flexibility
 

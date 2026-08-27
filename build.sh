@@ -21,6 +21,8 @@ _prep_ie_err=''
 _prep_build_err=''
 _prep_vtargets=''
 _prep_ctargets=''
+_build_owned_dir=''
+_build_install_temps=()
 
 # ── color ────────────────────────────────────────────────────────────────────
 # A sequence is emitted only when color is both enabled (NO_COLOR unset, TERM != dumb, stdout a TTY) and 256-color capable (COLORTERM
@@ -189,11 +191,128 @@ build_usage() {
 only against those cmd packages. To validate the full repo, run with no targets.'
 }
 
+_failure() { printf '%s\n' "$1" >&2; }
+
+_cleanup_build_owned() {
+  local cleanup_failed=0 path
+  for path in "${_build_install_temps[@]+"${_build_install_temps[@]}"}"; do
+    [ -n "$path" ] || continue
+    if { [ -e "$path" ] || [ -L "$path" ]; } && ! rm -f -- "$path"; then
+      printf 'build: cleanup failed for owned path %s\n' "$path" >&2
+      cleanup_failed=1
+    fi
+  done
+  _build_install_temps=()
+  if [ -n "${_build_owned_dir:-}" ] && [ -d "$_build_owned_dir" ] && ! rm -rf -- "$_build_owned_dir"; then
+    printf 'build: cleanup failed for owned path %s\n' "$_build_owned_dir" >&2
+    cleanup_failed=1
+  fi
+  _build_owned_dir=''
+  return "$cleanup_failed"
+}
+
+_build_signal_exit() { # $1=conventional signal exit status
+  local status="$1"
+  trap - EXIT HUP INT TERM
+  if ! _cleanup_build_owned; then :; fi
+  exit "$status"
+}
+
 # build_run VERBOSE TARGETS... — targets empty => whole repo.
 build_run() {
   local verbose="$1"
   shift
   local targets=("$@")
+
+  local discovered_targets=() install_targets=() install_versions=()
+  local d target candidate found available
+  for d in cmd/*/; do
+    [ -f "${d}main.go" ] || continue
+    discovered_targets+=("$(basename "$d")")
+  done
+  if [ "${#discovered_targets[@]}" -gt 0 ]; then
+    local discovered_list
+    discovered_list=$(printf '%s\n' "${discovered_targets[@]}" | LC_ALL=C sort)
+    discovered_targets=()
+    while IFS= read -r candidate || [ -n "$candidate" ]; do
+      [ -n "$candidate" ] && discovered_targets+=("$candidate")
+    done <<EOF
+$discovered_list
+EOF
+  fi
+
+  if [ "${#targets[@]}" -eq 0 ]; then
+    install_targets=("${discovered_targets[@]+"${discovered_targets[@]}"}")
+  else
+    available='(none)'
+    [ "${#discovered_targets[@]}" -eq 0 ] || available="${discovered_targets[*]}"
+    for target in "${targets[@]}"; do
+      case "$target" in
+      '' | */* | *\\*)
+        printf 'invalid target %s; use one discovered command name without path components\n' "$(_go_quote "$target")" >&2
+        return 2
+        ;;
+      esac
+      found=0
+      for candidate in "${discovered_targets[@]+"${discovered_targets[@]}"}"; do
+        if [ "$candidate" = "$target" ]; then found=1; break; fi
+      done
+      if [ "$found" -ne 1 ]; then
+        printf 'unknown target %s; available targets: %s\n' "$(_go_quote "$target")" "$available" >&2
+        return 2
+      fi
+      for candidate in "${install_targets[@]+"${install_targets[@]}"}"; do
+        if [ "$candidate" = "$target" ]; then
+          printf 'duplicate target %s; list each target once\n' "$(_go_quote "$target")" >&2
+          return 2
+        fi
+      done
+      install_targets+=("$target")
+    done
+    local selected_list
+    selected_list=$(printf '%s\n' "${install_targets[@]}" | LC_ALL=C sort)
+    install_targets=()
+    while IFS= read -r candidate || [ -n "$candidate" ]; do
+      [ -n "$candidate" ] && install_targets+=("$candidate")
+    done <<EOF
+$selected_list
+EOF
+  fi
+
+  if [ "${#install_targets[@]}" -gt 0 ]; then
+    printf '\n%s\n' "$(yel7 '==> Validate programVersion declarations')"
+    local ver decls
+    for target in "${install_targets[@]+"${install_targets[@]}"}"; do
+      ver=$(_extract_program_version "cmd/$target/main.go")
+      if [ -z "$ver" ]; then
+        printf 'cmd/%s/main.go must declare a non-empty const programVersion string literal\n' "$target" >&2
+        return 1
+      fi
+      decls=$(_count_program_version_declarations "cmd/$target/main.go")
+      if [ "$decls" -ne 1 ]; then
+        printf 'cmd/%s/main.go must declare exactly one programVersion value; found %s declarations\n' \
+          "$target" "$decls" >&2
+        return 1
+      fi
+      if ! _is_strict_stable_semver "$ver"; then
+        printf 'cmd/%s/main.go declares invalid utility version %s; use MAJOR.MINOR.PATCH with no leading zeroes, prerelease, or build metadata\n' \
+          "$target" "$(_go_quote "$ver")" >&2
+        return 1
+      fi
+      install_versions+=("$ver")
+      printf '    %s: programVersion = %s\n' "$(cya4 "cmd/$target")" "$(grn3 "\"$ver\"")"
+    done
+  fi
+
+  _build_install_temps=()
+  _build_owned_dir=$(mktemp -d "${TMPDIR:-/tmp}/govna-go-build.XXXXXX") || {
+    printf 'build: create owned temporary directory failed\n' >&2
+    return 1
+  }
+  trap '_cleanup_build_owned' EXIT
+  trap '_build_signal_exit 129' HUP
+  trap '_build_signal_exit 130' INT
+  trap '_build_signal_exit 143' TERM
 
   local module_path bin_dir ext
   module_path=$(go list -m -f '{{.Path}}')
@@ -204,8 +323,7 @@ build_run() {
   if [ "${#targets[@]}" -eq 0 ]; then
     scopes=('./...')
   else
-    local t
-    for t in "${targets[@]}"; do scopes+=("./cmd/$t"); done
+    for target in "${install_targets[@]+"${install_targets[@]}"}"; do scopes+=("./cmd/$target"); done
   fi
 
   printf '%s\n' "$(yel7 '==> Check markdown for nested fence issues')"
@@ -268,8 +386,10 @@ build_run() {
   fi
 
   local cover_path
-  cover_path=$(mktemp "${TMPDIR:-/tmp}/build-cover.XXXXXX")
-  trap 'rm -f "${cover_path:-}"; trap - RETURN' RETURN
+  cover_path=$(mktemp "$_build_owned_dir/build-cover.XXXXXX") || {
+    printf 'build: create coverage output failed\n' >&2
+    return 1
+  }
 
   printf '\n%s\n' "$(yel7 '==> Run tests for all packages in the repository')"
   local test_args=(test)
@@ -295,74 +415,44 @@ build_run() {
     printf '    %s\n' 'No issues found by staticcheck.'
   fi
 
-  # Install targets: every cmd/* dir (sorted) when no targets; else the named.
-  local install_targets=()
   if [ "${#targets[@]}" -eq 0 ]; then
-    local d
-    for d in cmd/*/; do
-      [ -d "$d" ] || continue
-      install_targets+=("$(basename "$d")")
-    done
     printf '\n%s\n' "$(yel7 '==> Building all utilities')"
   else
-    install_targets=("${targets[@]}")
-    printf '\n%s %s\n' "$(yel7 '==> Building specific utilities:')" "$(grn3 "${targets[*]}")"
-  fi
-  if [ "${#install_targets[@]}" -gt 0 ]; then
-    local sorted_list
-    sorted_list=$(printf '%s\n' "${install_targets[@]}" | LC_ALL=C sort)
-    install_targets=()
-    local s
-    while IFS= read -r s || [ -n "$s" ]; do
-      [ -n "$s" ] && install_targets+=("$s")
-    done <<EOF
-$sorted_list
-EOF
+    printf '\n%s %s\n' "$(yel7 '==> Building specific utilities:')" "$(grn3 "${install_targets[*]}")"
   fi
 
-  if [ "${#install_targets[@]}" -gt 0 ]; then
-    printf '\n%s\n' "$(yel7 '==> Validate programVersion declarations')"
-    local target ver decls
-    local multi_utility=0
-    local cmd_dir_count=0
-    local cmd_dir
-    for cmd_dir in cmd/*/; do
-      [ -d "$cmd_dir" ] && cmd_dir_count=$((cmd_dir_count + 1))
-    done
-    [ "$cmd_dir_count" -gt 1 ] && multi_utility=1
-    for target in "${install_targets[@]}"; do
-      ver=$(_extract_program_version "cmd/$target/main.go")
-      if [ -z "$ver" ]; then
-        printf 'cmd/%s/main.go must declare a non-empty const programVersion string literal\n' "$target" >&2
-        return 1
-      fi
-      if [ "$multi_utility" -eq 1 ]; then
-        decls=$(_count_program_version_declarations "cmd/$target/main.go")
-        if [ "$decls" -ne 1 ]; then
-          printf 'cmd/%s/main.go must declare exactly one programVersion value; found %s declarations\n' \
-            "$target" "$decls" >&2
-          return 1
-        fi
-      fi
-      if [ "$multi_utility" -eq 1 ] && ! _is_strict_stable_semver "$ver"; then
-        printf 'cmd/%s/main.go declares invalid utility version %s; use MAJOR.MINOR.PATCH with no leading zeroes, prerelease, or build metadata\n' \
-          "$target" "$(_go_quote "$ver")" >&2
-        return 1
-      fi
-      printf '    %s: programVersion = %s\n' "$(cya4 "cmd/$target")" "$(grn3 "\"$ver\"")"
-    done
-  fi
-
-  local target
-  for target in "${install_targets[@]}"; do
-    local output_path="$bin_dir/$target$ext"
-    printf '\n%s %s\n' "$(yel7 '==> Building and installing')" "$(grn3 "$target")"
-    run_streaming grn3 go build -o "$output_path" -ldflags '-s -w' "./cmd/$target"
-    if [ "$multi_utility" -eq 1 ]; then
-      _validate_utility_version_output "$output_path" "$target" \
-        "$(_extract_program_version "cmd/$target/main.go")" || return 1
+  local output_path compiled_path index=0
+  for target in "${install_targets[@]+"${install_targets[@]}"}"; do
+    output_path="$bin_dir/$target$ext"
+    if [ -L "$output_path" ] || { [ -e "$output_path" ] && [ ! -f "$output_path" ]; }; then
+      printf 'utility %s: installed destination must be absent or a regular file: %s\n' "$target" "$output_path" >&2
+      return 1
     fi
-    printf '    installed: %s\n' "$(cya4 "$output_path")"
+  done
+
+  for target in "${install_targets[@]+"${install_targets[@]}"}"; do
+    compiled_path="$_build_owned_dir/$target$ext"
+    printf '\n%s %s\n' "$(yel7 '==> Building')" "$(grn3 "$target")"
+    run_streaming grn3 go build -o "$compiled_path" -ldflags '-s -w' "./cmd/$target"
+  done
+
+  if [ "${#install_targets[@]}" -gt 0 ]; then
+    printf '\n%s\n' "$(yel7 '==> Validate compiled utility versions')"
+  fi
+  index=0
+  for target in "${install_targets[@]+"${install_targets[@]}"}"; do
+    compiled_path="$_build_owned_dir/$target$ext"
+    _validate_utility_version_output "$compiled_path" "$target" "${install_versions[$index]}" || return 1
+    index=$((index + 1))
+  done
+
+  if [ "${#install_targets[@]}" -gt 0 ]; then
+    printf '\n%s\n' "$(yel7 '==> Install validated utilities')"
+  fi
+  for target in "${install_targets[@]+"${install_targets[@]}"}"; do
+    compiled_path="$_build_owned_dir/$target$ext"
+    output_path="$bin_dir/$target$ext"
+    _install_validated_utility "$compiled_path" "$output_path" "$target" || return 1
   done
 
   local next_tag
@@ -370,6 +460,11 @@ EOF
     printf '\n%s\n\n    ./build.sh %s %s\n' \
       "$(yel7 '==> To release, run:')" "$(grn3 "$next_tag")" "$(gra5 '"<release message>"')"
   fi
+  if ! _cleanup_build_owned; then
+    trap - EXIT HUP INT TERM
+    return 1
+  fi
+  trap - EXIT HUP INT TERM
 }
 
 _print_coverage_summary() { # $1=cover_path $2=module_path
@@ -430,34 +525,56 @@ _is_strict_stable_semver() { # $1=version -> success when MAJOR.MINOR.PATCH
 }
 
 _validate_utility_version_output() { # $1=binary $2=utility ID $3=declared version
-  local binary="$1" utility_id="$2" declared="$3" probe_dir rc actual
-  probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/govna-version.XXXXXX") || {
+  local binary="$1" utility_id="$2" declared="$3" probe_root probe_dir rc actual
+  probe_root="${_build_owned_dir:-${TMPDIR:-/tmp}}"
+  probe_dir=$(mktemp -d "$probe_root/govna-version.XXXXXX") || {
     printf 'utility %s: create version probe workspace: check temporary-directory permissions and retry\n' "$utility_id" >&2
     return 1
   }
-  printf '%s\n' "$utility_id v$declared" >"$probe_dir/expected"
+  printf '%s\n' "$utility_id $declared" >"$probe_dir/expected"
+  printf '%s v%s\n' "$utility_id" "$declared" >"$probe_dir/expected-v"
   rc=0
   "$binary" --version >"$probe_dir/stdout" 2>"$probe_dir/stderr" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf 'utility %s: --version failed with exit status %d; implement --version to print %s\n' \
-      "$utility_id" "$rc" "$utility_id v$declared" >&2
+      "$utility_id" "$rc" "$utility_id $declared" >&2
     rm -rf "$probe_dir"
     return 1
   fi
-  if ! cmp -s "$probe_dir/expected" "$probe_dir/stdout"; then
+  if ! cmp -s "$probe_dir/expected" "$probe_dir/stdout" &&
+    ! cmp -s "$probe_dir/expected-v" "$probe_dir/stdout"; then
     actual=$(LC_ALL=C tr '\n' ' ' <"$probe_dir/stdout")
     printf 'utility %s: --version output %s; expected exactly %s on stdout\n' \
-      "$utility_id" "$(_go_quote "$actual")" "$(_go_quote "$utility_id v$declared")" >&2
+      "$utility_id" "$(_go_quote "$actual")" "$(_go_quote "$utility_id $declared")" >&2
     rm -rf "$probe_dir"
     return 1
   fi
   if [ -s "$probe_dir/stderr" ]; then
     printf 'utility %s: --version wrote diagnostics to stderr; write only %s to stdout\n' \
-      "$utility_id" "$utility_id v$declared" >&2
+      "$utility_id" "$utility_id $declared" >&2
     rm -rf "$probe_dir"
     return 1
   fi
   rm -rf "$probe_dir"
+}
+
+_install_validated_utility() { # $1=compiled $2=destination $3=utility ID
+  local compiled="$1" output="$2" utility_id="$3" install_tmp temp_index
+  if [ -L "$output" ] || { [ -e "$output" ] && [ ! -f "$output" ]; }; then
+    printf 'utility %s: installed destination must be absent or a regular file: %s\n' "$utility_id" "$output" >&2
+    return 1
+  fi
+  install_tmp=$(mktemp "$(dirname "$output")/.govna-install-$utility_id.XXXXXX") || {
+    printf 'utility %s: create adjacent installation staging file failed: %s\n' "$utility_id" "$(dirname "$output")" >&2
+    return 1
+  }
+  temp_index=${#_build_install_temps[@]}
+  _build_install_temps[$temp_index]="$install_tmp"
+  cp "$compiled" "$install_tmp" || { rm -f "$install_tmp"; return 1; }
+  chmod 0755 "$install_tmp" || { rm -f "$install_tmp"; return 1; }
+  mv -f "$install_tmp" "$output" || { rm -f "$install_tmp"; return 1; }
+  _build_install_temps[$temp_index]=''
+  printf '    installed: %s\n' "$(cya4 "$output")"
 }
 
 _ensure_staticcheck() { # $1=bin_dir $2=ext -> sets _staticcheck_path; stdout msgs
@@ -761,7 +878,7 @@ _run_git() {
 
 prep_usage() {
   cat <<'EOF'
-prep vX.Y.Z "release message" [--dry-run|-n] [--no-build|-B]
+prep vX.Y.Z "release message" [options]
 
 Stages a release by bumping version constants, inserting a CHANGELOG row,
 deleting completed AC files, and running validation builds before and after.
@@ -769,16 +886,17 @@ deleting completed AC files, and running validation builds before and after.
 Flags:
   -h, -?, --help   show this help
   --dry-run, -n    print intended writes without modifying the working tree
-  --no-build, -B   skip the pre-check and post-check build invocations
+  --no-build, -B   unsupported for Go prep; canonical validation is mandatory
+  -v, --verbose    print detailed prep phase commands
 
 Prints the canonical release command on success. Does not run the release
 itself — present the printed command for the director to run.
 EOF
 }
 
-# prep_run DRY NOBUILD VERSION MESSAGE — mirrors preptool.Run phases 1–9.
+# prep_run DRY NOBUILD VERBOSE VERSION MESSAGE.
 prep_run() {
-  local dry="$1" nobuild="$2" version="$3" message="$4"
+  local dry="$1" nobuild="$2" verbose="$3" version="$4" message="$5"
   local root="$PWD"
   local vstripped="${version#v}"
 
@@ -801,9 +919,19 @@ prep_run() {
   # Phase 2: validate git state.
   _prep_validate_git_state "$root" "$version" || return 1
 
-  # Phase 3: pre-check build.
-  if [ "$dry" -ne 1 ] && [ "$nobuild" -ne 1 ]; then
+  if [ -n "${GOVNA_PREP_VALIDATION_TOKEN:-}" ]; then
+    printf 'prep: validation-token environment evidence is unsupported for Go\n' >&2
+    return 1
+  fi
+  if [ "$nobuild" -eq 1 ] && [ "$dry" -ne 1 ]; then
+    printf 'prep: --no-build is unsupported for Go; canonical validation is mandatory\n' >&2
+    return 1
+  fi
+
+  # Phase 3: mandatory pre-check build for an actual prep.
+  if [ "$dry" -ne 1 ]; then
     printf 'prep: running pre-check build\n'
+    [ "$verbose" -eq 1 ] && printf 'prep: command: ./build.sh\n'
     _prep_build "$root" || {
       printf 'prep: pre-check build: %s\n' "$_prep_build_err" >&2
       return 1
@@ -889,13 +1017,12 @@ $ielines
 EOF
 
   # Phase 8: post-check build.
-  if [ "$nobuild" -ne 1 ]; then
-    printf 'prep: running post-check build\n'
-    _prep_build "$root" || {
-      printf 'prep: post-check build: %s\n' "$_prep_build_err" >&2
-      return 1
-    }
-  fi
+  printf 'prep: running post-check build\n'
+  [ "$verbose" -eq 1 ] && printf 'prep: command: ./build.sh\n'
+  _prep_build "$root" || {
+    printf 'prep: post-check build: %s\n' "$_prep_build_err" >&2
+    return 1
+  }
 
   # Phase 9: emit release command.
   _prep_emit_release_command "$version" "$message"
@@ -1039,10 +1166,6 @@ _prep_validate_multi_utility_versions() { # $1=root $2=no-build flag
     count=$((count + 1))
   done
   [ "$count" -gt 1 ] || return 0
-  if [ "$nobuild" -eq 1 ]; then
-    printf 'prep: cannot use --no-build/-B for a multi-utility repository; build validation is required for independent utility versions\n' >&2
-    return 1
-  fi
  for cmd_dir in "$root"/cmd/*/; do
    [ -f "$cmd_dir/main.go" ] || continue
     mainp="${cmd_dir}main.go"
@@ -1274,7 +1397,7 @@ build_main() {
     *) targets+=("$arg") ;;
     esac
   done
-  build_run "$verbose" "${targets[@]}"
+  build_run "$verbose" ${targets[@]+"${targets[@]}"}
 }
 
 rel_main() {
@@ -1326,10 +1449,12 @@ prep_main() {
   if [ "$#" -eq 1 ]; then
     case "$1" in -h | -\? | --help) prep_usage; return 0 ;; esac
   fi
-  local dry=0 nobuild=0
+  local dry=0 nobuild=0 verbose=0
   local positional=()
   local arg
-  for arg in "$@"; do
+  while [ "$#" -gt 0 ]; do
+    arg="$1"
+    shift
     case "$arg" in
     -h | -\? | --help)
       printf 'help flags must be used by themselves\n' >&2
@@ -1337,8 +1462,13 @@ prep_main() {
       ;;
     --dry-run | -n) dry=1 ;;
     --no-build | -B) nobuild=1 ;;
+    -v | --verbose) verbose=1 ;;
+    -t | --validation-token)
+      printf 'prep: validation-token options are unsupported for Go\n' >&2
+      return 2
+      ;;
     -*)
-      printf 'unsupported option %s; use -h, -?, --help, --dry-run, -n, --no-build, or -B\n' "$(_go_quote "$arg")" >&2
+      printf 'unsupported prep option %s\n' "$(_go_quote "$arg")" >&2
       return 2
       ;;
     *) positional+=("$arg") ;;
@@ -1351,7 +1481,7 @@ prep_main() {
   local version message
   version=$(_trim "${positional[0]}")
   message=$(_trim "${positional[1]}")
-  prep_run "$dry" "$nobuild" "$version" "$message"
+  prep_run "$dry" "$nobuild" "$verbose" "$version" "$message"
 }
 
 # Guarded entrypoint: run only when executed, not when sourced.

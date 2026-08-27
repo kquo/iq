@@ -46,27 +46,31 @@ Run `./build.sh` without targets for repository-wide validation. Follow the appl
 - Treat the repository/package version as the version input and release metadata governed by the existing release mechanism.
 - Require one normalized record for each installable utility with its canonical target name, declaration location, declared version, and `--version` invocation.
 - Accept only `^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$` as a strict stable SemVer declaration.
-- Require `--version` to exit 0, print exactly `<utility-id> <MAJOR.MINOR.PATCH>` or `<utility-id> v<MAJOR.MINOR.PATCH>` plus its newline to stdout, and write nothing to stderr.
+- Require `--version` to exit 0.
+- Require `--version` to print exactly `<utility-id> <MAJOR.MINOR.PATCH>` or `<utility-id> v<MAJOR.MINOR.PATCH>` plus its newline to stdout.
+- Require `--version` to write nothing to stderr.
 - Validate every declaration before compilation.
 - Validate each compiled utility result before installing that utility.
 - Validate every compiled utility result before release-metadata writes.
 - Reject missing, empty, malformed, duplicate, orphaned, and mis-mapped records with a non-zero error that names the utility and recovery action.
 - Preserve all independent utility declarations and outputs during repository release prep.
 
-## Pre-Release Checklist (`Package`, `package`, `pack`, or `prep`)
+## Pre-Release Checklist
 
-Do not start this checklist unless the director explicitly requests standalone
-`Package`, `package`, `pack`, or `prep` in the active Ratified AC context.
-Do not treat `./build.sh prep ...` or ordinary build-preparation language as a
-workflow request.
+- Start this checklist only when the director explicitly requests standalone `Package`, `package`, `pack`, or `prep` in the active Ratified AC context.
+- Do not treat `./build.sh prep ...` or ordinary build-preparation language as a workflow request.
 
-The operator flow is two steps:
+Note: the operator flow has two steps.
 
 1. **Run prep.**
    - Classify the AC scope under semver.
-   - Draft a release message no longer than 80 characters.
+   - Draft a release message that names the delivered user-visible result in no more than 80 characters.
    - Run the stack-defined `./build.sh prep vX.Y.Z "message"` invocation.
    - Pass current validation evidence with `--validation-token` or `-t` when supported.
+   - Run ordinary canonical pre-change validation for Go prep.
+   - Run ordinary canonical post-change validation for Go prep.
+   - Reserve validation-token evidence for Rust prep.
+   - Refresh validation-token evidence for Rust prep.
    - Use `--dry-run` or `-n` to inspect without writes.
    - Use `--no-build` or `-B` only under the applicable stack policy.
 

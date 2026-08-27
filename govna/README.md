@@ -1,16 +1,16 @@
 # Docs
 
-Use this directory for governed implementation support documents.
+Use this directory for the documents that explain how work is planned, reviewed, implemented, and released in this repository.
 
-govna ships [`operator-contract-rationale.md`](operator-contract-rationale.md) here — read it to understand the session-entry contract that governs how agents operate in this repo. [`audit.md`](audit.md) documents the `govna audit` command and its emitted AC stub.
+Read [`operator-contract-rationale.md`](operator-contract-rationale.md) to understand how the contract makes programming and publishing ceremonies more effective and efficient, including why the session-entry rules work as they do. Read [`audit.md`](audit.md) to understand how `govna audit` compares repository files with Govna's embedded governance files and writes an AC for review.
 
 See [`code-stacks.md`](code-stacks.md) for the first-class Go, Rust, Terraform, and Swift CODE stack contracts.
 
 Recommended contents to add:
 
-- `ac<N>-<slug>.md` for acceptance criteria (sequential N, kebab-case slug; see `ac-template.md`)
-- `development-cycle.md` for repo workflow rules
-- `build-release.md` for build, test, and release rules
-- reference notes that support implementation decisions
+- `ac<N>-<slug>.md` for a numbered, testable change contract; see `ac-template.md`
+- `development-cycle.md` for the Draft-through-Package workflow
+- `build-release.md` for build, test, installation, and release rules
+- reference notes for durable implementation decisions
 
 Keep these docs aligned with the repo's actual workflow and architecture.

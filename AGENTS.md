@@ -26,7 +26,8 @@ Rules:
 - Preserve the fixed `##` section list.
 - Edit sections in place.
 - Change section order or the `##` section list only when the user explicitly requests a contract amendment.
-- Name the exact sections to change and keep edits local during every update.
+- Name the exact sections to change during every update.
+- Keep edits local during every update.
 - Edit this file as a governed config artifact, with rule-shaped bullets only.
 - Use `##` for top-level sections.
 - Use `###` for thematic groupings inside a section.
@@ -53,7 +54,8 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Open each response with the answer, finding, open question, or one-sentence note on what you're about to do.
 - Use terse flat bullets.
 - Skip preambles, recaps, and implication walk-throughs.
-- Create files and make repository edits only after explicit user authorization — including draft files, scratch scripts, scaffolding, and config tweaks.
+- Create files only after explicit user authorization — including draft files, scratch scripts, scaffolding, and config tweaks.
+- Make repository edits only after explicit user authorization.
 - Make the smallest change that satisfies the request once authorized.
 - Surface assumptions, ambiguities, and missing context before any direction-changing action.
 - Operate as the Operator on every interaction under `govna/roles.md`.
@@ -63,6 +65,12 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Report each written deliverable with a one-paragraph chat summary plus the file path.
 - Quote at most short, targeted snippets from a written file when discussing a specific change.
 
+### Plain Language
+
+- Apply plain-language rules to responses, ACs, findings, completion reports, and release summaries.
+- Lead with the concrete problem, effect, or decision in plain language.
+- Pair each necessary Govna label with its plain-language meaning at first use.
+
 ### Session Entry
 
 - Treat AGENTS.md as the active operating contract for this repository.
@@ -70,10 +78,11 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Treat planning, editing, reviewing, command choice, and implementation work as substantive actions.
 - Confirm the gate set before any primary-repository file change: AC status, explicit authorization, scoped edits, tests in the same pass, and no agent-run commits.
 - Route ancillary-repository and path changes through `### Primary And Ancillary Scope`.
-- Treat changed-content integrity, AC-template structure, Instruction Style, and applicable Pre-Implementation Verification as the tests-in-the-same-pass gate when a change pass creates or edits only an active AC document.
+- Treat changed-content integrity, AC-template structure, Plain Language, Instruction Style, and applicable Pre-Implementation Verification as the tests-in-the-same-pass gate when a change pass creates or edits only an active AC document.
 - Resolve instruction conflicts in this order: user instruction within authorized scope, then AGENTS.md, then referenced govna docs, then model defaults.
 - Follow an explicit Director workflow override without requiring contract-amendment language.
-- Stop and ask when a request lacks authorization, scope, or required context.
+- Stop when a request lacks authorization, scope, or required context.
+- Ask for the missing authorization, scope, or context.
 
 ### Contract Integrity
 
@@ -95,7 +104,8 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Cite the authoritative upstream section or document for every consumer-observed Govna-canon finding.
 - Prohibit permanent local governance from recording an upstream canon correction.
 - Pair a blocking `Govna canon` recommendation with a temporary consumer mitigation only when the mitigation remains compatible with canon.
-- Mark every temporary consumer mitigation explicitly and state its removal condition.
+- Mark every temporary consumer mitigation explicitly.
+- State every temporary consumer mitigation's removal condition.
 - Prohibit a temporary consumer mitigation from overriding or contradicting canon.
 - Classify a finding as `Unclear` when repository evidence supports both destinations.
 - Present both candidate destinations and defer an `Unclear` classification to the Director.
@@ -148,7 +158,8 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Apply the effective-scope exception in `### Effective Implementation Scope` during Implement, closure-audit correction, and Ratify correction.
 - Apply the audit effective-scope exception in `### Audit Adoption` when a Director resolves any routing action.
 - Apply the same effective-implementation-scope principle to any other emitted-AC tool with Director-resolved routing decisions (e.g., `rm`'s Routing Decisions) — the named target is in scope once resolved, even when absent from `## In Scope`.
-- Stop and ask when a request is ambiguous, or when the change is hard to reverse.
+- Stop when a request is ambiguous or the change is hard to reverse.
+- Ask for direction before proceeding.
 - Wait for explicit user request before preparing, executing, publishing, deploying, or distributing — including drafting commit messages, commit commands, version bumps, or release notes.
 - **Leave every `git commit` for the user to execute. No EXCEPTION.**
 - Treat an explicit standalone `Package`, `package`, `pack`, or `prep` request in an active Ratified AC context as the trigger for release-prep bookkeeping (CHANGELOG row insertion, release-tag drafting, commit-command drafting, release-command presentation).
@@ -337,7 +348,9 @@ Note: the Director flags scope concerns in chat during this window.
 
 - Run this checklist after the Director resolves all review questions.
 - Confirm each settled decision landed verbatim in the AC.
+- Treat a Director-resolved routing decision recorded in chat for an immutable emitted AC as satisfying the verbatim-in-AC check.
 - Confirm ATs match settled wording.
+- Confirm the AC title and Summary lead with the concrete outcome in plain language.
 - Confirm every new or rewritten instruction in AGENTS.md follows Instruction Style.
 - List ✓ for each check.
 - Flag every gap.
@@ -349,9 +362,11 @@ Note: the Director flags scope concerns in chat during this window.
 - Treat every Director-resolved routing target as effective implementation scope, even when it is absent from `## In Scope`.
 - Treat each explicitly named migration destination as effective implementation scope with its routed source.
 - Treat `govna/preserve.txt` as effective implementation scope only when a resolved routing outcome requires creating or changing it.
+- Treat `CHANGELOG.md` as effective implementation scope only when a resolved legacy-phrase outcome requires removing an exact phrase.
 - Require no second Director authorization for an effective-scope preserve-registry change.
 - Require the Director to name every migration destination.
 - Apply each resolved routing action while leaving the emitted AC stub unchanged.
+- Install each missing canon-backed replacement before retired-source routing.
 - Render canon into a scratch directory using `govna render <scratch>`.
 - Inspect changes per `## In Scope` item by running `diff -ru <scratch>/<path> <path>`.
 - Add each resolved preserve target's exact path to `govna/preserve.txt`.
@@ -361,7 +376,7 @@ Note: the Director flags scope concerns in chat during this window.
 - Preserve unrelated preserve-registry entries.
 - Leave the registry absent or unchanged when its state already satisfies every resolved outcome.
 - Treat exact legacy preserve phrases in the Unreleased CHANGELOG Summary as migration evidence only.
-- Remove each exact legacy phrase only after verifying its resolved registry state.
+- Remove each exact legacy phrase only after verifying its resolved target and registry state.
 - Preserve unrelated CHANGELOG Summary text and historical rows.
 - Ensure the parent directory exists for each `## In Scope` item: `mkdir -p "$(dirname <path>)"`.
 - Categorize each `## In Scope` item as pure-canon or mixed-content before applying.
@@ -371,10 +386,10 @@ Note: the Director flags scope concerns in chat during this window.
 - Use `## Project Rules` as the AGENTS.md boundary.
 - Use `## Project Practices` as the boundary for `govna/development-guidelines.md`, `govna/editing-guidelines.md`, and CODE `govna/build-release.md`.
 - Preserve the boundary heading and every line below it as repo-owned content.
-- Confirm or override an unresolved emitted validation disposition in chat.
-- Run the resolved validation command after all selected sync, migration, and deletion work.
-- Cite repository evidence when resolving validation as `Not applicable`.
-- Install or replace `govna/canon-baseline.txt` from the scratch render only after every other applicable acceptance test, routing outcome, and validation disposition passes.
+- Resolve an unresolved emitted repository check in chat.
+- Run the chosen repository command after all selected sync, migration, and deletion work.
+- Cite repository evidence when choosing `Not applicable` for the repository check.
+- Write `govna/canon-baseline.txt` from the scratch render only after every other applicable acceptance test and routing outcome passes and the resolved repository check succeeds or its `Not applicable` evidence holds.
 - Refresh Rust validation evidence from the same scratch baseline only when the repository provides Rust validation-token support and the installed `govna/canon-baseline.txt` is verified.
 - Use the refreshed Rust validation token as Package evidence only when the repository provides Rust validation-token support.
 - Do not re-run `govna audit` as an implementation gate for the emitted AC.

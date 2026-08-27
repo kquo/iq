@@ -2,6 +2,8 @@
 
 This repo uses an acceptance-criteria-first workflow.
 
+The lifecycle makes recurring programming checkpoints and their settled context reusable across phases and sessions. This reduces process reconstruction and avoidable rework without weakening authorization, review, verification, or release gates.
+
 ## AC Workflow
 
 - Follow the lifecycle `Draft → Audit → Refine → Implement → Ratify → Package`.
@@ -31,15 +33,15 @@ This repo uses an acceptance-criteria-first workflow.
 
 ## Cycle
 
-1. **Draft.** Create the authorized AC from `govna/ac-template.md`.
-2. **Audit.** Challenge the contract without mutation.
-3. **Refine.** Resolve findings and Director decisions in the AC.
+1. **Draft.** Write the authorized AC from `govna/ac-template.md`.
+2. **Audit.** Review the AC for missing scope, unsafe assumptions, and untestable requirements without editing it.
+3. **Refine.** Update the AC with settled findings and Director decisions.
 4. **Implement.**
    - Deliver the settled scope.
    - Test the settled scope.
    - Verify the settled scope.
    - Correct implementation defects.
-   - Closure-audit the settled scope.
+   - Map every scoped path and test in the final read-only closure audit.
 5. **Ratify.**
    - Perform the Director-triggered final review.
    - Apply bounded correction behavior.
@@ -47,7 +49,7 @@ This repo uses an acceptance-criteria-first workflow.
 
 Apply the complete phase, scope, correction, contract-integrity, and advancement rules in `AGENTS.md` throughout this cycle.
 
-During Director-authorized Implement, the bounded completeness exception permits up to three evidenced corrections within the settled objective, acceptance-tested behavior class, and existing artifact family. Each round returns through Refine. Each round reruns Pre-Implementation Verification. Each round re-enters Implement. Any Director-owned decision or fourth round pauses for the Director.
+During Director-authorized Implement, a bounded completeness correction fixes a missed path or instruction when the active AC already settles the required result. The Operator may complete at most three correction rounds within the existing artifact family. Each round updates the AC in Refine, reruns the final AC wording and scope check called Pre-Implementation Verification, and returns to Implement. A Director-owned decision or fourth round pauses for the Director.
 
 ## Notes
 

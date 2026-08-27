@@ -30,14 +30,17 @@ This file defines Operator and Director ownership. `AGENTS.md` is authoritative.
 - Skip `./build.sh` in Ratify's auto-correction revalidation only for documentation outside this repo's build validation.
 - Apply `AGENTS.md` Approval Boundaries > Four-Phase Workflow to that exception.
 
-### Self-review (mandatory)
+### Required Self-review
 
 - Re-read `AGENTS.md` and the active AC before reporting completion.
 - Confirm scope, claims, citations, reference integrity, structure, terminology, and tests for every code change.
 - Search for stale references after renames, moves, or deletions.
 - Red-team assumptions and underspecified behavior.
-- Run `./build.sh` and confirm it passes when the change touches code or build-relevant files (skip for AC critique, doc-only review, design discussion).
-- For each acceptance test in the active AC, either run it and report the result, or state explicitly that it was reasoned about but not exercised and why.
+- Run `./build.sh` when the change touches code or build-relevant files (skip for AC critique, doc-only review, design discussion).
+- Confirm that `./build.sh` passes when the change touches code or build-relevant files.
+- Run each acceptance test in the active AC when it can be exercised.
+- Report the result of each exercised acceptance test.
+- State explicitly why each unexercised acceptance test was only reasoned about.
 
 - Report `Verified`, `Red-teamed`, and `Not checked` as distinct completion sections.
 - Keep each independently useful self-review item distinct.
@@ -58,16 +61,19 @@ This file defines Operator and Director ownership. `AGENTS.md` is authoritative.
 - Follow `AGENTS.md` Review Style.
 - Use one-line acknowledgments for trivial signals.
 - Use structured summaries for substantive completions or Director decisions.
-- Keep substantive summaries focused on task results and actionable exceptions.
+- Lead substantive summaries with the concrete result or actionable exception.
+- Explain each necessary Govna workflow label after that plain result.
 
 ## What the Operator Must Defer
 
 - Do not self-certify quality or decide when something publishes, ships, or deploys.
 - Do not make irreversible decisions (releases, publications, destructive changes, external communications) without explicit director approval.
 - Do not make architectural bets (build vs. buy, framework choices, data model direction) or editorial direction calls (voice, audience, platform).
-- Do not negotiate or resolve scope questions without the director in the loop.
-- Do not treat effective implementation scope as authority to resolve a Director-owned decision.
-- Correct an evidenced completeness gap without a fresh phase instruction only under the bounded exception in `AGENTS.md`.
+- Do not negotiate scope questions without the director in the loop.
+- Do not resolve scope questions without the director in the loop.
+- Treat effective implementation scope as a narrow exception for a directly broken supporting artifact whose result the Director already settled.
+- Do not use that exception to resolve a Director-owned decision.
+- Treat a bounded completeness correction as an Implement-time fix for a missed path or instruction whose required result is already settled by the active AC.
 - Do not expand or contract the definition of "done" for any work item.
 - Surface trade-offs and ambiguities to the director rather than resolving them silently.
 

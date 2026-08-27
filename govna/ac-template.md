@@ -1,22 +1,25 @@
 Copy this file to `govna/ac<N>-<slug>.md`.
-Use a kebab-case slug and `# AC<N> Title` heading.
+Use a kebab-case slug and a `# AC<N> Title` heading that names the concrete outcome.
 
 Set `N` to one above the highest AC number in `govna/` or `git log --all --pretty=%B`.
 Count every reference because release-prep deletions do not reset numbering.
 
-The AC is the implementation contract for one approved roadmap item. The full development cycle that wraps around this template lives in `govna/development-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
+The AC is the implementation contract for one approved roadmap item. An AC records settled intent, scope, and proof once so later review, implementation, and verification can reuse the same context instead of reconstructing it. The full development cycle that wraps around this template lives in `govna/development-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
 
 # AC<N> Title
 
 ## Summary
 
-Describe the change, its nature, code or doc impact, and any named parts in one short paragraph.
+Lead with the concrete outcome in one short paragraph.
+Explain each necessary Govna label before relying on it.
+State the code or doc impact and any named parts.
 
 ## In Scope
 
 List concrete changes and exact paths under useful groupings.
 Treat this list as authoritative.
-Apply only the effective-scope and emitted-routing exceptions defined in `AGENTS.md`.
+Use effective implementation scope only for a supporting artifact directly broken by an authorized change when `AGENTS.md` says the result is already settled.
+Apply only the emitted-routing exception defined in `AGENTS.md` for a tool-generated AC.
 
 ### Files to create
 
@@ -51,6 +54,7 @@ List tempting or adjacent work that remains excluded.
 Label every AT `[Automated]` or `[Manual]` and `[Pre-release gate]` or `[Post-release verification]`.
 Prefer automated pre-release coverage.
 Use post-release only when automated regression coverage already gates the behavior class.
+Lead each AT with the concrete behavior or output being verified.
 
 **AT1** [Automated] [Pre-release gate] — One-line description of what is verified, with the exact check (file existence, grep pattern, SQL query, or CLI output).
 

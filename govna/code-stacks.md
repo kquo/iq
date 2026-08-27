@@ -16,6 +16,18 @@ Use this reference for CODE stack selection, validation, installation, release p
 
 ## Go
 
+- Discover utilities from regular `cmd/<target>/main.go` files in byte order.
+- Validate scoped target names against discovered utilities before running mutable build steps.
+- Reject unknown, duplicate, and path-containing scoped targets.
+- Compile each selected utility once in an invocation-owned external temporary directory.
+- Validate every selected compiled `--version` output before installing any selected utility.
+- Replace each installed utility atomically from an adjacent staging file.
+- Preserve each installed utility until its replacement succeeds.
+- Run ordinary canonical pre-change validation during Go release prep.
+- Run ordinary canonical post-change validation during Go release prep.
+- Emit no validation token from Go builds.
+- Remove invocation-owned build, coverage, version-probe, and installation-staging outputs on every handled exit.
+- Terminate after handling HUP, INT, or TERM.
 - Infer Go from `go.mod`.
 - Select Go explicitly with `--stack Go`.
 - Require the Go toolchain and the pinned staticcheck version installed by `build.sh`.
@@ -34,8 +46,10 @@ Use this reference for CODE stack selection, validation, installation, release p
 - Run formatting, Clippy, tests, and release compilation.
 - Keep compilation in an invocation-owned external Cargo target.
 - Install binaries into `$CARGO_HOME/bin`, or `$HOME/.cargo/bin` when `CARGO_HOME` is unset.
-- Bump the root package version and refresh `Cargo.lock` during release prep.
-- Accept declared binary names for scoped builds and preserve package-wide shared validation.
+- Bump the root package version during release prep.
+- Refresh `Cargo.lock` during release prep.
+- Accept declared binary names for scoped builds.
+- Preserve package-wide shared validation during scoped builds.
 - Require one literal `PROGRAM_VERSION: &str` strict stable SemVer declaration in each declared binary path.
 - Validate every declaration before compilation and each compiled binary before installation.
 - Validate every compiled binary before release-metadata writes.
@@ -62,10 +76,12 @@ Use this reference for CODE stack selection, validation, installation, release p
 - Keep project-level `.swiftpm/` configuration trackable.
 - Keep `Package.resolved` tracked for leaf packages with dependencies.
 - Treat `Package.resolved` as optional for dependency libraries.
-- Derive release versions from Git tags and leave `Package.swift` unchanged during release prep.
+- Derive release versions from Git tags.
+- Leave `Package.swift` unchanged during release prep.
 - Install executable products into `${SWIFT_BIN_HOME:-$HOME/.local/bin}` by atomically replacing regular destination files and refusing unsafe entries.
 - Let library-only packages complete without installation.
 - Use the canonical color and plain-text presentation policy for build, prep, and release output.
 - Accept executable-product names for scoped builds while retaining package-wide formatting and tests.
-- Build and install only selected executable products during scoped builds.
+- Build only selected executable products during scoped builds.
+- Install only selected executable products during scoped builds.
 - Treat native Xcode projects and Apple application bundles as a possible future backend.

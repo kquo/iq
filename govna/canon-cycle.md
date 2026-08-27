@@ -1,8 +1,8 @@
 # Canon-cycle doctrine
 
-This document describes govna's canon-update workflow, built on `govna audit` and `govna render`.
+Govna embeds a versioned set of governance files called canon. This document explains how Govna publishes those files and how a repository reviews and installs an update with `govna audit` and `govna render`.
 
-govna initiates canon updates and ships them as overlay-tracked files; consumers detect updates via `govna audit` and adopt them per the workflow below. Both sections of this doc apply at every cycle.
+Govna publishes updated files. A repository uses `govna audit` to separate safe updates from files that need a Director choice, then follows the workflow below.
 
 ## govna-side commitments
 
@@ -15,31 +15,31 @@ govna initiates canon updates and ships them as overlay-tracked files; consumers
 
 ## Metadata and retired routing marker
 
-- Treat `govna/metadata.txt` as the authoritative consumer identity record.
+- Treat `govna/metadata.txt` as the record of a repository's Govna file version and CODE or DOC type.
 - Require `schema_version`, `canon_version`, and `repo_type`.
 - Require `code_stack` only for CODE consumers.
-- govna has no legacy marker file to accept during a compatibility window — it never shipped one.
+- Skip legacy marker compatibility because Govna never shipped a marker file.
 - Write metadata during `render`/`apply`.
-- Write `govna/canon-baseline.txt` during `render` and `apply` from deterministic comparison-region hashes.
-- Advance the consumer baseline only after every other applicable acceptance test, resolved routing outcome, and resolved validation disposition passes.
+- Write `govna/canon-baseline.txt` during `render` and `apply` as the saved hashes of Govna-managed file regions.
+- Advance the saved baseline only after every other applicable acceptance test and Director choice passes and the repository check succeeds or its `Not applicable` evidence holds.
 - Route an existing target path as retired when it remains in the prior baseline but disappears from current canon.
-- Use the bounded retired-path tombstone registry for removals that predate baseline adoption.
-- Preserve unrelated consumer-owned governance documents unless another bounded target-only evidence source identifies them.
+- Use the retired-path tombstone registry, the saved list of old Govna paths, for removals that predate baseline adoption.
+- Preserve unrelated repository-owned governance documents unless specific baseline, retired-path, other-flavor, or governed-file evidence connects them to Govna.
 
 ## Consumer-side workflow
 
-1. **Pure canon.** Replace tracked pure-canon files wholesale to avoid persistent third variants.
-2. **Mixed content.** Hunk-merge canon structure while preserving consumer content.
-3. **Routing.** Treat format-defining status independently from pure-versus-mixed application.
+1. **Govna-only files.** Replace the whole file with the current embedded version.
+2. **Files with Govna and local sections.** Update the Govna-managed section and preserve the repository-owned section.
+3. **Director choices.** Decide whether each review file should update, remain local, migrate, or be removed.
 4. **Boundaries.**
    - Replace canon above `## Project Rules` in `AGENTS.md`.
    - Replace canon above `## Project Practices` in development/editing guidelines and CODE build-release.
    - Keep each boundary and local tail.
    - Keep DOC release full canon.
-5. **Unbounded files.** Route expected or preserved divergence through the registries in `govna/audit.md`.
-6. **Baseline.**
-   - Install the baseline from the same scratch render only after other tests, routes, and validation pass.
-   - Verify the baseline from that scratch render after installation.
+5. **Files without a local-content boundary.** Follow the expected-difference and preserve-list rules in `govna/audit.md`.
+6. **Saved baseline.**
+   - Write the baseline from the same temporary render only after other tests and Director choices pass and the repository check succeeds.
+   - Verify the baseline against that temporary render after installation.
    - Skip an immediate audit rerun.
 7. **Rust evidence.** Refresh validation evidence only after that baseline copy and verification.
 

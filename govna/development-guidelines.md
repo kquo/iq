@@ -16,7 +16,9 @@ Keep repo-specific practices in `## Project Practices`.
 ## Schema And Data Migrations
 
 - Treat schema changes as first-class events: version them, document them, test the migration path
-- Never assume old data fits new schemas — write migration logic or fail explicitly
+- Verify old data compatibility with new schemas.
+- Write migration logic for old data.
+- Fail explicitly when migration logic is unavailable.
 - Audit all foreign key references when a migration changes identity or key structure.
 
 ## External Integration Patterns
@@ -39,7 +41,10 @@ Keep repo-specific practices in `## Project Practices`.
 
 - Validate at system boundaries (user input, external APIs, file I/O)
 - Trust internal code
-- Fail explicitly rather than silently degrading — a clear error is better than wrong output
+- Report explicit errors instead of returning wrong output.
+- State the failed condition in user-facing errors.
+- Name the affected path or option when available.
+- Provide a recovery action when the user can recover.
 - Treat static analysis and linting errors as build failures.
 - Validate installable-target declarations before compiling or installing them.
 - Follow the applicable stack guidance for release-prep evidence, validation ordering, and build-state reuse.
@@ -68,6 +73,8 @@ Keep repo-specific practices in `## Project Practices`.
 - Combine short and long flag forms on one line.
 - Add every new flag to the shared usage formatter.
 - Do not rely on framework defaults for new flags.
+- Describe each command by the repository content it reads or writes.
+- Explain whether each command changes repository content.
 
 ## Documentation Alignment
 
