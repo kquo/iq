@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.18.6 | AC11: adopt govna v0.44.0 integrated audit and release batches |
 | 0.18.5 | AC10: adopt govna v0.42.0 lifecycle routing |
 | 0.18.4 | AC9: adopt govna v0.41.0 and canonical Go build |
 | 0.18.3 | AC8: adopt govna v0.29.0 canon |

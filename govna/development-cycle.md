@@ -17,12 +17,21 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 - Complete Ratify when that review is clean.
 - Treat standalone `Package`, `package`, `pack`, and `prep` as equivalent post-Ratify release-preparation actions.
 - Do not infer Package from Ratify acceptance.
-- Start a cycle only when the director identifies the active AC and explicitly
-  requests Audit.
-- Apply an unnumbered Audit, Refine, Implement, Ratify, or Package instruction when exactly one AC can enter the requested action under its established lifecycle state.
-- Require the AC number when multiple ACs can enter the requested action.
-- Ask the Director for the AC number and last completed lifecycle action when eligibility cannot be established.
-- Pause after each lifecycle action until the director explicitly advances the active AC.
+- Start an AC cycle only after the Director identifies the AC and authorizes Audit or integrated audit adoption identifies the emitted AC.
+- Apply an unnumbered Audit, Refine, Implement, or Ratify instruction when exactly one AC can enter the requested phase.
+- Require the AC number when multiple ACs can enter the requested phase.
+- Ask the Director for the AC number and last completed lifecycle action when phase eligibility cannot be established.
+- Treat one active Ratified AC as an established one-AC release batch.
+- Treat only a Director-named set of Ratified ACs as an established multi-AC release batch.
+- Accept only `Package` followed by a plus-joined list of uppercase `AC<number>` references as the named-batch Package form.
+- Apply standalone `Package`, `package`, `pack`, or `prep` to the established Ratified release batch.
+- Ask the Director to name the release batch when multiple ungrouped Ratified ACs can enter Package.
+- Reject a named release batch that contains a non-Ratified AC.
+- Enter integrated Audit only when `govna audit` emits or reuses one guarded adoption AC.
+- Keep a clean audit result or pre-emission failure outside the AC phases.
+- Resume integrated Refine after the Director resolves every blocking finding and decision.
+- Stop integrated audit adoption before Implement.
+- Pause after each lifecycle action unless integrated audit adoption authorizes immediate Refine.
 
 ## Required Artifacts
 
@@ -35,8 +44,8 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 ## Cycle
 
 1. **Draft.** Write the authorized AC from `govna/ac-template.md`.
-2. **Audit.** Review the AC for missing scope, unsafe assumptions, and untestable requirements without editing it.
-3. **Refine.** Update the AC with settled findings and Director decisions.
+2. **Audit.** Review the AC for missing scope, unsafe assumptions, and untestable requirements without editing it. Start this review immediately when an explicit agent-mediated `govna audit` request emits or reuses one guarded adoption AC.
+3. **Refine.** Update a hand-authored AC with settled findings and Director decisions. Keep an audit-emitted AC unchanged and record its resolved decisions in the active session.
 4. **Implement.**
    - Deliver the settled scope.
    - Test the settled scope.
@@ -46,9 +55,11 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 5. **Ratify.**
    - Perform the Director-triggered final review.
    - Apply bounded correction behavior.
-6. **Package.** Run `govna/build-release.md` release preparation only after separate Director authorization.
+6. **Package.** Run `govna/build-release.md` release preparation for the established Ratified release batch only after separate Director authorization.
 
 Apply the complete phase, scope, correction, contract-integrity, and advancement rules in `AGENTS.md` throughout this cycle.
+
+The `govna` executable ends after deterministic audit comparison and emission. The Operator performs the integrated Audit, Refine, and Pre-Implementation Verification steps. A required change to an immutable emitted AC needs a new audit emission. Package compares the release message's unique AC references with the established batch before prep.
 
 During Director-authorized Implement, a bounded completeness correction fixes a missed path or instruction when the active AC already settles the required result. The Operator may complete at most three correction rounds within the existing artifact family. Each round updates the AC in Refine, reruns the final AC wording and scope check called Pre-Implementation Verification, and returns to Implement. A Director-owned decision or fourth round pauses for the Director.
 

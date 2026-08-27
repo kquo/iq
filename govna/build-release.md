@@ -57,14 +57,16 @@ Run `./build.sh` without targets for repository-wide validation. Follow the appl
 
 ## Pre-Release Checklist
 
-- Start this checklist only when the director explicitly requests standalone `Package`, `package`, `pack`, or `prep` in the active Ratified AC context.
+- Start this checklist only when the Director explicitly requests a valid Package instruction for the established Ratified release batch.
+- Require the unique release-message AC-reference set to equal the established release batch before prep.
 - Do not treat `./build.sh prep ...` or ordinary build-preparation language as a workflow request.
 
 Note: the operator flow has two steps.
 
 1. **Run prep.**
    - Classify the AC scope under semver.
-   - Draft a release message that names the delivered user-visible result in no more than 80 characters.
+   - Draft a release message that names the delivered user-visible result and every established release-batch AC reference in no more than 80 characters.
+   - Exclude every AC reference outside the established release batch.
    - Run the stack-defined `./build.sh prep vX.Y.Z "message"` invocation.
    - Pass current validation evidence with `--validation-token` or `-t` when supported.
    - Run ordinary canonical pre-change validation for Go prep.
@@ -99,7 +101,7 @@ Do not add trailing commentary about wrapper routing or prompts.
 5. **Guard CHANGELOG idempotency.**
    - Detect the root `CHANGELOG.md` target.
    - Reject an existing row for the target version before any write.
-6. **Parse AC refs.** `AC[0-9]+` scan on the release message; composites like `AC<m>+AC<n>` yield multiple refs.
+6. **Parse AC refs.** Scan the release message for `AC[0-9]+`; composites like `AC<m>+AC<n>` yield multiple unique refs after the Operator verifies exact release-batch equality.
 7. **Apply writes.**
    - Apply idempotent version bumps.
    - Insert the CHANGELOG row under `| Unreleased | |`.

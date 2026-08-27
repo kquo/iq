@@ -1,4 +1,4 @@
 schema_version = 1
-canon_version = v0.42.0
+canon_version = v0.44.0
 repo_type = CODE
 code_stack = Go

@@ -139,6 +139,26 @@ The stub carries an edit-detection marker (SHA-256 body hash). Re-running audit 
 
 An audit with no updates or Director choices exits successfully and prints `No Govna updates or Director choices found`, followed by a plain result tally and `No AC was written.` It performs no AC-number allocation, stub inspection, directory creation, or file write. It never deletes, overwrites, or validates an existing audit stub. With `--json`, the complete report remains available and `emitted` is `null`; no additional prose is written.
 
+### Agent-mediated review
+
+The executable ends after deterministic comparison and emission. An explicit request to an agent to run `govna audit` also authorizes the Operator review steps below. The immutable AC records the adoption work; the active session records its phase.
+
+- Run `govna audit` before entering an AC phase.
+- Enter Audit only when the command emits or reuses one guarded adoption AC.
+- Keep a clean result or pre-emission failure outside the AC phases.
+- Audit the emitted AC immediately.
+- Leave the emitted AC unchanged during Audit and Refine.
+- Report every blocking finding and Director decision.
+- Pause while any blocking finding or Director decision remains unresolved.
+- Resume Refine after the Director resolves every blocking finding and decision.
+- Require a new audit emission when a required correction would change the immutable AC.
+- Complete Refine without editing the emitted AC when no blocker remains.
+- Run Pre-Implementation Verification after Refine.
+- Report implementation readiness only when Pre-Implementation Verification passes.
+- Remain in Refine when Pre-Implementation Verification finds a gap.
+- Stop before Implement.
+- Track the active phase in the session instead of the emitted AC.
+
 Effective implementation scope is the narrow rule that permits a directly affected supporting file to change when the Director already settled its outcome. Every Director-resolved routing target enters that scope while the generated AC remains unchanged. Explicitly named migration destinations also enter it. `govna/preserve.txt` enters only when a resolved outcome requires creating or changing it. `CHANGELOG.md` enters only when a resolved legacy-phrase outcome requires removing an exact phrase. Neither supporting-file adjustment requires a second Director authorization.
 
 ### Emitted AC instruction and phase shape
@@ -157,7 +177,7 @@ Effective implementation scope is the narrow rule that permits a directly affect
 - Format every numbered routing entry as one Director decision question.
 - End every numbered routing entry with `?`.
 - Keep shared implementation procedure out of routing questions.
-- End every emitted adoption AC with exact status `` `PENDING` — audit emission; awaiting explicit Director Audit.``
+- End every emitted adoption AC with exact status `` `PENDING` — immutable audit emission; workflow state is tracked in the active session.``
 
 ### Routing capabilities
 
