@@ -124,7 +124,17 @@ Audit fails before emission for malformed fields, duplicate or unsorted paths, i
 
 ## Canon-coherence precondition
 
-Before comparing anything against the target, audit checks that govna's own rendered canon is internally coherent — a registry-driven, canon-only precondition that catches cases like an overlay template drifting out of sync with its authority doc. The registry requires `govna/roles.md` to reference the one release document present in the selected flavor and reject the absent opposite-flavor path. If a rule fails, audit skips target comparison and emits a coherence-failure report.
+Before comparing anything against the target, audit checks that Govna's rendered files agree with each other. This deterministic precondition checks only embedded canon. It does not replace the consumer-equivalent candidate-canon review in `govna/canon-cycle.md`.
+
+- Require `govna/roles.md` to reference the release document present in the selected flavor.
+- Reject a `govna/roles.md` reference to the absent opposite-flavor release document.
+- Require `AGENTS.md` to define the structured Package completion report.
+- Require the selected release guide to end that structured report with the exact release command.
+- Reject retired command-only Package wording.
+- Require integrated audit adoption to enter Refine without another instruction.
+- Require integrated audit adoption to stop before Implement.
+
+Audit skips target comparison when any coherence rule fails. The error names the conflicting rendered file and directs the Operator to report it to the Govna maintainer.
 
 ## Emitted AC stub
 
@@ -243,7 +253,7 @@ Effective implementation scope is the narrow rule that permits a directly affect
 - Require both positive declarations to name `./build.sh` for CODE inference.
 - Require root `build.sh` to resolve to a regular file for CODE inference.
 - Require the selected CODE stack's recognized root manifest before inferring `./build.sh`.
-- Recognize `go.mod`, `Cargo.toml`, `Package.swift`, `.terraform.lock.hcl` or a root `*.tf`, `package.json`, `pyproject.toml`, and `pom.xml` or `build.gradle` for Go, Rust, Swift, Terraform, Node, Python, and Java respectively.
+- Recognize `go.mod`, `Cargo.toml`, `Package.swift`, and `.terraform.lock.hcl` or a root `*.tf` for Go, Rust, Swift, and Terraform respectively.
 - Require each recognized manifest path used as evidence to resolve to a regular file.
 - Treat selected-stack manifest evidence only as proof that the declared repository command can run.
 - Keep exact AGENTS.md declarations as the repository-command authority.

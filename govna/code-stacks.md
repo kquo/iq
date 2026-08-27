@@ -1,6 +1,7 @@
 # First-Class CODE Stacks
 
-Use this reference for CODE stack selection, validation, installation, release prep, and scoped builds.
+- Use only Go, Rust, Swift, or Terraform as selectable CODE stacks.
+- Use this reference for their selection, validation, installation, release prep, and scoped builds.
 
 ## Multi-Utility Versioning
 
@@ -69,7 +70,6 @@ Use this reference for CODE stack selection, validation, installation, release p
 - Infer Swift from a root `Package.swift`.
 - Select Swift explicitly with `--stack Swift`.
 - Prefer Go, Terraform, and Rust manifests over Swift.
-- Prefer Swift over Node, Python, and Java manifests.
 - Require Swift 6.0 or newer, Git, and one root SwiftPM package on macOS or Linux.
 - Run strict toolchain formatting, debug compilation, tests, and release compilation with compiler warnings as errors.
 - Keep SwiftPM artifacts in one invocation-owned external scratch directory and clean it on success, failure, and handled signals.

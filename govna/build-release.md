@@ -82,8 +82,9 @@ Note: the operator flow has two steps.
    - Confirm the displayed status and Git steps.
    - Approve the interactive prompt to execute the displayed sequence.
 
-Present only the release command after prep.
-Do not add trailing commentary about wrapper routing or prompts.
+- End the structured Package completion report with `Run below to release:`.
+- Place the exact release command immediately after that line.
+- Add nothing after the release command.
 
 ### Appendix: what prep does
 
