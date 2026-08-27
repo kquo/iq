@@ -19,8 +19,9 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 - Do not infer Package from Ratify acceptance.
 - Start a cycle only when the director identifies the active AC and explicitly
   requests Audit.
-- Use an unnumbered phase instruction when one AC is under `govna/`.
-- Require the AC number when multiple ACs are present.
+- Apply an unnumbered Audit, Refine, Implement, Ratify, or Package instruction when exactly one AC can enter the requested action under its established lifecycle state.
+- Require the AC number when multiple ACs can enter the requested action.
+- Ask the Director for the AC number and last completed lifecycle action when eligibility cannot be established.
 - Pause after each lifecycle action until the director explicitly advances the active AC.
 
 ## Required Artifacts

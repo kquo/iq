@@ -316,8 +316,9 @@ Note: this rule does not prohibit batching independent commands.
 - Treat standalone `Draft` or `draft` as the pre-cycle action that creates the active AC.
 - Require the Director to authorize Draft before creating the AC.
 - Start an AC cycle only when the Director identifies the active AC and explicitly requests Audit.
-- Apply an unnumbered action instruction to the sole AC under `govna/`.
-- Require the AC number when multiple ACs are present.
+- Apply an unnumbered Audit, Refine, Implement, Ratify, or Package instruction when exactly one AC can enter the requested action under its established lifecycle state.
+- Require the AC number when multiple ACs can enter the requested action.
+- Ask the Director for the AC number and last completed lifecycle action when eligibility cannot be established.
 - Treat a compound request as authorization for only the named action.
 - Pause before any unnamed action.
 - Treat ambiguous, unrelated, or implicit replies as non-advancing feedback.
