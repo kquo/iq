@@ -128,6 +128,7 @@ CHANGELOG row shape (enforced by prep's insertion code and by convention):
 - Keep `| Unreleased | |` as the first data row.
 - Add one row per release.
 - Keep summaries single-line and no longer than 500 characters.
+- Escape each literal pipe in a summary as `\|`.
 - Lead summaries with the AC reference when one exists.
 - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
 - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).

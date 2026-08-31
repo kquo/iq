@@ -17,7 +17,7 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 - Complete Ratify when that review is clean.
 - Treat standalone `Package`, `package`, `pack`, and `prep` as equivalent post-Ratify release-preparation actions.
 - Do not infer Package from Ratify acceptance.
-- Start an AC cycle only after the Director identifies the AC and authorizes Audit or integrated audit adoption identifies the emitted AC.
+- Start an AC cycle only after the Director identifies the AC and authorizes Audit, integrated audit adoption identifies the emitted AC, or a completed Draft identifies the active AC.
 - Apply an unnumbered Audit, Refine, Implement, or Ratify instruction when exactly one AC can enter the requested phase.
 - Require the AC number when multiple ACs can enter the requested phase.
 - Ask the Director for the AC number and last completed lifecycle action when phase eligibility cannot be established.
@@ -42,7 +42,7 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 - Keep a clean audit result or pre-emission failure outside the AC phases.
 - Resume integrated Refine after the Director resolves every blocking finding and decision.
 - Stop integrated audit adoption before Implement.
-- Pause after each lifecycle action unless integrated audit adoption authorizes immediate Refine.
+- Pause after each lifecycle action unless integrated audit adoption, completed-Draft automatic Audit entry, or eligible automatic Refine entry authorizes the immediate next action.
 
 ## Required Artifacts
 
@@ -94,6 +94,8 @@ Apply the complete phase, scope, correction, contract-integrity, and advancement
 The `govna` executable ends after deterministic audit comparison and emission. The Operator performs the integrated Audit, Refine, and Pre-Implementation Verification steps. A required change to an immutable emitted AC needs a new audit emission. The pre-Implement fit check uses one private provisional string only to prevent an oversized pending batch. Package requires every implemented batch member to be Ratified, compares the complete pending batch with the exact message, and rejects partial or oversized batches before prep.
 
 During Director-authorized Implement, a bounded completeness correction fixes a missed path or instruction when the active AC already settles the required result. The Operator may complete at most three correction rounds within the existing artifact family. Each round updates the AC in Refine, reruns the final AC wording and scope check called Pre-Implementation Verification, and returns to Implement. A Director-owned decision or fourth round pauses for the Director.
+
+A completed Draft flows into Audit, and a clean Audit flows into Refine, because those actions mutate nothing except the active AC document and stay cheap to redo before implementation. Automatic Refine entry requires every finding to be advancement-eligible: outside every Director-owned category with exactly one materially valid correction. Refine-to-Implement, Ratify, and Package stay Director-gated because they mutate the repository, accept work, or prepare a release.
 
 ## Notes
 

@@ -31,8 +31,10 @@
 - Reject every Go prep result outside its planned transformations.
 - Require every prep-changed version declaration to equal the unprefixed release tag.
 - Require the canonical changelog shape during prep.
+- Accept each `\|` pair in an existing summary cell as one escaped pipe during changelog shape validation.
 - Insert one exact release row immediately after `Unreleased`.
 - Reject multiline, over-80-byte, and Markdown-table-unsafe release messages.
+- Reject every release-message pipe, escaped or raw.
 - Print one shell-safe two-argument release command after prep.
 - Emit no validation token from Go builds.
 - Remove invocation-owned build, coverage, version-probe, and installation-staging outputs on every handled exit.

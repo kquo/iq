@@ -225,18 +225,32 @@ Note: this rule does not prohibit batching independent commands.
 ### Four-Phase Workflow
 
 - Follow the lifecycle `Draft → Audit → Refine → Implement → Ratify → Package` for every governed AC.
+- Report each automatic phase transition and its evidence.
+- Pause immediately when an automatic-transition eligibility condition fails.
+- Pause immediately when a Director-owned decision appears.
+- Prevent automatic advancement from authorizing Implement, Ratify, Package, release preparation, publication, delegation, or commits.
 - Treat standalone `Draft` or `draft` as the Director-authorized pre-cycle action that creates the active AC.
 - Keep Draft outside the AC phases.
+- Enter Audit automatically when Draft completes the active AC with populated scope and acceptance tests.
+- Keep an unscoped stub paused until the Director scopes it.
+- Treat the Draft authorization as continuing authority for that automatic Audit entry.
 - Start each governed AC cycle in Audit when the AC is ready for adversarial review.
 - Challenge the AC, repository behavior, referenced documentation, scope, edge cases, omissions, and testability during Audit.
 - Recheck new or unresolved contract-integrity findings before completing Audit.
 - Keep Audit non-mutating.
 - Do not edit the AC or repository during Audit.
-- Pause after Audit until the Director requests Refine unless integrated audit adoption applies.
+- Pause after Audit until the Director requests Refine unless integrated audit adoption or eligible automatic Refine entry applies.
+- Enter Refine automatically when Audit completes with only advancement-eligible findings.
+- Define an advancement-eligible finding as one outside every Director-owned category in `### General Gates` and roles.md `What the Operator Must Defer` with exactly one materially valid correction.
+- Block automatic Refine entry on any unresolved contract-integrity finding.
+- Report every autonomously resolved Audit finding with its resolution in the Refine completion.
 - Resolve Audit findings and incorporate settled Director decisions during Refine.
 - Pause Refine when a Director-specific decision remains unresolved.
 - Edit the AC during Refine when an Audit finding or settled Director decision requires an AC change.
 - Complete Refine without editing the AC when no Audit finding or settled Director decision requires an AC change and no Director-specific decision remains unresolved.
+- Run Pre-Implementation Verification after eligible automatic Refine completion.
+- Report implementation readiness only when that verification passes.
+- Remain in Refine when that verification finds a gap.
 - Validate AC-document-only Draft and Refine edits with the required document checks.
 - Keep AC-document-only Draft and Refine edits outside canonical validation cycles.
 - Do not begin implementation during Refine.
@@ -259,13 +273,10 @@ Note: this rule does not prohibit batching independent commands.
 - Prohibit the exception from creating a production or governance artifact.
 - Run Pre-Implementation Verification after each autonomous Refine correction.
 - Re-enter Implement automatically only after that verification passes.
-- Report each automatic phase transition and its evidence.
 - Count one round for one automatic Implement-to-Refine transition, its AC correction, successful Pre-Implementation Verification, and one automatic Refine-to-Implement transition.
 - Reset the round counter only when the Director authorizes Implement again.
 - Limit the exception to three correction rounds per Director-authorized Implement.
 - Pause for the Director before a fourth correction round.
-- Pause immediately when an eligibility condition fails.
-- Pause immediately when a Director-owned decision appears.
 - Prevent the exception from authorizing initial Implement, Audit, Ratify, Package, release preparation, publication, delegation, or commits.
 - Include tests, adversarial verification, and defect correction in Implement.
 - Apply `### Effective Implementation Scope` to eligible omitted artifacts during Implement and closure-audit correction.
@@ -334,11 +345,12 @@ Note: this rule does not prohibit batching independent commands.
 ### Phase-Advancement Rules
 
 - Treat only explicit Director action language as authorization to enter the named next action.
-- Exempt integrated audit adoption and an eligible bounded completeness correction from a fresh Refine action instruction.
+- Exempt integrated audit adoption, eligible automatic Refine entry, and an eligible bounded completeness correction from a fresh Refine action instruction.
+- Exempt completed-Draft automatic Audit entry from a fresh Audit action instruction.
 - Exempt only an eligible bounded completeness correction from a fresh Implement action instruction.
 - Treat standalone `Draft` or `draft` as the pre-cycle action that creates the active AC.
 - Require the Director to authorize Draft before creating the AC.
-- Start an AC cycle only after the Director identifies the AC and authorizes Audit or integrated audit adoption identifies the emitted AC.
+- Start an AC cycle only after the Director identifies the AC and authorizes Audit, integrated audit adoption identifies the emitted AC, or a completed Draft identifies the active AC.
 - Apply an unnumbered Audit, Refine, Implement, or Ratify instruction when exactly one AC can enter the requested phase.
 - Require the AC number when multiple ACs can enter the requested phase.
 - Ask the Director for the AC number and last completed lifecycle action when phase eligibility cannot be established.

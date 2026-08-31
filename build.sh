@@ -1593,7 +1593,7 @@ _validate_changelog_shape() { # $1=path
     NR == 3 && $0 != "| Version | Summary |" { bad=1 }
     NR == 4 && $0 != "|---------|---------|" { bad=1 }
     NR == 5 && $0 != "| Unreleased | |" { bad=1 }
-    NR >= 5 && $0 !~ /^\| [^|]+ \|[^|]*\|$/ { bad=1 }
+    NR >= 5 && $0 !~ /^\| [^|]+ \|(\\\||[^|])*\|$/ { bad=1 }
     END { if (NR < 5 || bad) exit 1 }
   ' "$path" || {
     _prep_cl_err="$path does not use the canonical changelog heading and two-column table shape"
