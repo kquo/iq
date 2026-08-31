@@ -198,6 +198,7 @@ Effective implementation scope is the narrow rule that permits a directly affect
 - Bind Audit Review to the resolved executable and emitted marker versions.
 - Require one unique scratch render outside the consumer repository.
 - Emit one executable review command for every actionable path.
+- Apply `### Mixed-content sync verification` to every existing mixed-content review target.
 - Require exact rule, overlap, placement, reference, contract-growth, and acceptance-evidence review.
 - Require exact scratch cleanup before the Audit report.
 - Omit rendered diff bodies from the emitted AC.
@@ -242,6 +243,9 @@ Effective implementation scope is the narrow rule that permits a directly affect
 - Recompute the protected-region digest after adoption.
 - Require the protected-region digest to match the emitted digest.
 - Keep rendered-canon comparison scoped to the canon zone above the boundary.
+- Apply that scope to Audit Review when both files contain the exact registered boundary.
+- Keep whole-file Audit Review comparison when either file lacks the exact registered boundary.
+- Preserve existing missing-target and target-only Audit Review commands.
 - Avoid comparing the repository-owned tail with rendered defaults.
 - Keep the protected-region digest out of classification, baseline scope, and JSON output.
 

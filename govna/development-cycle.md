@@ -70,8 +70,24 @@ The lifecycle makes recurring programming checkpoints and their settled context 
    - Map every scoped path and test in the final read-only closure audit.
 5. **Ratify.**
    - Perform the Director-triggered final review.
+   - Reuse the Implement evidence snapshot when `AGENTS.md` defines it as current.
+   - Revalidate affected evidence when `AGENTS.md` defines it as missing or stale.
    - Apply bounded correction behavior.
 6. **Package.** Run `govna/build-release.md` release preparation for the established Ratified release batch only after separate Director authorization.
+
+### Implement Evidence Snapshot
+
+- Define the Implement evidence snapshot as the session-only identity record used to prove that validation evidence remains unchanged.
+- Record the active AC content identity and acceptance-requirement identity.
+- Record the primary repository's HEAD, index, tracked-worktree, untracked-path, and untracked-content identities.
+- Record each relevant ignored-path and external-input identity.
+- Use exact values or deterministic content digests for every recorded identity.
+- Record exact validation commands, parameters, working directories, and relevant environment or configuration inputs.
+- Record every validation result and acceptance-test disposition without changing its status.
+- Record each resolved tool path, executable identity, tool version, and canon identity.
+- Use the complete primary-repository state as the default dependency boundary.
+- Narrow the dependency boundary only when repository evidence proves that a reused check cannot read the excluded state.
+- Treat the snapshot as incomplete when a relevant ignored or external input cannot be identified.
 
 Apply the complete phase, scope, correction, contract-integrity, and advancement rules in `AGENTS.md` throughout this cycle.
 

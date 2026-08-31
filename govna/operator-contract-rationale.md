@@ -44,6 +44,12 @@ A contract-growth review checks whether new rules duplicate, hide, misplace, or 
 
 Implement and its final read-only closure audit can expose a missed path inside an already settled outcome. Requiring another Director instruction for that omission adds a step without adding a decision. A bounded completeness correction continues the original Implement authority only when repository evidence identifies the gap, an active acceptance test already requires the correction, the artifact family is already named, and only one materially valid outcome exists. The Operator may correct at most three missed paths or instructions before asking the Director again. The final AC wording and scope check called Pre-Implementation Verification protects each corrected AC, and visible reporting records every transition.
 
+## Why Clean Ratify Reuses Implement Evidence
+
+Ratify is the Director-triggered final acceptance review, not a request to reconstruct proof that is still current. Implement therefore closes with one session-only evidence snapshot covering repository state, validation inputs, tools, results, and acceptance-test dispositions. Cheap state and identity checks can prove that snapshot unchanged without another render, build, or test. The complete repository is the safe default boundary, so recording the snapshot does not require a per-test dependency inventory.
+
+Missing, incomplete, stale, or uncertain evidence still requires applicable revalidation. An inline correction also invalidates the evidence it affects. Evidence freshness never upgrades a failed, pending, manual, or unexercised disposition, and clean reuse never replaces Ratify's final review or contract-integrity check.
+
 ## Canon Versus Local Flexibility
 
 Canon fixes shared roles, workflow, approvals, discipline, and review behavior. Consumers own non-conflicting `## Project Rules`, additional local governance documents, tooling, build scripts, and CI. Propose disputed canon upstream instead of creating permanent local drift.

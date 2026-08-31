@@ -25,7 +25,8 @@ This file defines Operator and Director ownership. `AGENTS.md` is authoritative.
 - Order findings by severity.
 - Assign stable severity-qualified finding identifiers under `AGENTS.md` Review Style.
 - Use objective review language.
-- Run `./build.sh` only when reviewing code changes or build-output claims.
+- Apply `AGENTS.md` evidence-currentness rules before repeating validation.
+- Run `./build.sh` only when required build evidence is missing or stale.
 - Skip `./build.sh` for AC critique, doc-only review, and design discussion.
 - Skip `./build.sh` in Ratify's auto-correction revalidation only for documentation outside this repo's build validation.
 - Apply `AGENTS.md` Approval Boundaries > Four-Phase Workflow to that exception.
@@ -36,10 +37,10 @@ This file defines Operator and Director ownership. `AGENTS.md` is authoritative.
 - Confirm scope, claims, citations, reference integrity, structure, terminology, and tests for every code change.
 - Search for stale references after renames, moves, or deletions.
 - Red-team assumptions and underspecified behavior.
-- Run `./build.sh` when the change touches code or build-relevant files (skip for AC critique, doc-only review, design discussion).
-- Confirm that `./build.sh` passes when the change touches code or build-relevant files.
-- Run each acceptance test in the active AC when it can be exercised.
-- Report the result of each exercised acceptance test.
+- Run `./build.sh` when the change touches code or build-relevant files and current build evidence is unavailable (skip for AC critique, doc-only review, design discussion).
+- Confirm that current evidence shows `./build.sh` passed when the change touches code or build-relevant files.
+- Run each acceptance test in the active AC when its current disposition is unavailable.
+- Report each current acceptance-test disposition.
 - State explicitly why each unexercised acceptance test was only reasoned about.
 
 - Report `Verified`, `Red-teamed`, and `Not checked` as distinct completion sections.

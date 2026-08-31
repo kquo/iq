@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.18.9 | AC14: adopt govna v0.48.0 evidence snapshot and hardened release flow |
 | 0.18.8 | AC13: adopt govna v0.46.0 audit and release-batch safeguards |
 | 0.18.7 | AC12: adopt govna v0.45.0 canon-coherence safeguards |
 | 0.18.6 | AC11: adopt govna v0.44.0 integrated audit and release batches |
@@ -35,7 +36,7 @@
 | 0.8.15 | Synthesis pass for `read_file` short-circuit: after file is read, model answers original question using content (same pattern as `web_search`); fixes "does arch.md have version history?", "print last 10 lines", etc.; other file tools remain self-contained (FEAT9872) |
 | 0.8.14 | `GuardArgs` for `read_file`/`file_info`: extract filename from natural language via `extractFilePath`/`looksLikeFilePath`; handles "tail arch.md", "print main.go", "does file X have…"; nil on no-match → falls back to inference; 9 new unit tests (FEAT9874) |
 | 0.8.13 | Fix embed short-circuit tool selection: `SelectTool(signal, input)` replaces hard-coded `expected[0]`; keyword dispatch routes `file_access` to `list_dir`/`file_info`/`read_file` and `file_search` to `count_lines`/`search_text`; `GuardArgs` for `list_dir` extracts path or defaults to "."; 15 new unit tests (FEAT9875) |
-| 0.8.12 | Fix `RemoveSource` prefix collision: replace bare `strings.HasPrefix` with exact-path + directory-boundary match (`== absPath \|\| HasPrefix(absPath+"/")`) to prevent silent deletion of sibling paths; add `internal/kb/kb_test.go` with 4 table tests (FEAT9880) |
+| 0.8.12 | Fix `RemoveSource` prefix collision: replace bare `strings.HasPrefix` with exact-path + directory-boundary match (exact match or `HasPrefix(absPath+"/")`) to prevent silent deletion of sibling paths; add `internal/kb/kb_test.go` with 4 table tests (FEAT9880) |
 | 0.8.11 | Test coverage expansion: `ParseCallsStrict` table tests, `resolveRoute` tier fallback, sidecar transport (`RawCall`/`Call`/`StripThinkBlocks`) with httptest, config migration paths (`migrateFlatTiers`/`migrateOldFourTier`/legacy embed model), embed (`CosineSimilarity`/`TextsOnPort`/`keywordScore`); aggregate coverage 11.8%→15.1% (FEAT9890) |
 | 0.8.10 | Replace `queone/utl` color wrappers with zero-dependency `internal/color` package; TTY detection via `os.Stdout.Stat()`, respects `NO_COLOR`/`TERM=dumb`; rename `Gre`→`Grn`; binary shrinks ~110KB; removes 7 transitive dependencies (FEAT9900) |
 | 0.8.9 | Error handling audit: config parse errors now surfaced (was silently swallowed); DDG body leak fixed; `web_search` fallback parser extracts `query` arg; `BuildRoutingPrompt`/`RegistryNames`/`ParseCalls`/`ParseCallsStrict` accept explicit `[]Tool` registry; `build.sh` suppresses PASS lines, adds weighted coverage summary and `-v` flag (FEAT9910) |
@@ -48,7 +49,7 @@
 | 0.8.2 | `kb_min_score` configurable in config.yaml; STEP 3 trace shows threshold and zero-result message; `traceBlock` truncates KB chunk content to 4-line preview; trace mode forces non-streaming to fix debug output corruption; fix double-print of pre-think tokens in streaming think models |
 | 0.8.1 | Embed short-circuit generalized to all tool signals (FEAT9990): skip routing grammar pass when embed is confident; `extractCalcExpression` converts natural language to math for calc tool; fallback strips tool system prompt to prevent re-invocation markup leak |
 | 0.8.0 | `iq perf bench` auto-starts/stops sidecar for infer/tool types; red download hint for missing models in bench and sweep (`lm.IsModelNotDownloaded`) |
-| 0.7.9 | Per-tier tuning guide in arch.md; `short\|long` alias format in help; trim trailing blank lines from all help output; README "Find Your Best Models" section |
+| 0.7.9 | Per-tier tuning guide in arch.md; `short`/`long` alias format in help; trim trailing blank lines from all help output; README "Find Your Best Models" section |
 | 0.7.8 | Async KB prefetch with 5s timeout; `iq perf sweep` automates model comparison; README onboarding guide |
 | 0.7.7 | `iq config show/validate`: canonical config inspection and validation command |
 | 0.7.6 | Hybrid cue classification: keyword boost prevents embedding drift; strict tool schema validation (ValidateCall/ParseCallsStrict); multi-model benchmark harness (--models flag) |

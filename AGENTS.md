@@ -273,6 +273,10 @@ Note: this rule does not prohibit batching independent commands.
 - Run one exhaustive, non-mutating closure audit after Implement, validation, adversarial verification, and defect correction.
 - Keep the closure-audit working record in the active agent's session.
 - Do not create a separate closure-audit artifact.
+- Capture one deterministic Implement evidence snapshot in the closure-audit working record.
+- Capture the snapshot after final validation and the last repository mutation.
+- Complete the snapshot before Implement completion.
+- Follow `govna/development-cycle.md` `### Implement Evidence Snapshot` for snapshot contents and dependency boundaries.
 - Map every in-scope command entry point, provider/API fetch, normalized-table write, durable snapshot, stale fallback, freshness gate, and complete-snapshot reconciliation path in the closure audit.
 - Check every in-scope governance instruction against `## Instruction Style` during the closure audit.
 - Map every referenced governance document across applicable source, template, and rendered-consumer paths in the closure audit.
@@ -288,6 +292,17 @@ Note: this rule does not prohibit batching independent commands.
 - State zero unresolved implementation findings in the Implement completion report before Ratify.
 - Pause after Implement and await Ratify.
 - Treat standalone `Ratify` or `ratify` after successful Implement completion as the Director's acceptance action.
+- Check the Implement evidence snapshot with non-mutating state, version, content-identity, and diff checks.
+- Treat evidence as current only when the snapshot is present, complete, and identity-matching.
+- Treat every non-current snapshot as stale evidence.
+- Treat an unrecorded input as stale when a reused validation or acceptance check can read it.
+- Treat uncertainty about an input's relevance as stale evidence.
+- Distinguish evidence currentness from acceptance-test outcome.
+- Preserve each recorded acceptance-test disposition exactly during reuse.
+- Apply existing Ratify routing to every current non-clean disposition.
+- Reuse current closure-audit findings, acceptance-test dispositions, render evidence, and final validation during Ratify.
+- Prohibit a new scratch directory, canon render, build, or test solely to repeat current evidence.
+- Rerun applicable validation when Ratify evidence is missing or stale.
 - Perform the final review during the same Ratify turn.
 - Recheck new or unresolved contract-integrity findings during Ratify.
 - Complete Ratify in that turn when the review finds no issue.

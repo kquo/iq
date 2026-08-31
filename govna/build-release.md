@@ -73,21 +73,22 @@ Note: the operator flow has two steps.
 1. **Run prep.**
    - Classify the AC scope under semver.
    - Draft a release message that names the delivered user-visible result and every established release-batch AC reference in no more than 80 bytes.
+   - Keep the release message on one line and inside one Markdown table cell.
    - Exclude every AC reference outside the established release batch.
+   - Use the successful final full build and clean Ratify review as current Package evidence.
+   - Rerun applicable validation before prep when Package evidence is missing or stale.
    - Run the stack-defined `./build.sh prep vX.Y.Z "message"` invocation.
    - Pass current validation evidence with `--validation-token` or `-t` when supported.
-   - Run ordinary canonical pre-change validation for Go prep.
-   - Run ordinary canonical post-change validation for Go prep.
+   - Keep Go prep free of canonical build, Go build, and Go dependency commands.
    - Reserve validation-token evidence for Rust prep.
    - Refresh validation-token evidence for Rust prep.
    - Use `--dry-run` or `-n` to inspect without writes.
-   - Use `--no-build` or `-B` only under the applicable stack policy.
 
    Before running prep, satisfy this repository's declared version-target contract and keep repository/package and independently versioned utility declarations aligned as required by its Project Practices.
 2. **Run the printed release command.**
    - Run `./build.sh vX.Y.Z "message"`.
-   - Confirm the displayed status and Git steps.
-   - Approve the interactive prompt to execute the displayed sequence.
+   - Confirm the displayed candidate files and exact release sequence.
+   - Approve the interactive prompt to commit, compile, validate, install, tag, and push.
 
 - End the structured Package completion report with `Run below to release:`.
 - Place the exact release command immediately after that line.
@@ -95,30 +96,29 @@ Note: the operator flow has two steps.
 
 ### Appendix: what prep does
 
-`./build.sh prep` runs nine phases internally so the operator flow above stays short. Each phase has a clear failure mode:
+Go `./build.sh prep` performs bookkeeping only. It follows these phases:
 
-1. **Validate inputs.** Semver pattern (`vX.Y.Z`), message non-empty and no more than 80 bytes.
+1. **Validate inputs.** Require strict stable SemVer and one non-empty, single-line, table-safe message of no more than 80 bytes.
 2. **Validate git state.** Inside a git work tree, target tag does not exist yet, HEAD is not at the latest tag with a clean working tree.
-3. **Run pre-change validation.** Follow the applicable stack policy for current build evidence, fallback validation, and failure handling before writes.
-4. **Process version targets.**
+3. **Process version targets.**
    - Detect every version target.
    - Validate every version target.
    - Follow this repository's Project Practices.
    - Follow the stack build implementation.
    - Reject missing, malformed, duplicate, or unsafe targets before any write.
-5. **Guard CHANGELOG idempotency.**
+4. **Guard CHANGELOG shape and idempotency.**
    - Detect the root `CHANGELOG.md` target.
+   - Require the canonical heading and two-column table.
    - Reject an existing row for the target version before any write.
-6. **Parse AC refs.** Scan the release message for `AC[0-9]+`; composites like `AC<m>+AC<n>` yield multiple unique refs after the Operator verifies exact release-batch equality.
-7. **Apply writes.**
+5. **Parse AC refs.** Scan the release message for `AC[0-9]+`; require one matching AC file for every unique reference after the Operator verifies exact release-batch equality.
+6. **Apply writes.**
    - Apply idempotent version bumps.
    - Insert the CHANGELOG row under `| Unreleased | |`.
    - Delete each released AC file whole.
    - Sweep matching AC-pointer IE lines from `plan.md`.
    - Skip writes under `--dry-run` or `-n`.
    - Leave already-swept lines unchanged on rerun.
-8. **Run post-change validation.** Follow the applicable stack policy for build-state reuse, output, failure handling, and cleanup.
-9. **Print release command.** Labeled block: `release command:` followed by the indented command `./build.sh vX.Y.Z "message"`.
+7. **Verify and report.** Reject results outside the planned paths, verify every planned transformation, and print one shell-safe two-argument release command.
 
 CHANGELOG row shape (enforced by prep's insertion code and by convention):
 
