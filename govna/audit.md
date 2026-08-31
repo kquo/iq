@@ -151,13 +151,25 @@ An audit with no updates or Director choices exits successfully and prints `No G
 
 ### Agent-mediated review
 
-The executable ends after deterministic comparison and emission. An explicit request to an agent to run `govna audit` also authorizes the Operator review steps below. The immutable AC records the adoption work; the active session records its phase.
-
-- Run `govna audit` before entering an AC phase.
+- Resolve the Govna executable path before running the agent-mediated audit.
+- Record the detailed version output from that resolved executable.
+- Run the ordinary agent-mediated audit without `--json`.
 - Enter Audit only when the command emits or reuses one guarded adoption AC.
 - Keep a clean result or pre-emission failure outside the AC phases.
 - Audit the emitted AC immediately.
-- Leave the emitted AC unchanged during Audit and Refine.
+- Require the emitted AC marker versions to match the recorded detailed version.
+- Create exactly one unique system-temporary scratch directory outside the consumer repository.
+- Render the selected canon into that scratch directory once with the resolved executable.
+- Require the rendered baseline canon version to match the emitted AC marker.
+- Compare every actionable path through the emitted `### Audit Review` instructions.
+- Review the exact proposed rules.
+- Check rule overlap and placement.
+- Resolve every candidate reference.
+- Measure prospective contract growth.
+- Verify target-side acceptance evidence.
+- Keep the emitted AC and consumer repository unchanged during Audit and Refine.
+- Remove the exact scratch directory before reporting Audit completion or a blocker.
+- End scratch-review authority when Audit ends.
 - Report every blocking finding and Director decision.
 - Pause while any blocking finding or Director decision remains unresolved.
 - Resume Refine after the Director resolves every blocking finding and decision.
@@ -168,6 +180,8 @@ The executable ends after deterministic comparison and emission. An explicit req
 - Remain in Refine when Pre-Implementation Verification finds a gap.
 - Stop before Implement.
 - Track the active phase in the session instead of the emitted AC.
+
+Note: the executable ends after deterministic comparison and emission. The original explicit `govna audit` request authorizes this one bounded scratch review and its exact cleanup. The immutable AC records the adoption work; the active session records its phase. JSON remains available as optional machine output, but its diff fields are not required evidence for ordinary agent-mediated review.
 
 Effective implementation scope is the narrow rule that permits a directly affected supporting file to change when the Director already settled its outcome. Every Director-resolved routing target enters that scope while the generated AC remains unchanged. Explicitly named migration destinations also enter it. `govna/preserve.txt` enters only when a resolved outcome requires creating or changing it. `CHANGELOG.md` enters only when a resolved legacy-phrase outcome requires removing an exact phrase. Neither supporting-file adjustment requires a second Director authorization.
 
@@ -180,6 +194,14 @@ Effective implementation scope is the narrow rule that permits a directly affect
 - Place the count paragraph after the repository paragraph.
 - Start the count paragraph with `Govna found`.
 - Keep the count and Summary paragraphs descriptive.
+- Place one `### Audit Review` section before `### Adoption Instructions`.
+- Bind Audit Review to the resolved executable and emitted marker versions.
+- Require one unique scratch render outside the consumer repository.
+- Emit one executable review command for every actionable path.
+- Require exact rule, overlap, placement, reference, contract-growth, and acceptance-evidence review.
+- Require exact scratch cleanup before the Audit report.
+- Omit rendered diff bodies from the emitted AC.
+- Omit companion review artifacts.
 - Confirm each file selected for update exists in the selected CODE render.
 - Place that CODE-render check and all routing procedure under `### Adoption Instructions`.
 - Omit the CODE-render check from DOC audit emissions.

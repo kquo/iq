@@ -308,6 +308,11 @@ Note: this rule does not prohibit batching independent commands.
 - Use the successful final full build and clean Ratify review as current pre-change Package evidence.
 - Pass the full build's validation token to Rust prep during `Package` only when the repository provides Rust validation-token support.
 - Fall back to a pre-change full build only when Rust validation-token support exists and its prep evidence is missing or stale.
+- Define the pending release batch as every unpackaged AC whose implementation is present in the unreleased repository state.
+- Include an implemented AC in the pending release batch while it awaits Ratify.
+- Require every pending release-batch member to complete Ratify before Package.
+- Require the established release batch to equal the complete pending release batch.
+- Reject Package while excluded implemented work remains in the unreleased repository state.
 - Require the release-message AC-reference set to equal the established release batch before Package runs prep.
 - Preserve release-prep mutations, release behavior, and approval boundaries during `Package`.
 
@@ -322,12 +327,20 @@ Note: this rule does not prohibit batching independent commands.
 - Apply an unnumbered Audit, Refine, Implement, or Ratify instruction when exactly one AC can enter the requested phase.
 - Require the AC number when multiple ACs can enter the requested phase.
 - Ask the Director for the AC number and last completed lifecycle action when phase eligibility cannot be established.
-- Treat one active Ratified AC as an established one-AC release batch.
-- Treat only a Director-named set of Ratified ACs as an established multi-AC release batch.
+- Treat one active Ratified AC as an established one-AC release batch only when it is the complete pending release batch.
+- Treat only a Director-named complete pending release batch as an established multi-AC release batch.
 - Accept only Package followed by a plus-joined list of uppercase AC<number> references as the named-batch Package form.
 - Apply standalone Package, package, pack, or prep to the established Ratified release batch.
 - Ask the Director to name the release batch when multiple ungrouped Ratified ACs can enter Package.
 - Reject a named release batch that contains a non-Ratified AC.
+- Measure the projected complete pending release batch with one private provisional prefix-plus-summary string before another AC enters Implement.
+- Use the provisional string only for the 80-byte fit check.
+- Discard the provisional string after the fit check.
+- Start another Implement only when the projected complete pending release batch can fit one compliant release message.
+- Require Package for the current fitting batch before another Implement when the projection cannot fit.
+- Recheck the complete pending release batch and exact release message before Package runs prep.
+- Reject an oversized or partial release batch.
+- Prohibit automatic release-batch splitting.
 - Treat a compound request as authorization for only the named action.
 - Pause before any unnamed action.
 - Treat ambiguous, unrelated, or implicit replies as non-advancing feedback.
@@ -372,7 +385,12 @@ Note: the Director flags scope concerns in chat during this window.
 - Enter Audit only when govna audit emits or reuses one guarded adoption AC.
 - Keep a clean audit result or pre-emission failure outside the AC phases.
 - Audit the emitted AC immediately.
-- Keep the emitted AC unchanged during integrated Audit and Refine.
+- Authorize the bounded scratch-review procedure in `govna/audit.md` from the original explicit `govna audit` request.
+- Bind the scratch review to the resolved Govna executable and the emitted AC marker versions.
+- Limit scratch-review authority to one unique system-temporary directory outside the consumer repository.
+- Keep the emitted AC and consumer repository unchanged during integrated Audit and Refine.
+- Remove the exact scratch directory before reporting Audit completion or a blocker.
+- End scratch-review authority when Audit ends.
 - Pause integrated audit adoption while any blocking finding or Director decision remains unresolved.
 - Resume Refine after the Director resolves every blocking finding and decision.
 - Require a new audit emission when a required correction would change the immutable AC.

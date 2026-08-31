@@ -21,12 +21,23 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 - Apply an unnumbered Audit, Refine, Implement, or Ratify instruction when exactly one AC can enter the requested phase.
 - Require the AC number when multiple ACs can enter the requested phase.
 - Ask the Director for the AC number and last completed lifecycle action when phase eligibility cannot be established.
-- Treat one active Ratified AC as an established one-AC release batch.
-- Treat only a Director-named set of Ratified ACs as an established multi-AC release batch.
+- Define the pending release batch as every unpackaged AC whose implementation is present in the unreleased repository state.
+- Include an implemented AC in the pending release batch while it awaits Ratify.
+- Measure the projected complete pending release batch with one private provisional prefix-plus-summary string before another AC enters Implement.
+- Use the provisional string only for the 80-byte fit check.
+- Discard the provisional string after the fit check.
+- Start another Implement only when the projected complete pending release batch can fit one compliant release message.
+- Require Package for the current fitting batch before another Implement when the projection cannot fit.
+- Require every pending release-batch member to complete Ratify before Package.
+- Treat one active Ratified AC as an established one-AC release batch only when it is the complete pending release batch.
+- Treat only a Director-named complete pending release batch as an established multi-AC release batch.
 - Accept only `Package` followed by a plus-joined list of uppercase `AC<number>` references as the named-batch Package form.
 - Apply standalone `Package`, `package`, `pack`, or `prep` to the established Ratified release batch.
 - Ask the Director to name the release batch when multiple ungrouped Ratified ACs can enter Package.
 - Reject a named release batch that contains a non-Ratified AC.
+- Recheck the complete pending release batch and exact release message before Package runs prep.
+- Reject an oversized or partial release batch.
+- Prohibit automatic release-batch splitting.
 - Enter integrated Audit only when `govna audit` emits or reuses one guarded adoption AC.
 - Keep a clean audit result or pre-emission failure outside the AC phases.
 - Resume integrated Refine after the Director resolves every blocking finding and decision.
@@ -44,8 +55,13 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 ## Cycle
 
 1. **Draft.** Write the authorized AC from `govna/ac-template.md`.
-2. **Audit.** Review the AC for missing scope, unsafe assumptions, and untestable requirements without editing it. Start this review immediately when an explicit agent-mediated `govna audit` request emits or reuses one guarded adoption AC.
-3. **Refine.** Update a hand-authored AC with settled findings and Director decisions. Keep an audit-emitted AC unchanged and record its resolved decisions in the active session.
+2. **Audit.**
+   - Review the AC for missing scope, unsafe assumptions, and untestable requirements without editing it.
+   - Start this review immediately when an explicit agent-mediated `govna audit` request emits or reuses one guarded adoption AC.
+3. **Refine.**
+   - Update a hand-authored AC with settled findings and Director decisions.
+   - Keep an audit-emitted AC unchanged.
+   - Record its resolved decisions in the active session.
 4. **Implement.**
    - Deliver the settled scope.
    - Test the settled scope.
@@ -59,7 +75,7 @@ The lifecycle makes recurring programming checkpoints and their settled context 
 
 Apply the complete phase, scope, correction, contract-integrity, and advancement rules in `AGENTS.md` throughout this cycle.
 
-The `govna` executable ends after deterministic audit comparison and emission. The Operator performs the integrated Audit, Refine, and Pre-Implementation Verification steps. A required change to an immutable emitted AC needs a new audit emission. Package compares the release message's unique AC references with the established batch before prep.
+The `govna` executable ends after deterministic audit comparison and emission. The Operator performs the integrated Audit, Refine, and Pre-Implementation Verification steps. A required change to an immutable emitted AC needs a new audit emission. The pre-Implement fit check uses one private provisional string only to prevent an oversized pending batch. Package requires every implemented batch member to be Ratified, compares the complete pending batch with the exact message, and rejects partial or oversized batches before prep.
 
 During Director-authorized Implement, a bounded completeness correction fixes a missed path or instruction when the active AC already settles the required result. The Operator may complete at most three correction rounds within the existing artifact family. Each round updates the AC in Refine, reruns the final AC wording and scope check called Pre-Implementation Verification, and returns to Implement. A Director-owned decision or fourth round pauses for the Director.
 

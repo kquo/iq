@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.18.8 | AC13: adopt govna v0.46.0 audit and release-batch safeguards |
 | 0.18.7 | AC12: adopt govna v0.45.0 canon-coherence safeguards |
 | 0.18.6 | AC11: adopt govna v0.44.0 integrated audit and release batches |
 | 0.18.5 | AC10: adopt govna v0.42.0 lifecycle routing |

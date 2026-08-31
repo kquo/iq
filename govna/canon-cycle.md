@@ -21,7 +21,11 @@ Candidate canon is the embedded governance version under review. A consumer-equi
 
 - Run this review before completing a Govna canon change.
 - Render DOC and every registered CODE stack.
-- Exercise every rendered profile through `govna audit` at least once.
+- Exercise every rendered profile through ordinary non-JSON `govna audit` at least once.
+- Resolve the Govna executable before each consumer-equivalent audit.
+- Reuse that resolved executable for the Audit scratch render.
+- Verify the emitted marker versions against the resolved executable.
+- Verify the rendered baseline canon version against the emitted marker.
 - Cover every audit classification across the state-equivalence fixtures.
 - Cover each force-sync state across the state-equivalence fixtures.
 - Cover every routing outcome across the state-equivalence fixtures.
@@ -37,6 +41,10 @@ Candidate canon is the embedded governance version under review. A consumer-equi
 ### Emitted AC review
 
 - Audit every actionable emitted AC immediately.
+- Complete one bounded scratch review for every actionable emitted AC.
+- Compare every actionable path without JSON diff fields.
+- Keep the emitted AC and consumer fixture byte-identical during review.
+- Remove the exact scratch directory before completing review.
 - Verify every offered routing outcome is executable.
 - Verify every offered routing outcome has conditional acceptance coverage.
 - Verify every emitted reference resolves in the selected render or named repository state.
@@ -50,6 +58,17 @@ Candidate canon is the embedded governance version under review. A consumer-equi
 - Map every governing claim to a named behavioral regression.
 - Verify every supported profile provides its required canonical command implementation.
 - Block completion on any claim-to-behavior mismatch.
+
+### Release-batch safety
+
+- Exercise one-AC and fitting multi-AC pending batches.
+- Exercise an oversized projected batch before another Implement.
+- Exercise oversized, partial, and partly unaccepted batches before Package prep.
+- Require every implemented pending-batch member to complete Ratify before Package.
+- Verify whole-tree release staging cannot bypass complete-batch rules.
+- Verify 80-byte acceptance with ASCII and multibyte messages.
+- Reject 81-byte messages before release-prep mutation.
+- Verify numbered Audit and Refine steps remain atomic in CODE and DOC renders.
 
 ### Review evidence
 
@@ -101,4 +120,4 @@ Candidate canon is the embedded governance version under review. A consumer-equi
 - Report the violation upstream.
 - Skip local rewrites of canon-owned text unless an explicit AC declares intentional divergence.
 
-Note: audit supplies diffs; the agent classifies ownership. Fix canon in its source and templates, and local rules in their owning repo docs.
+Note: JSON audit output may supply bounded diffs, but ordinary agent-mediated review uses the immutable AC and one authorized scratch render. Fix canon in its source and templates, and local rules in their owning repo docs.

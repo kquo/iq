@@ -58,14 +58,21 @@ Run `./build.sh` without targets for repository-wide validation. Follow the appl
 ## Pre-Release Checklist
 
 - Start this checklist only when the Director explicitly requests a valid Package instruction for the established Ratified release batch.
+- Map every unpackaged AC with implementation in the unreleased repository state to the complete pending release batch.
+- Require every pending release-batch member to complete Ratify before prep.
+- Reject prep while excluded implemented work remains in the unreleased repository state.
 - Require the unique release-message AC-reference set to equal the established release batch before prep.
+- Require the established release batch to equal the complete pending release batch before prep.
+- Reject a release message longer than 80 bytes before prep.
+- Prohibit a smaller release batch while excluded implemented work remains.
+- Prohibit automatic release-batch splitting.
 - Do not treat `./build.sh prep ...` or ordinary build-preparation language as a workflow request.
 
 Note: the operator flow has two steps.
 
 1. **Run prep.**
    - Classify the AC scope under semver.
-   - Draft a release message that names the delivered user-visible result and every established release-batch AC reference in no more than 80 characters.
+   - Draft a release message that names the delivered user-visible result and every established release-batch AC reference in no more than 80 bytes.
    - Exclude every AC reference outside the established release batch.
    - Run the stack-defined `./build.sh prep vX.Y.Z "message"` invocation.
    - Pass current validation evidence with `--validation-token` or `-t` when supported.
@@ -90,7 +97,7 @@ Note: the operator flow has two steps.
 
 `./build.sh prep` runs nine phases internally so the operator flow above stays short. Each phase has a clear failure mode:
 
-1. **Validate inputs.** Semver pattern (`vX.Y.Z`), message non-empty and ≤ 80 characters.
+1. **Validate inputs.** Semver pattern (`vX.Y.Z`), message non-empty and no more than 80 bytes.
 2. **Validate git state.** Inside a git work tree, target tag does not exist yet, HEAD is not at the latest tag with a clean working tree.
 3. **Run pre-change validation.** Follow the applicable stack policy for current build evidence, fallback validation, and failure handling before writes.
 4. **Process version targets.**
