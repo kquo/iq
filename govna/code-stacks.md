@@ -15,6 +15,14 @@
 - Validate compiled versions before writing release metadata.
 - Preserve independent utility versions during repository release prep.
 
+## Release Command
+
+- Print one shell-safe two-argument release command after prep in every stack.
+- Emit the validated release tag bare in the printed release command.
+- Emit the release message single-quoted with POSIX quote escaping in the printed release command.
+- Confine the tag to `v`, digits, and dots through each adapter's existing validation before emission.
+- Route each adapter's release-command prints through one emit helper.
+
 ## Go
 
 - Discover utilities from regular `cmd/<target>/main.go` files in byte order.
@@ -35,7 +43,6 @@
 - Insert one exact release row immediately after `Unreleased`.
 - Reject multiline, over-80-byte, and Markdown-table-unsafe release messages.
 - Reject every release-message pipe, escaped or raw.
-- Print one shell-safe two-argument release command after prep.
 - Emit no validation token from Go builds.
 - Remove invocation-owned build, coverage, version-probe, and installation-staging outputs on every handled exit.
 - Terminate after handling HUP, INT, or TERM.

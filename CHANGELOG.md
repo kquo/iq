@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.18.11 | AC16: adopt govna v0.52.0 shared release-command rules and repo-check registry |
 | 0.18.10 | AC15: adopt govna v0.50.0 automatic phase advancement and changelog pipes |
 | 0.18.9 | AC14: adopt govna v0.48.0 evidence snapshot and hardened release flow |
 | 0.18.8 | AC13: adopt govna v0.46.0 audit and release-batch safeguards |

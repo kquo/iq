@@ -1880,7 +1880,7 @@ _prep_apply_changelog_insert() { # $1=path $2=vstripped $3=message
 }
 
 _prep_emit_release_command() { # $1=version $2=message
-  printf '\nrelease command:\n  ./build.sh %s %s\n' "$(_shell_quote "$1")" "$(_shell_quote "$2")"
+  printf '\nrelease command:\n  ./build.sh %s %s\n' "$1" "$(_shell_quote "$2")"
 }
 
 _prep_print_dry_run() { # vtargets ctargets vstripped message acfiles ielines

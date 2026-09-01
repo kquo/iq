@@ -97,6 +97,26 @@ Treat only exact legacy preserve phrases in the Unreleased CHANGELOG Summary as 
 
 A registry entry on a missing current-canon file suppresses `missing-in-target` to a suppressed `match`; an entry on a divergent current-canon file or an existing target-only file routes it to `preserve` instead of a review classification. Exceptions are an eligible stale-version-only `govna/metadata.txt`, whose canon-owned `canon_version` cannot be pinned, and a boundary-less CODE `govna/build-release.md`, which remains a reviewed migration.
 
+## Repository-check registry
+
+Use optional `govna/repo-check.txt` as the Director's standing repository-check resolution. Treat an absent file as no configuration. Require an existing file to use this exact schema:
+
+```text
+govna-repo-check-v1
+<command>
+```
+
+Require a final newline. Require exactly one non-empty command line after the header. Reject a command containing a backtick. Reject any additional content. Fail the audit with a validation error before any AC emission when the file is malformed.
+
+- Require explicit Director authorization for every `govna/repo-check.txt` creation or modification.
+- Treat a valid configured command as the standing Director resolution for the emitted repository check.
+- Emit the repository-check outcome pre-resolved to the configured command.
+- Name `govna/repo-check.txt` as the standing-resolution source in the emitted acceptance test.
+- Keep the no-baseline-migration `Not applicable` outcome ahead of the configured command.
+- Prefer the configured command over inferred validation evidence.
+- Require the configured check to succeed before `govna/canon-baseline.txt` installation.
+- Exclude `govna/repo-check.txt` from rendered canon, canon baselines, ordinary audit drift, and name-referenced target-only evidence.
+
 ## Target-only detection
 
 Audit classifies an existing target as `target-has-no-canon` when the path is absent from current flavor canon, the preserve registry does not name it, and at least one bounded evidence source identifies it: the valid prior baseline, the pre-baseline retired-path tombstone registry, other-flavor canon, or a path reference from an already-divergent governed file. Evidence is merged by target path with tombstone replacement metadata retained, then emitted in deterministic path order.
