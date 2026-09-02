@@ -218,6 +218,8 @@ Note: this rule does not prohibit batching independent commands.
 - Require an AC for architecture, schema, dependency, security, migration, external-integration, destructive, governance, or release decisions regardless of file count.
 - Preserve explicit authorization, scope, documentation, and same-pass test requirements for direct handling.
 - Treat every non-trivial change as AC-first work unless the Director explicitly overrides it.
+- Describe each direct-handled companion change in the release message when the release batch already carries an AC.
+- Draft no retroactive AC for such a companion change.
 - Draft `govna/ac<N>-<slug>.md` before implementation using `govna/ac-template.md`.
 - Define scope, out-of-scope, and acceptance tests in the AC.
 - Wait for explicit user confirmation that the AC is implementation-ready before starting implementation.

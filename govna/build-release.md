@@ -73,6 +73,7 @@ Note: the operator flow has two steps.
 1. **Run prep.**
    - Classify the AC scope under semver.
    - Draft a release message that names the delivered user-visible result and every established release-batch AC reference in no more than 80 bytes.
+   - Name each direct-handled companion change inside that user-visible result without an AC reference.
    - Keep the release message on one line and inside one Markdown table cell.
    - Exclude every AC reference outside the established release batch.
    - Use the successful final full build and clean Ratify review as current Package evidence.
